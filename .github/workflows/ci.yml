@@ -1,0 +1,26 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: no restricted identifiers
+        env:
+          NAMECHECK_TERMS: ${{ secrets.NAMECHECK_TERMS }}
+        run: python scripts/check_names.py
+      - run: pip install -e ".[dev]"
+      - name: tests
+        env:
+          # the name guard also runs as a test, so it needs the same terms
+          NAMECHECK_TERMS: ${{ secrets.NAMECHECK_TERMS }}
+        run: pytest -q
+      - name: benchmark gate
+        # fails if recall drops on either schema, or token savings regress
+        run: python tests/bench.py

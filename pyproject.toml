@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ashiq"
+version = "0.1.0"
+description = "Identity-scoped schema selection for text-to-SQL: give the model only the tables this caller may read, and 75% fewer prompt tokens"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{name = "Ashish Sinha"}]
+keywords = [
+  "nl2sql", "text-to-sql", "text2sql", "sql-generation", "llm", "rag",
+  "schema-linking", "schema-selection", "schema-retrieval", "database",
+  "vector-search", "bm25", "hybrid-search", "row-level-security", "rls",
+  "vpd", "oracle", "oracle-23ai", "postgresql", "sql-server", "sqlalchemy",
+  "mcp", "model-context-protocol", "langchain", "claude", "gemini", "openai",
+  "ai-agent", "data-catalog", "prompt-engineering",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Database",
+  "Topic :: Database :: Database Engines/Servers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+dependencies = ["SQLAlchemy>=2.0"]
+
+[project.optional-dependencies]
+# database drivers -- reflection itself works on any SQLAlchemy dialect
+oracle      = ["oracledb>=2.4"]
+postgres    = ["psycopg[binary]>=3.1"]
+mssql       = ["pyodbc>=5.0"]
+mysql       = ["PyMySQL>=1.1"]
+# optional AI cataloguing -- bring your own key; none of this is required
+anthropic   = ["anthropic>=0.40"]
+openai      = ["openai>=1.40"]
+gemini      = ["google-genai>=1.0"]
+ai          = ["anthropic>=0.40", "openai>=1.40", "google-genai>=1.0"]
+huggingface = ["sentence-transformers>=3.0"]
+# integrations
+mcp         = ["mcp>=1.2"]
+langchain   = ["langchain-core>=0.3"]
+dev         = ["pytest>=8", "ruff", "mypy", "sqlglot>=25", "anyio>=4",
+               "mcp>=1.2", "langchain-core>=0.3", "hypothesis>=6"]
+
+[project.scripts]
+ashiq = "ashiq.cli:main"
+
+[project.urls]
+Homepage      = "https://github.com/ashishsinha1602/ashiq"
+Repository    = "https://github.com/ashishsinha1602/ashiq"
+Issues        = "https://github.com/ashishsinha1602/ashiq/issues"
+Changelog     = "https://github.com/ashishsinha1602/ashiq/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ashiq"]
+
+[tool.hatch.build]
+include = ["src/ashiq/**/*.py", "src/ashiq/py.typed", "src/ashiq/studio.html"]

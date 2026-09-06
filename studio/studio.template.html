@@ -1,0 +1,417 @@
+<title>ashiq studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7FA; --panel:#FFFFFF; --panel-2:#EEF1F6; --ink:#161A22; --muted:#5E6779; --line:#DCE1E9; --line-2:#C9D0DB;
+  --accent:#0F7B6C; --accent-ink:#0B5C51; --accent-soft:#E3F3EF;
+  --restrict:#B4322A; --restrict-soft:#FBEAE8;
+  --vector:#2F62C9; --vector-soft:#E6EDFB; --lexical:#A8721A; --lexical-soft:#FBF1E0; --fk:#6A55C4; --fk-soft:#ECE8FA; --shadow:#8A93A6;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:6px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0F1218; --panel:#171B23; --panel-2:#1E232D; --ink:#E6E9EF; --muted:#9AA3B5; --line:#2A303C; --line-2:#39404E;
+  --accent:#3FBFA9; --accent-ink:#7ADCCB; --accent-soft:#163830;
+  --restrict:#E0655C; --restrict-soft:#3B1F1D;
+  --vector:#7EA3EE; --vector-soft:#1D2A44; --lexical:#D9A64A; --lexical-soft:#3A2D14; --fk:#A996EA; --fk-soft:#2B2547; --shadow:#6C768A;
+}}
+:root[data-theme="dark"]{
+  --ground:#0F1218; --panel:#171B23; --panel-2:#1E232D; --ink:#E6E9EF; --muted:#9AA3B5; --line:#2A303C; --line-2:#39404E;
+  --accent:#3FBFA9; --accent-ink:#7ADCCB; --accent-soft:#163830;
+  --restrict:#E0655C; --restrict-soft:#3B1F1D;
+  --vector:#7EA3EE; --vector-soft:#1D2A44; --lexical:#D9A64A; --lexical-soft:#3A2D14; --fk:#A996EA; --fk-soft:#2B2547; --shadow:#6C768A;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent-ink)}
+code,.mono{font-family:var(--mono)}
+button{font:inherit;color:inherit;background:none;border:1px solid var(--line-2);border-radius:var(--r);padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--ink)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r);padding:8px 10px}
+.label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:20px;padding:12px 22px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.brand b{font-weight:600;font-size:16px}
+.brand span{color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:4px;margin-left:8px;overflow-x:auto}
+.tab{border:1px solid transparent;border-radius:var(--r);padding:6px 10px;color:var(--muted);white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--panel-2);color:var(--ink);border-color:var(--line)}
+.top .right{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;white-space:nowrap}
+.top .right code{background:var(--panel-2);padding:2px 6px;border-radius:4px}
+
+/* workspace */
+.work{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:calc(100vh - 53px)}
+@media (max-width:900px){.work{grid-template-columns:1fr}}
+.rail{border-right:1px solid var(--line);background:var(--panel);padding:18px;display:flex;flex-direction:column;gap:22px}
+@media (max-width:900px){.rail{border-right:0;border-bottom:1px solid var(--line)}}
+.rail section{display:flex;flex-direction:column;gap:8px}
+.rail h2{font-size:13px;font-weight:600;margin:0;display:flex;justify-content:space-between;align-items:baseline}
+.rail p.blurb{margin:0;color:var(--muted);font-size:13px}
+.roles{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:999px;padding:2px 10px;font-size:12px;background:var(--panel)}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+.chip button{border:0;padding:0;line-height:1;color:var(--muted)}
+.hint{display:grid;grid-template-columns:1fr;gap:2px;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--ground)}
+.hint code{font-size:12px;color:var(--accent-ink)}
+.hint textarea{border:0;background:transparent;padding:0;resize:vertical;min-height:34px;font-size:12.5px;color:var(--ink)}
+.restrict{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.restrict code{color:var(--restrict)}
+.restrict span{color:var(--muted)}
+
+.main{padding:22px 26px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.ask{display:flex;gap:8px}
+.ask input{flex:1;font-size:16px;padding:12px 14px;font-family:var(--sans)}
+.ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
+.examples{display:flex;flex-wrap:wrap;gap:6px}
+.examples button{border-style:dashed;color:var(--muted);font-size:12.5px;padding:4px 10px}
+.examples button:hover{color:var(--ink)}
+
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.stat .v{font-family:var(--mono);font-size:22px;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat .v small{font-size:13px;color:var(--muted)}
+.stat.saved .v{color:var(--accent-ink)}
+.stat.hidden .v{color:var(--restrict)}
+
+.results{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;min-height:320px}
+@media (max-width:1000px){.results{grid-template-columns:1fr}}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-width:0}
+.pane header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.pane header h3{margin:0;font-size:13px;font-weight:600}
+.pane header .meta{color:var(--muted);font-size:12px}
+.objs{list-style:none;margin:0;padding:6px}
+.obj{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border-radius:4px}
+.obj:hover{background:var(--panel-2)}
+.obj .name{font-family:var(--mono);font-size:13px;overflow-wrap:anywhere}
+.obj .name small{color:var(--muted);font-family:var(--sans);font-size:12px;margin-left:8px}
+.obj .score{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.reason{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;border-radius:3px;padding:2px 6px;min-width:58px;text-align:center}
+.reason.hybrid{background:var(--accent-soft);color:var(--accent-ink)}
+.reason.vector{background:var(--vector-soft);color:var(--vector)}
+.reason.lexical{background:var(--lexical-soft);color:var(--lexical)}
+.reason.fk{background:var(--fk-soft);color:var(--fk)}
+.reason.pinned{background:var(--panel-2);color:var(--ink)}
+.obj.shadowed .name::after{content:"shadow";font-family:var(--sans);font-size:10.5px;color:var(--shadow);margin-left:8px;text-transform:uppercase;letter-spacing:.04em}
+.empty{padding:26px 14px;color:var(--muted)}
+pre.ddl{margin:0;padding:12px 14px;font:12.5px/1.5 var(--mono);white-space:pre;overflow:auto;flex:1;tab-size:2}
+pre.ddl .c{color:var(--muted)}
+pre.ddl .k{color:var(--vector)}
+pre.ddl .n{color:var(--accent-ink);font-weight:500}
+
+.hiddenlist{display:flex;flex-wrap:wrap;gap:6px}
+.hiddenlist code{background:var(--restrict-soft);color:var(--restrict);border-radius:4px;padding:2px 7px;font-size:12px}
+details.more{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+details.more summary{cursor:pointer;padding:10px 14px;font-weight:500;list-style:none;display:flex;justify-content:space-between}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary .meta{color:var(--muted);font-weight:400;font-size:12px}
+details.more .body{padding:0 14px 12px;border-top:1px solid var(--line)}
+table.shadows{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:8px}
+table.shadows td{padding:4px 0;border-bottom:1px dashed var(--line);font-family:var(--mono)}
+table.shadows td:first-child{color:var(--shadow)}
+table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-family:var(--sans)}
+
+.aiswitch{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;flex-wrap:wrap}
+.aiswitch label{display:flex;align-items:center;gap:8px;font-weight:500}
+.aiswitch .note{color:var(--muted);font-size:12.5px}
+.aiswitch .delta{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px}
+.aiswitch .delta b{color:var(--accent-ink)}
+
+.intro{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:900px){.intro{grid-template-columns:1fr}}
+.intro>div{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;font-size:13px;line-height:1.55;color:var(--muted)}
+.intro b{color:var(--ink)}
+.intro code{background:var(--panel-2);padding:1px 5px;border-radius:3px;color:var(--ink)}
+.intro-try{border-left:3px solid var(--accent)!important}
+.steps{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.steps button{font-size:12.5px;color:var(--ink)}
+.steps button.done{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+.tryhint{display:block;margin-top:8px;font-size:12.5px;color:var(--accent-ink);min-height:1.2em}
+.stat.flash{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.stat.flash{transition:outline-color .2s}}
+.foot{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:8px}
+.foot .pane{padding:12px 14px;gap:6px}
+.foot h4{margin:0;font-size:12.5px;font-weight:600}
+.foot pre{margin:0;font:12px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);overflow-x:auto}
+.foot p{margin:0;color:var(--muted);font-size:12.5px}
+.err{background:var(--restrict-soft);color:var(--restrict);border-radius:var(--r);padding:8px 12px;font-size:13px}
+@media (prefers-reduced-motion:no-preference){.obj{transition:background .12s}}
+</style>
+
+<div class="top">
+  <div class="brand"><b>ashiq</b><span>studio</span></div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div class="right" id="mode"><span>demo · runs in your browser · no database connected</span> <code>pip install ashiq</code></div>
+</div>
+
+<div class="work">
+  <aside class="rail">
+    <section>
+      <h2 id="schemaTitle">Schema</h2>
+      <p class="blurb" id="schemaBlurb"></p>
+    </section>
+    <section>
+      <h2>Who is asking</h2>
+      <input id="principal" class="mono" placeholder="okta:jdoe" value="okta:analyst" aria-label="principal">
+      <div class="roles" id="roles"></div>
+      <input id="newRole" placeholder="add a role and press Enter" aria-label="add role" style="font-size:12.5px">
+    </section>
+    <section>
+      <h2>Restricted objects <span class="label" id="restrictCount"></span></h2>
+      <div id="restrictions"></div>
+    </section>
+    <section>
+      <h2>Hints <span class="label">editable</span></h2>
+      <div id="hints" style="display:flex;flex-direction:column;gap:6px"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="intro" id="intro">
+      <div class="intro-what">
+        <b>What this is.</b> A demo of <code>ashiq</code>, running entirely in this browser tab on six
+        invented example schemas. It is not connected to any database and does not call any AI model.
+        The real thing is <code>pip install ashiq</code>, which runs on your own database.
+      </div>
+      <div class="intro-try">
+        <b>The one thing to see.</b> A user only gets the tables they are allowed to see — before the model
+        writes any SQL.
+        <span class="steps">
+          <button id="try1">1 · Ask "salary by employee" as an analyst</button>
+          <button id="try2">2 · Now give them the payroll role</button>
+        </span>
+        <span class="tryhint" id="tryhint"></span>
+      </div>
+    </div>
+    <div class="ask">
+      <input id="q" placeholder="ask in your own words…" aria-label="question" autocomplete="off">
+      <button class="go" id="go">Select</button>
+    </div>
+    <div class="examples" id="examples"></div>
+    <div id="error" class="err" hidden></div>
+
+    <div class="stats">
+      <div class="stat"><span class="label">Selected</span><span class="v" id="sSel">–</span></div>
+      <div class="stat"><span class="label">Prompt tokens</span><span class="v" id="sTok">–</span></div>
+      <div class="stat saved"><span class="label">Saved vs full schema</span><span class="v" id="sSaved">–</span></div>
+      <div class="stat hidden"><span class="label">Hidden from this caller</span><span class="v" id="sHid">–</span></div>
+    </div>
+
+    <div class="aiswitch" id="aiswitch">
+      <label><input type="checkbox" id="ai"> Example AI descriptions</label>
+      <span class="note">pre-written examples of what a model would produce — <b>no model is called on this page</b>. With your own key, <code>cat.describe(...)</code> generates these for real.</span>
+      <span class="delta" id="aidelta"></span>
+    </div>
+
+    <div class="results">
+      <div class="pane">
+        <header><h3>Selected objects</h3><span class="meta" id="objMeta"></span></header>
+        <ul class="objs" id="objs"></ul>
+      </div>
+      <div class="pane">
+        <header><h3>What the model receives</h3><button id="copy" style="font-size:12px;padding:3px 9px">Copy DDL</button></header>
+        <pre class="ddl" id="ddl"></pre>
+      </div>
+    </div>
+
+    <div class="pane" style="padding:12px 14px;gap:8px">
+      <h3 style="margin:0;font-size:13px;font-weight:600">Hidden from <code id="hidWho">this caller</code></h3>
+      <p style="margin:0;color:var(--muted);font-size:12.5px">These exist in the catalog but never reach the prompt for this identity. Not de-ranked — absent.</p>
+      <div class="hiddenlist" id="hiddenlist"></div>
+    </div>
+
+    <details class="more">
+      <summary>Backup and staging copies demoted <span class="meta" id="shadowMeta"></span></summary>
+      <div class="body">
+        <p style="color:var(--muted);font-size:12.5px;margin:10px 0 0">A copy carries the same name words in a shorter document, and cosine similarity rewards exactly that. These are ranked below the object they shadow — unless you name them outright.</p>
+        <table class="shadows" id="shadows"></table>
+      </div>
+    </details>
+
+    <div class="foot">
+      <div class="pane"><h4>Use it from Python</h4><pre>pip install ashiq
+
+from ashiq import Catalog, Principal
+cat = Catalog().bootstrap("postgresql://localhost/app")
+cat.select("revenue by month",
+           principal=Principal("okta:jdoe", roles={"finance"}))</pre></div>
+      <div class="pane"><h4>Use it from Claude Desktop, Cursor, any MCP client</h4><pre>pip install 'ashiq[mcp]'
+ASHIQ_DATABASE_URL=postgresql://localhost/app \
+  python -m ashiq.mcp_server</pre></div>
+      <div class="pane"><h4>Run this studio on your own database</h4><pre>pip install ashiq
+ashiq studio --url postgresql://localhost/app</pre><p>Same page, your schema, nothing leaves your machine. <a href="https://github.com/ashishsinha1602/ashiq">github.com/ashishsinha1602/ashiq</a> · Apache-2.0 · Ashish Sinha</p></div>
+    </div>
+  </main>
+</div>
+
+<script>__BLAKE__</script>
+<script>__ASHIQ_JS__</script>
+<script id="schemas" type="application/json">__SCHEMAS_JSON__</script>
+<script id="descriptions" type="application/json">__DESCRIPTIONS_JSON__</script>
+<script>
+(function(){
+  const $=(id)=>document.getElementById(id);
+  const API = window.ASHIQ_API || null;
+  const SCHEMAS = JSON.parse($("schemas").textContent);
+  const DESC = JSON.parse($("descriptions").textContent);
+  const keys = Object.keys(SCHEMAS);
+  let state = { schema: keys.includes("warehouse") ? "warehouse" : keys[0], roles: new Set(), ai: false, cats: {} };
+
+  function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+  function catalogFor(key){
+    const k = key + (state.ai ? "|ai" : "");
+    if (!state.cats[k]) {
+      const spec = SCHEMAS[key];
+      const cat = new ashiq.Catalog(spec.docs);
+      for (const [t,h] of Object.entries(spec.hints)) { try { cat.hint(t,h); } catch(e){} }
+      for (const [t,r] of Object.entries(spec.restrict)) { try { cat.restrict(t,r); } catch(e){} }
+      if (state.ai && DESC[key]) cat.describe(DESC[key]);
+      state.cats[k] = cat;
+    }
+    return state.cats[k];
+  }
+  function invalidate(){ state.cats = {}; }
+
+  // ---- rail ----
+  function renderTabs(){
+    const t=$("tabs"); t.innerHTML="";
+    for (const k of keys){
+      const b=document.createElement("button"); b.className="tab"; b.role="tab"; b.textContent=SCHEMAS[k].title;
+      b.setAttribute("aria-selected", k===state.schema); b.onclick=()=>{state.schema=k; renderRail(); renderExamples(); $("q").value=SCHEMAS[k].questions[0]||""; run();};
+      t.appendChild(b);
+    }
+  }
+  function renderRail(){
+    const spec=SCHEMAS[state.schema];
+    $("schemaTitle").textContent=spec.title; $("schemaBlurb").textContent=spec.blurb;
+    const r=$("restrictions"); r.innerHTML="";
+    const entries=Object.entries(spec.restrict);
+    $("restrictCount").textContent=entries.length? entries.length+" objects":"none";
+    for (const [t,roles] of entries){ const d=document.createElement("div"); d.className="restrict"; d.innerHTML=`<code>${esc(t)}</code><span>needs ${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
+    const h=$("hints"); h.innerHTML="";
+    for (const [t,text] of Object.entries(spec.hints)){
+      const d=document.createElement("div"); d.className="hint";
+      d.innerHTML=`<code>${esc(t)}</code>`; const ta=document.createElement("textarea"); ta.value=text; ta.rows=Math.max(2, Math.ceil(text.length/36));
+      ta.onchange=()=>{ spec.hints[t]=ta.value; invalidate(); run(); }; d.appendChild(ta); h.appendChild(d);
+    }
+    renderRoles(); renderTabs();
+  }
+  function renderRoles(){
+    const spec=SCHEMAS[state.schema]; const known=new Set(Object.values(spec.restrict).flat());
+    for (const r of state.roles) known.add(r);
+    const box=$("roles"); box.innerHTML="";
+    for (const r of [...known].sort()){
+      const c=document.createElement("span"); c.className="chip"+(state.roles.has(r)?" on":""); c.tabIndex=0;
+      c.innerHTML=esc(r); c.onclick=()=>{ state.roles.has(r)? state.roles.delete(r): state.roles.add(r); renderRoles(); run(); };
+      c.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();c.onclick();} };
+      box.appendChild(c);
+    }
+  }
+  function renderExamples(){
+    const e=$("examples"); e.innerHTML="";
+    for (const q of SCHEMAS[state.schema].questions){ const b=document.createElement("button"); b.textContent=q; b.onclick=()=>{$("q").value=q; run();}; e.appendChild(b); }
+  }
+
+  // ---- selection ----
+  async function selectVia(question, principal, roles, topK){
+    if (API){
+      const res = await fetch(API+"/select",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,principal,roles:[...roles],top_k:topK,ai:state.ai})});
+      if(!res.ok) throw new Error(await res.text());
+      return await res.json();
+    }
+    const cat = catalogFor(state.schema);
+    let who=null; if (principal) who = ashiq.principal(principal, [...roles]);
+    const sel = cat.select(question, {topK, principal: who});
+    const allVisible = [...cat.docs.values()].filter(d=>cat._visible(d, who));
+    const hidden = [...cat.docs.values()].filter(d=>!cat._visible(d, who)).map(d=>ashiq.qname(d));
+    const full = allVisible.map(d=>ashiq.renderDdl(d)).join("\n\n");
+    return {
+      objects: sel.hits.map(h=>({name: ashiq.qname(h.doc), kind:h.doc.kind, columns:h.doc.columns.length, score:h.score, reason:h.reason, shadow: cat.shadows.has(ashiq.qname(h.doc))})),
+      total: cat.order.length, ddl: sel.promptFragment(),
+      tokens: ashiq.estimateTokens(sel.promptFragment()), full_tokens: ashiq.estimateTokens(full),
+      hidden, shadows: [...cat.shadows.entries()],
+    };
+  }
+
+  async function run(){
+    const q=$("q").value.trim(); if(!q) return;
+    $("error").hidden=true;
+    const principal=$("principal").value.trim();
+    let out;
+    try { out = await selectVia(q, principal, state.roles, 6); }
+    catch(e){ $("error").textContent=e.message; $("error").hidden=false; return; }
+    render(out, q, principal);
+  }
+
+  function highlight(ddl){
+    return esc(ddl).replace(/^(--.*)$/gm,'<span class="c">$1</span>')
+      .replace(/^(TABLE|VIEW|ENDPOINT) ([^\s(]+)/gm,'<span class="k">$1</span> <span class="n">$2</span>');
+  }
+  function render(out, q, principal){
+    $("sSel").innerHTML=`${out.objects.length}<small> / ${out.total}</small>`;
+    $("sTok").innerHTML=`${out.tokens.toLocaleString()}<small> vs ${out.full_tokens.toLocaleString()}</small>`;
+    const saved = out.full_tokens? 1-out.tokens/out.full_tokens : 0;
+    $("sSaved").textContent=(saved*100).toFixed(0)+"%";
+    $("sHid").textContent=out.hidden.length;
+    $("hidWho").textContent = principal || "anonymous";
+    $("objMeta").textContent = `for "${q}"`;
+    const ul=$("objs"); ul.innerHTML="";
+    if(!out.objects.length){ ul.innerHTML='<li class="empty">Nothing matched. Try other words, or add a hint in the rail.</li>'; }
+    for (const o of out.objects){
+      const li=document.createElement("li"); li.className="obj"+(o.shadow?" shadowed":"");
+      li.innerHTML=`<span class="reason ${o.reason}">${o.reason}</span><span class="name">${esc(o.name)}<small>${o.kind.toLowerCase()} · ${o.columns} col${o.columns===1?"":"s"}</small></span><span class="score">${o.score.toFixed(4)}</span>`;
+      ul.appendChild(li);
+    }
+    $("ddl").innerHTML=highlight(out.ddl);
+    const hl=$("hiddenlist"); hl.innerHTML=out.hidden.length? out.hidden.map(n=>`<code>${esc(n)}</code>`).join("") : '<span style="color:var(--muted);font-size:12.5px">Nothing — this caller can see every object.</span>';
+    const sh=$("shadows"); sh.innerHTML=out.shadows.map(([a,b])=>`<tr><td>${esc(a)}</td><td class="arrow">→</td><td>${esc(b)}</td></tr>`).join("");
+    $("shadowMeta").textContent=out.shadows.length? `${out.shadows.length} in this schema` : "none in this schema";
+    // AI delta on the golden set, when we have sample descriptions
+    const spec=SCHEMAS[state.schema]; const d=$("aidelta");
+    if (DESC[state.schema] && !API){
+      // measured for a caller who can see everything, so scoping does not cap it
+      const everyRole = Object.values(spec.restrict).flat();
+      const who = ashiq.principal("studio:benchmark", everyRole);
+      const recall=(cat)=>{ let h=0,t=0; for(const [qq,gold] of Object.entries(spec.golden)){ const got=new Set(cat.select(qq,{topK:6,principal:who}).tableNames.map(n=>n.split(".").pop())); h+=gold.filter(g=>got.has(g)).length; t+=gold.length; } return t? h/t:0; };
+      const was=state.ai; state.ai=false; const r0=recall(catalogFor(state.schema)); state.ai=true; const r1=recall(catalogFor(state.schema)); state.ai=was;
+      d.innerHTML=`recall on ${Object.keys(spec.golden).length} test questions, all roles: ${(r0*100).toFixed(0)}% → <b>${(r1*100).toFixed(0)}%</b>`;
+      $("aiswitch").hidden=false;
+    } else { $("aiswitch").hidden=!DESC[state.schema]; d.textContent=""; }
+  }
+
+  // ---- guided demo ----
+  function flash(id){ const el=$(id); el.classList.add("flash"); setTimeout(()=>el.classList.remove("flash"),1800); }
+  $("try1").onclick=async()=>{
+    if (keys.includes("commerce")){ state.schema="commerce"; renderRail(); renderExamples(); }
+    state.roles=new Set(); $("principal").value="okta:analyst"; renderRoles();
+    $("q").value="salary by employee"; await run(); flash("sHid");
+    $("try1").classList.add("done"); $("try2").classList.remove("done");
+    $("tryhint").textContent="hr_compensation is hidden — not ranked low, absent. Check the list on the left and the DDL on the right: it is in neither.";
+    $("q").scrollIntoView({behavior:"smooth",block:"start"});
+  };
+  $("try2").onclick=async()=>{
+    if (keys.includes("commerce")){ state.schema="commerce"; renderRail(); renderExamples(); }
+    state.roles=new Set(["payroll"]); $("principal").value="okta:analyst"; renderRoles();
+    $("q").value="salary by employee"; await run(); flash("sHid");
+    $("try2").classList.add("done");
+    $("tryhint").textContent="Same question, same person, one role added — hr_compensation now appears. That decision happens before any SQL is written.";
+    $("q").scrollIntoView({behavior:"smooth",block:"start"});
+  };
+
+  // ---- wire up ----
+  $("go").onclick=run; $("q").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
+  $("principal").addEventListener("change",run);
+  $("newRole").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){state.roles.add(v); e.target.value=""; renderRoles(); run();} }});
+  $("ai").addEventListener("change",e=>{ state.ai=e.target.checked; run(); });
+  $("copy").onclick=async()=>{ try{ await navigator.clipboard.writeText($("ddl").textContent); $("copy").textContent="Copied"; setTimeout(()=>$("copy").textContent="Copy DDL",1200);}catch(e){} };
+  if (API){ $("mode").innerHTML='<span>connected to your database</span>'; }
+  renderRail(); renderExamples();
+  $("q").value = SCHEMAS[state.schema].questions[0] || "";
+  run();
+})();
+</script>
