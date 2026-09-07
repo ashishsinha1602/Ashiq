@@ -1,3 +1,4 @@
+
 *.egg-info/
 *.pyc
 .hypothesis/
@@ -7,4 +8,5 @@
 __pycache__/
 build/
 dist/
+site/
 studio/schemas.json

@@ -1,5 +1,5 @@
 name: pages
-# Publishes the Studio (src/schemagate/studio.html) as the public demo at
+# Publishes the Studio, /cost/ and /vanna-alternative/ (scripts/build_site.py) at
 #   https://ashishsinha1602.github.io/schemagate/
 # One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
 on:
@@ -21,19 +21,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
       - name: assemble site
         run: |
-          mkdir -p site
-          # the artifact host wraps the page in <html>/<head>/<body>; Pages does not
-          {
-            echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            echo '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            echo '<meta name="description" content="Identity-scoped schema selection for text-to-SQL. Try it on six schemas, in your browser.">'
-            echo '<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>'
-            echo '</head><body>'
-            cat src/schemagate/studio.html
-            echo '</body></html>'
-          } > site/index.html
+          pip install markdown
+          python scripts/build_site.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: {path: site}
