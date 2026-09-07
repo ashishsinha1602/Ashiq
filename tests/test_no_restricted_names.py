@@ -24,7 +24,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKIP_DIRS = {".git", "__pycache__", "dist", "build", ".pytest_cache", ".venv", ".hypothesis",
              ".mypy_cache", ".ruff_cache", "node_modules"}
-SKIP_SUFFIX = {".pyc", ".gz", ".whl", ".png", ".jpg", ".so"}
+SKIP_SUFFIX = {".pyc", ".gz", ".whl", ".png", ".jpg", ".gif", ".so"}
 
 FIXTURES = ["schema_fixture", "schema_fixture_health"]
 

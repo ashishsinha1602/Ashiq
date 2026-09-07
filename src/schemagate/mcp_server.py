@@ -25,7 +25,11 @@ anonymous and sees only unrestricted objects. Fail closed.
 Restrictions and hints come from ``SCHEMAGATE_CATALOG_CONFIG``, a JSON file::
 
     {"restrict": {"hr_compensation": ["payroll"]},
-     "hint":     {"invoice_draft": "drafts only, not revenue"}}
+     "hint":     {"invoice_draft": "drafts only, not revenue"},
+     "describe": {"v_stock_shortfall": "Items below their reorder level."}}
+
+``describe`` is filled by ``schemagate describe`` (with a key, or by pasting
+the prompt into any chat -- no key needed).
 
 Staying up
 ----------
@@ -69,12 +73,8 @@ MAX_ROLES = 100
 def _apply_config(cat: Catalog, config_path: Optional[str]) -> None:
     if not config_path:
         return
-    with open(config_path, encoding="utf-8") as fh:
-        config = json.load(fh)
-    for table, roles in (config.get("restrict") or {}).items():
-        cat.restrict(table, list(roles))
-    for table, text in (config.get("hint") or {}).items():
-        cat.hint(table, str(text))
+    from . import config as _config
+    _config.apply(cat, _config.load(config_path))
 
 
 def _reflect(url: str, config_path: Optional[str]) -> Catalog:

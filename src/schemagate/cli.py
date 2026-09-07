@@ -71,10 +71,18 @@ def cmd_demo(args) -> int:
     return 0
 
 
-def cmd_select(args) -> int:
+def _open(args) -> Catalog:
     cat = Catalog().bootstrap(args.url, include=args.include or None,
                               exclude=args.exclude or None,
-                              schemas=args.schema or None)
+                              schemas=getattr(args, "schema", None) or None)
+    if getattr(args, "config", None):
+        from . import config as _config
+        _config.apply(cat, _config.load(args.config))
+    return cat
+
+
+def cmd_select(args) -> int:
+    cat = _open(args)
     sel = cat.select(args.question, top_k=args.top_k, principal=_principal(args),
                      expand_fks=not args.no_fk)
     _print_selection(sel, args.prompt, args.explain)
@@ -85,7 +93,73 @@ def cmd_studio(args) -> int:
     from .studio import main as studio_main
     return studio_main(url=args.url, host=args.host, port=args.port,
                        open_browser=not args.no_browser,
-                       include=args.include or None, exclude=args.exclude or None)
+                       include=args.include or None, exclude=args.exclude or None,
+                       config=args.config)
+
+
+def cmd_describe(args) -> int:
+    """Descriptions without an API key: print a prompt, paste it into any
+    chat, save the JSON reply, apply it. Or with a key, call a provider."""
+    import json
+    from . import config as _config
+
+    cat = _open(args)
+    if args.apply:
+        with open(args.apply, encoding="utf-8") as fh:
+            raw = fh.read().strip()
+        # tolerate a reply wrapped in ```json fences
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            raw = raw[raw.find("{"):raw.rfind("}") + 1]
+        try:
+            reply = json.loads(raw)
+        except json.JSONDecodeError as e:
+            sys.exit(f"schemagate: {args.apply} is not JSON: {e}")
+        if not isinstance(reply, dict):
+            sys.exit("schemagate: reply must be a JSON object of name -> description")
+        known = {d.qname for d in cat.objects()} | {d.name for d in cat.objects()}
+        unknown = [k for k in reply if k not in known]
+        applied = cat.describe(reply, only_missing=False)
+        keep = {k: v for k, v in reply.items() if k in known}
+        n = _config.merge_descriptions(args.config, keep) if args.config else applied
+        print(f"applied {applied} description(s)"
+              + (f"; saved to {args.config}" if args.config else "")
+              + (f"; {len(unknown)} name(s) not in catalog: {', '.join(unknown[:5])}" if unknown else ""))
+        if not args.config:
+            print("tip: add --config catalog.json to keep them for select/studio/MCP")
+        return 0 if n or applied else 1
+    if args.provider:
+        from .ai import SchemaDescriber
+        from .ai import providers as _p
+        if not args.model:
+            sys.exit("schemagate: --model is required with --provider (model ids change; pick one)")
+        classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
+                   "gemini": _p.GeminiProvider}
+        if args.provider == "auto":
+            provider = _p.auto_provider(args.model)
+        elif args.provider in classes:
+            provider = classes[args.provider](model=args.model)   # key from its env var
+        else:
+            sys.exit(f"schemagate: unknown provider {args.provider!r}; use anthropic, openai, gemini or auto")
+        describer = SchemaDescriber(provider, cache_path=args.cache)
+        n = cat.describe(describer, only_missing=not args.all)
+        got = {d.qname: d.description for d in cat.objects() if d.description}
+        if args.config:
+            _config.merge_descriptions(args.config, got)
+        print(f"described {n} object(s)" + (f"; saved to {args.config}" if args.config else ""))
+        return 0
+    prompt = cat.describe_prompt(only_missing=not args.all)
+    if not prompt:
+        print("nothing to describe: every object already has a comment or hint", file=sys.stderr)
+        return 0
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(prompt)
+        print(f"wrote {args.out} -- paste it into any chat, save the JSON reply, then:\n"
+              f"  schemagate describe --url ... --apply reply.json --config catalog.json", file=sys.stderr)
+    else:
+        sys.stdout.write(prompt)
+    return 0
 
 
 def cmd_certify(args) -> int:
@@ -134,6 +208,8 @@ def build_parser() -> argparse.ArgumentParser:
     select.add_argument("--schema", action="append", metavar="NAME")
     select.add_argument("--no-fk", action="store_true",
                         help="disable foreign-key expansion")
+    select.add_argument("--config", metavar="JSON",
+                        help="restrict / hint / describe blocks (see schemagate.config)")
     common(select)
     select.set_defaults(func=cmd_select)
 
@@ -144,7 +220,31 @@ def build_parser() -> argparse.ArgumentParser:
     studio.add_argument("--no-browser", action="store_true")
     studio.add_argument("--include", action="append", metavar="PATTERN")
     studio.add_argument("--exclude", action="append", metavar="PATTERN")
+    studio.add_argument("--config", metavar="JSON",
+                        help="restrict / hint / describe blocks (see schemagate.config)")
     studio.set_defaults(func=cmd_studio)
+
+    describe = sub.add_parser(
+        "describe",
+        help="AI descriptions for your objects -- with a key, or with none",
+        description="Without --provider or --apply, prints a prompt: paste it into "
+                    "any chat (Claude, ChatGPT, Gemini, a local model), save the JSON "
+                    "reply, then run again with --apply reply.json. No API key needed.")
+    describe.add_argument("--url", required=True, help="SQLAlchemy URL")
+    describe.add_argument("--include", action="append", metavar="PATTERN")
+    describe.add_argument("--exclude", action="append", metavar="PATTERN")
+    describe.add_argument("--schema", action="append", metavar="NAME")
+    describe.add_argument("--config", metavar="JSON",
+                          help="catalog config to read hints from and save descriptions into")
+    describe.add_argument("--out", metavar="FILE", help="write the prompt here instead of stdout")
+    describe.add_argument("--apply", metavar="REPLY.json", help="the chat's JSON reply to apply")
+    describe.add_argument("--all", action="store_true",
+                          help="include objects that already have a comment or hint")
+    describe.add_argument("--provider", metavar="NAME",
+                          help="anthropic | openai | gemini | auto -- uses your own key from the environment")
+    describe.add_argument("--model", metavar="ID", help="model id for --provider")
+    describe.add_argument("--cache", metavar="FILE", help="description cache for --provider")
+    describe.set_defaults(func=cmd_describe)
 
     certify = sub.add_parser("certify", help="end-to-end check on a real engine")
     certify.add_argument("url")

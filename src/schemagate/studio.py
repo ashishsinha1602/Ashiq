@@ -166,11 +166,15 @@ def serve(state: StudioState, host: str = "127.0.0.1", port: int = 8770,
 
 
 def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
-         open_browser: bool = True, include=None, exclude=None) -> int:
+         open_browser: bool = True, include=None, exclude=None,
+         config: Optional[str] = None) -> int:
     if url:
         cat = Catalog(name="studio").bootstrap(url, include=include, exclude=exclude)
+        if config:
+            from . import config as _config
+            _config.apply(cat, _config.load(config))
         title = "Your database"
-        blurb = f"{len(cat._docs)} objects reflected. Hints and restrictions come from your code or config."
+        blurb = f"{len(cat._docs)} objects reflected. Hints, restrictions and descriptions come from --config."
         questions: List[str] = []
     else:
         from .demo_schema import GOLDEN, HINTS, create_demo_db

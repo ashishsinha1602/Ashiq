@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 from .embedder import Embedder, HashingEmbedder, tokenize
 from .identity import Principal
@@ -162,13 +162,49 @@ class Catalog:
                    if not (only_missing and (d.description or d.hint))]
         if not targets:
             return 0
-        written = describer.describe(targets)
+        if isinstance(describer, Mapping):
+            # No key, no SDK: descriptions you already have -- from
+            # describe_prompt() pasted into any chat, from a colleague's
+            # file, from anywhere. Keys may be qualified or bare names.
+            by_name = {d.name: d.qname for d in targets}
+            by_qname = {d.qname for d in targets}
+            written = {}
+            for key, text in describer.items():
+                q = key if key in by_qname else by_name.get(key)
+                if q and str(text).strip():
+                    written[q] = str(text).strip()
+        else:
+            written = describer.describe(targets)
         for qname, text in written.items():
             if qname in self._docs:
                 self._docs[qname].description = text
         if written:
             self._stale = True
         return len(written)
+
+    def describe_prompt(self, only_missing: bool = True, max_columns: int = 30) -> str:
+        """A single prompt you can paste into any chat -- Claude, ChatGPT,
+        Gemini, a local model -- to get descriptions without an API key.
+
+        The reply is JSON mapping object name to a one-sentence description;
+        feed it back with ``describe(json.loads(reply))`` or
+        ``schemagate describe --apply reply.json``. Only metadata is in the
+        prompt: names, types, comments, foreign keys. Never rows.
+        """
+        from .ai.describe import _SYSTEM, _render
+        targets = [d for d in self._docs.values()
+                   if not (only_missing and (d.description or d.hint))]
+        if not targets:
+            return ""
+        parts = [_SYSTEM, "",
+                 "Do this for every object below. Reply with ONLY a JSON object "
+                 "mapping each object's full name (exactly as written, e.g. "
+                 f'"{targets[0].qname}") to its one-sentence description. '
+                 "No markdown fences, no commentary.", ""]
+        for d in targets:
+            parts.append(_render(d, max_columns))
+            parts.append("")
+        return "\n".join(parts).rstrip() + "\n"
 
     def restrict(self, table: str, roles: Sequence[str]) -> None:
         """Make an object visible only to principals holding one of ``roles``.

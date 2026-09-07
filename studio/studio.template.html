@@ -71,6 +71,11 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .examples button:hover{color:var(--ink)}
 
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cost{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;font-size:13px}
+.cost input{width:5.5em;padding:2px 6px;font-size:13px;font-family:var(--mono)}
+.cost .money{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.cost .money b{color:var(--accent-ink)}.cost .money s{color:var(--muted)}
+.cost .note{color:var(--muted);font-size:12px;flex-basis:100%}
 @media (max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
 .stat .v{font-family:var(--mono);font-size:22px;font-variant-numeric:tabular-nums;line-height:1.2}
@@ -199,6 +204,13 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <div class="stat"><span class="label">Prompt tokens</span><span class="v" id="sTok">–</span></div>
       <div class="stat saved"><span class="label">Saved vs full schema</span><span class="v" id="sSaved">–</span></div>
       <div class="stat hidden"><span class="label">Hidden from this caller</span><span class="v" id="sHid">–</span></div>
+    </div>
+    <div class="cost" id="cost">
+      <span class="label">What that is worth</span>
+      <span>at <input id="cQpd" type="number" min="1" value="5000" aria-label="queries per day"> queries/day and
+        $<input id="cPrice" type="number" min="0" step="0.05" value="3.00" aria-label="dollars per million input tokens">/M input tokens:</span>
+      <span class="money"><s id="cFull">–</s> → <b id="cSel">–</b> per month on schema tokens, <b id="cSave">–</b> saved</span>
+      <span class="note">your numbers, your prices — this only multiplies the token counts above. Savings grow with schema size: the 260-object test schema is 97%.</span>
     </div>
 
     <div class="aiswitch" id="aiswitch">
@@ -352,12 +364,23 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
     return esc(ddl).replace(/^(--.*)$/gm,'<span class="c">$1</span>')
       .replace(/^(TABLE|VIEW|ENDPOINT) ([^\s(]+)/gm,'<span class="k">$1</span> <span class="n">$2</span>');
   }
+  let lastTokens = null;
+  function money(x){ return x >= 1000 ? "$"+Math.round(x).toLocaleString() : "$"+x.toFixed(2); }
+  function renderCost(){
+    if(!lastTokens) return;
+    const qpd = Math.max(0, +$("cQpd").value || 0), price = Math.max(0, +$("cPrice").value || 0);
+    const perMonth = t => t * qpd * 30 / 1e6 * price;
+    const full = perMonth(lastTokens[1]), sel = perMonth(lastTokens[0]);
+    $("cFull").textContent = money(full); $("cSel").textContent = money(sel); $("cSave").textContent = money(Math.max(0, full - sel));
+  }
+  $("cQpd").oninput = renderCost; $("cPrice").oninput = renderCost;
   function render(out, q, principal){
     $("sSel").innerHTML=`${out.objects.length}<small> / ${out.total}</small>`;
     $("sTok").innerHTML=`${out.tokens.toLocaleString()}<small> vs ${out.full_tokens.toLocaleString()}</small>`;
     const saved = out.full_tokens? 1-out.tokens/out.full_tokens : 0;
     $("sSaved").textContent=(saved*100).toFixed(0)+"%";
     $("sHid").textContent=out.hidden.length;
+    lastTokens = [out.tokens, out.full_tokens]; renderCost();
     $("hidWho").textContent = principal || "anonymous";
     $("objMeta").textContent = `for "${q}"`;
     const ul=$("objs"); ul.innerHTML="";
