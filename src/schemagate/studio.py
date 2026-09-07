@@ -1,7 +1,7 @@
-"""``ashiq studio``: the Studio page, served locally against your database.
+"""``schemagate studio``: the Studio page, served locally against your database.
 
-    ashiq studio --url postgresql://localhost/app
-    ashiq studio                       # bundled demo schema
+    schemagate studio --url postgresql://localhost/app
+    schemagate studio                       # bundled demo schema
 
 Opens http://127.0.0.1:8770. The page is the same one published as the
 public demo; the difference is that selection runs in this Python process
@@ -93,14 +93,14 @@ def _handler(state: StudioState):
     end = page.index("</script>", start)
     page = (page[:start] + json.dumps(state.schemas_json(), ensure_ascii=False).replace("</", "<\\/")
             + page[end:])
-    page = page.replace("<script>\n(function(){", '<script>window.ASHIQ_API="/api";\n(function(){', 1)
+    page = page.replace("<script>\n(function(){", '<script>window.SCHEMAGATE_API="/api";\n(function(){', 1)
     body = page.encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "ashiq-studio"
+        server_version = "schemagate-studio"
 
         def log_message(self, fmt, *args):      # quiet by default
-            if os.environ.get("ASHIQ_STUDIO_LOG"):
+            if os.environ.get("SCHEMAGATE_STUDIO_LOG"):
                 super().log_message(fmt, *args)
 
         def _json(self, code: int, payload: Any) -> None:
@@ -156,7 +156,7 @@ def serve(state: StudioState, host: str = "127.0.0.1", port: int = 8770,
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = f"http://{host}:{server.server_address[1]}/"
-    print(f"ashiq studio: {url}   ({len(state.catalog._docs)} objects)")
+    print(f"schemagate studio: {url}   ({len(state.catalog._docs)} objects)")
     if open_browser:
         try:
             webbrowser.open(url)

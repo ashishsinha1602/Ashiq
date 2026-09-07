@@ -26,8 +26,8 @@ from schema_fixture_complex import (  # noqa: E402
     RESTRICTED,
 )
 
-from ashiq import Catalog, Principal  # noqa: E402
-from ashiq.ai import CallableProvider, SchemaDescriber  # noqa: E402
+from schemagate import Catalog, Principal  # noqa: E402
+from schemagate.ai import CallableProvider, SchemaDescriber  # noqa: E402
 
 
 from schema_fixture_complex import statements  # noqa: E402
@@ -36,7 +36,7 @@ from schema_fixture_complex import statements  # noqa: E402
 #: PostgreSQL when a URL is exported. A structural bug that only shows up on
 #: a server database is exactly what this catches.
 _ENGINES = ["sqlite"]
-if os.environ.get("ASHIQ_POSTGRES_URL"):
+if os.environ.get("SCHEMAGATE_POSTGRES_URL"):
     _ENGINES.append("postgres")
 
 
@@ -69,7 +69,7 @@ def _build_postgres():
     PostgreSQL rejects a foreign key that points at a table which does not
     exist yet, so every edge of the reference cycle is added by ALTER.
     """
-    eng = sa.create_engine(os.environ["ASHIQ_POSTGRES_URL"],
+    eng = sa.create_engine(os.environ["SCHEMAGATE_POSTGRES_URL"],
                            isolation_level="AUTOCOMMIT")
     with eng.connect() as conn:
         for schema in ["public"] + ATTACHED_SCHEMAS:
@@ -277,7 +277,7 @@ def test_single_column_table_renders(big):
 
 
 def test_long_identifier_is_preserved_as_the_database_reports_it(big):
-    """Engines cap identifier length differently and ashiq must not add
+    """Engines cap identifier length differently and schemagate must not add
     a second cap on top.
 
     PostgreSQL truncates to 63 bytes at CREATE time, Oracle to 128, SQLite

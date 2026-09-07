@@ -1,6 +1,6 @@
-"""ashiq -- identity-scoped schema selection for NL2SQL.
+"""schemagate -- identity-scoped schema selection for NL2SQL.
 
-    from ashiq import Catalog, Principal
+    from schemagate import Catalog, Principal
     cat = Catalog().bootstrap("postgresql://localhost/app")
     sel = cat.select("revenue by month", principal=Principal("okta:jdoe"))
     sel.prompt_fragment()
@@ -18,7 +18,7 @@ __all__ = ["Catalog", "Principal", "IdentityError", "ObjectDoc", "Column",
 
 
 def __getattr__(name):
-    # Lazy, so importing ashiq never pulls in oracledb or
+    # Lazy, so importing schemagate never pulls in oracledb or
     # sentence-transformers. Both raise a clear ImportError naming the extra.
     if name == "OracleStore":
         from .stores.oracle import OracleStore
@@ -26,4 +26,4 @@ def __getattr__(name):
     if name == "SentenceTransformerEmbedder":
         from .embedders.hf import SentenceTransformerEmbedder
         return SentenceTransformerEmbedder
-    raise AttributeError(f"module 'ashiq' has no attribute {name!r}")
+    raise AttributeError(f"module 'schemagate' has no attribute {name!r}")

@@ -1,9 +1,9 @@
 """Adapters for hosted AI models. All optional; none is ever required.
 
-ashiq works with no AI provider at all -- the default embedder is offline and
+schemagate works with no AI provider at all -- the default embedder is offline and
 deterministic. A provider buys you two things: better catalog descriptions
-(``ashiq.ai.SchemaDescriber``) and semantic embeddings
-(``ashiq.ai.APIEmbedder``). Both are opt-in and both degrade to the offline
+(``schemagate.ai.SchemaDescriber``) and semantic embeddings
+(``schemagate.ai.APIEmbedder``). Both are opt-in and both degrade to the offline
 path if the provider is unavailable.
 
 Bring your own key. Nothing here reads a key from anywhere except the
@@ -14,7 +14,7 @@ model identifiers change often, and a library that hardcodes one eventually
 ships a default that 404s for everyone. Pass the model you actually have
 access to.
 
-    from ashiq.ai import AnthropicProvider, SchemaDescriber
+    from schemagate.ai import AnthropicProvider, SchemaDescriber
 
     provider = AnthropicProvider(model="claude-sonnet-4-5")
     cat.describe(SchemaDescriber(provider))
@@ -32,7 +32,7 @@ from typing import Any, Callable, List, Optional, Protocol, Sequence, runtime_ch
 
 @runtime_checkable
 class Provider(Protocol):
-    """What ashiq needs from a model. Implement either method, or both."""
+    """What schemagate needs from a model. Implement either method, or both."""
 
     name: str
 
@@ -50,7 +50,7 @@ class ProviderError(RuntimeError):
 class CallableProvider:
     """Wrap any function ``f(system, prompt) -> str``.
 
-    Use this for a provider ashiq does not ship, a gateway, a local model,
+    Use this for a provider schemagate does not ship, a gateway, a local model,
     or when an SDK changes and you do not want to wait for a release.
     """
 
@@ -93,7 +93,7 @@ class AnthropicProvider:
         try:
             import anthropic
         except ImportError as e:
-            raise ImportError("pip install 'ashiq[anthropic]' to use "
+            raise ImportError("pip install 'schemagate[anthropic]' to use "
                               "AnthropicProvider") from e
         key = api_key or os.environ.get(self.env_var)
         if not key:
@@ -139,7 +139,7 @@ class OpenAIProvider:
         try:
             import openai
         except ImportError as e:
-            raise ImportError("pip install 'ashiq[openai]' to use "
+            raise ImportError("pip install 'schemagate[openai]' to use "
                               "OpenAIProvider") from e
         key = api_key or os.environ.get(self.env_var)
         if not key:
@@ -198,7 +198,7 @@ class GeminiProvider:
         try:
             from google import genai
         except ImportError as e:
-            raise ImportError("pip install 'ashiq[gemini]' to use "
+            raise ImportError("pip install 'schemagate[gemini]' to use "
                               "GeminiProvider") from e
         key = (api_key or os.environ.get(self.env_var)
                or os.environ.get(self.alt_env_var))
@@ -264,5 +264,5 @@ def auto_provider(model: str, env: Optional[dict] = None, **kwargs):
     raise ValueError(
         "no provider API key found; set one of "
         + ", ".join(v for v, _ in _AUTO_ORDER)
-        + " or construct a provider directly. ashiq works without one."
+        + " or construct a provider directly. schemagate works without one."
     )

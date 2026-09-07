@@ -5,7 +5,7 @@ import schema_fixture_health as health
 import schema_fixture_warehouse as warehouse
 import schema_fixture_finance as finance
 import schema_fixture_telemetry as telemetry
-from ashiq import Catalog
+from schemagate import Catalog
 
 # ---- token counting -------------------------------------------------------
 # Exact cl100k counts when tiktoken is installed AND its BPE file is
@@ -133,7 +133,7 @@ full = count_tokens("\n\n".join(d.render_ddl() for d in cat._docs.values()))
 per_q = [count_tokens(cat.select(q, top_k=6).prompt_fragment()) for q, _ in GOLDEN]
 avg = sum(per_q) / len(per_q)
 print(f"full schema, every call : {full:>6,}   ({len(cat._docs)} objects)")
-print(f"ashiq, average       : {avg:>6,.0f}   (min {min(per_q):,}  max {max(per_q):,})")
+print(f"schemagate, average       : {avg:>6,.0f}   (min {min(per_q):,}  max {max(per_q):,})")
 reduction = 1 - avg / full
 print(f"reduction               : {reduction:>6.1%}")
 

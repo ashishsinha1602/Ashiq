@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from ashiq.cli import main
+from schemagate.cli import main
 
 
 def run(*argv):
@@ -77,8 +77,8 @@ def test_version_flag():
 
 
 def test_console_script_is_installed():
-    """`ashiq` on PATH, as pip would install it."""
-    out = subprocess.run([sys.executable, "-m", "ashiq.cli", "demo",
+    """`schemagate` on PATH, as pip would install it."""
+    out = subprocess.run([sys.executable, "-m", "schemagate.cli", "demo",
                           "headcount per department"],
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr

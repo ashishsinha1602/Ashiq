@@ -1,6 +1,6 @@
 """Identity scoping.
 
-Every write and every read in ashiq carries a Principal. This is the whole
+Every write and every read in schemagate carries a Principal. This is the whole
 point of the library: schema selection happens *before* the database gets a
 chance to enforce row-level security, so if selection is not identity-aware
 the model can be handed tables the caller cannot read. The resulting SQL is

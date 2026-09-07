@@ -3,7 +3,7 @@
 No Oracle instance is needed here. These tests drive OracleStore against a
 recording fake connection and assert on the statements and bind values it
 produces. They cannot prove the SQL runs -- only a real database does that,
-via tests/test_store_conformance.py with ASHIQ_ORACLE_DSN set -- but they
+via tests/test_store_conformance.py with SCHEMAGATE_ORACLE_DSN set -- but they
 do pin the things most likely to rot silently: the scope predicate, the
 parameterisation, and the vector binding format.
 """
@@ -11,8 +11,8 @@ import array
 
 import pytest
 
-from ashiq import HashingEmbedder
-from ashiq.stores.oracle import OracleStore
+from schemagate import HashingEmbedder
+from schemagate.stores.oracle import OracleStore
 
 
 class FakeCursor:
@@ -58,7 +58,7 @@ def conn():
 
 @pytest.fixture
 def store(conn):
-    return OracleStore(connection=conn, table="ASHIQ_TEST", dim=8)
+    return OracleStore(connection=conn, table="SCHEMAGATE_TEST", dim=8)
 
 
 VEC = [0.1] * 8
@@ -144,7 +144,7 @@ def test_upsert_rejects_wrong_dimension(store):
 
 def test_values_are_bound_never_interpolated(store, conn):
     """A namespace or key containing SQL must not change the statement."""
-    nasty = "ns'; DELETE FROM ASHIQ_TEST --"
+    nasty = "ns'; DELETE FROM SCHEMAGATE_TEST --"
     store.upsert(nasty, nasty, VEC, {"q": nasty})
     sql, binds = conn.log[0]
     assert "DELETE" not in sql
@@ -154,7 +154,7 @@ def test_values_are_bound_never_interpolated(store, conn):
 def test_upsert_uses_merge_so_reindex_does_not_duplicate(store, conn):
     store.upsert("ns", "k", VEC, {})
     sql = conn.log[0][0]
-    assert sql.startswith("MERGE INTO ASHIQ_TEST")
+    assert sql.startswith("MERGE INTO SCHEMAGATE_TEST")
     assert "WHEN MATCHED THEN UPDATE" in sql
     assert "WHEN NOT MATCHED THEN" in sql
 
@@ -202,7 +202,7 @@ def test_search_binds_k_and_max_distance(store, conn):
 def test_purge_is_scoped_to_one_namespace(store, conn):
     store.purge("ns")
     sql, binds = conn.log[0]
-    assert sql == "DELETE FROM ASHIQ_TEST WHERE ns = :ns"
+    assert sql == "DELETE FROM SCHEMAGATE_TEST WHERE ns = :ns"
     assert binds["ns"] == "ns"
 
 
@@ -234,7 +234,7 @@ def test_get_missing_returns_none():
 # --- integration with Catalog --------------------------------------------
 
 def test_catalog_rejects_embedder_store_dimension_mismatch():
-    from ashiq import Catalog, Column, ObjectDoc
+    from schemagate import Catalog, Column, ObjectDoc
 
     store = OracleStore(connection=FakeConnection(), table="T", dim=64)
     cat = Catalog(embedder=HashingEmbedder(dim=512), store=store)
@@ -265,7 +265,7 @@ def test_store_does_not_close_a_borrowed_connection():
 
 def _statements_emitted():
     conn = FakeConnection()
-    store = OracleStore(connection=conn, table="ASHIQ_SYNTAX", dim=8)
+    store = OracleStore(connection=conn, table="SCHEMAGATE_SYNTAX", dim=8)
     store.create_schema()
     store.upsert("ns", "k", [0.1] * 8, {"a": 1})
     store.search("ns", [0.1] * 8, k=3, scope="s")

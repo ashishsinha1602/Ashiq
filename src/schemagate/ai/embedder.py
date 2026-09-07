@@ -8,8 +8,8 @@ Measure before adopting: on identifier-heavy schema text the offline
 embedder is often competitive, and ``tests/bench.py`` runs against your
 own schema. This is a swap, not an upgrade.
 
-    from ashiq import Catalog
-    from ashiq.ai import APIEmbedder, OpenAIProvider
+    from schemagate import Catalog
+    from schemagate.ai import APIEmbedder, OpenAIProvider
 
     provider = OpenAIProvider(model="gpt-4.1-mini",
                               embed_model="text-embedding-3-small")

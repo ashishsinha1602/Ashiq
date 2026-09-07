@@ -6,7 +6,7 @@ run against every available backend.
 
 MemoryStore always runs. OracleStore runs only when a database is reachable:
 
-    export ASHIQ_ORACLE_DSN='user/password@host:1521/FREEPDB1'
+    export SCHEMAGATE_ORACLE_DSN='user/password@host:1521/FREEPDB1'
     pytest tests/test_store_conformance.py -v
 
 That single command is what certifies the Oracle backend. Until it has been
@@ -18,7 +18,7 @@ import uuid
 
 import pytest
 
-from ashiq import HashingEmbedder, MemoryStore
+from schemagate import HashingEmbedder, MemoryStore
 
 DIM = 64
 _E = HashingEmbedder(dim=DIM)
@@ -28,15 +28,15 @@ def vec(text):
     return _E.embed([text])[0]
 
 
-ORACLE_DSN = os.environ.get("ASHIQ_ORACLE_DSN")
+ORACLE_DSN = os.environ.get("SCHEMAGATE_ORACLE_DSN")
 
 
 def _oracle_store():
-    from ashiq.stores.oracle import OracleStore
-    user = os.environ.get("ASHIQ_ORACLE_USER")
-    pw = os.environ.get("ASHIQ_ORACLE_PASSWORD")
+    from schemagate.stores.oracle import OracleStore
+    user = os.environ.get("SCHEMAGATE_ORACLE_USER")
+    pw = os.environ.get("SCHEMAGATE_ORACLE_PASSWORD")
     store = OracleStore(dsn=ORACLE_DSN, user=user, password=pw,
-                        table="ASHIQ_CONFORMANCE", dim=DIM)
+                        table="SCHEMAGATE_CONFORMANCE", dim=DIM)
     store.create_schema()
     return store
 
@@ -47,7 +47,7 @@ def store(request):
         yield MemoryStore()
         return
     if not ORACLE_DSN:
-        pytest.skip("set ASHIQ_ORACLE_DSN to certify the Oracle backend")
+        pytest.skip("set SCHEMAGATE_ORACLE_DSN to certify the Oracle backend")
     s = _oracle_store()
     try:
         yield s

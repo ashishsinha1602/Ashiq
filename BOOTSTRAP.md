@@ -5,9 +5,9 @@ Get the employment clearance email sent and answered. Everything below is
 irreversible once it hits PyPI — names cannot be reused, and deleted releases
 stay deleted.
 
-Also decide the name. Check https://pypi.org/project/ashiq/ first; if it is
+Also decide the name. Check https://pypi.org/project/schemagate/ first; if it is
 taken, pick another and change it in `pyproject.toml` AND the directory
-`src/ashiq/`.
+`src/schemagate/`.
 
 ## 1. Create the repo (mobile browser)
 github.com → **+** → New repository → name it → Public → Create.
@@ -27,7 +27,7 @@ pip install -e ".[dev]"
 pytest -q                  # expect 300+ passed (skips need DB URLs / node)
 python tests/bench.py      # expect recall 100% on both schemas, -75.6% tokens
 python scripts/certify_dialect.py <your-db-url>   # certify a dialect
-git add -A && git commit -m "ashiq 0.1.0" && git push
+git add -A && git commit -m "schemagate 0.1.0" && git push
 ```
 
 ## 2b. Turn on the name guard
@@ -44,25 +44,25 @@ outside contributors.
 
 ## 3. Placeholders — already done
 `pyproject.toml` and `LICENSE` are filled in (Ashish Sinha,
-github.com/ashishsinha1602/ashiq). Nothing to edit unless you rename the
+github.com/ashishsinha1602/schemagate). Nothing to edit unless you rename the
 project or want an author email in the metadata (optional; it becomes public
 on PyPI, so leaving it out is reasonable).
 
 ## 4. Wire up PyPI trusted publishing (no tokens anywhere)
 1. pypi.org → account → **Publishing** → *Add a pending publisher*
-2. PyPI project name: `ashiq`
+2. PyPI project name: `schemagate`
 3. Owner: `<your github user>`  ·  Repository: `<repo>`
 4. Workflow filename: `publish.yml`  ·  Environment: `pypi`
 5. On GitHub: Settings → Environments → New environment → `pypi`
 
 ## 4b. Public demo page (GitHub Pages)
 Settings → Pages → Source: **GitHub Actions**. The `pages` workflow then
-publishes the Studio at https://ashishsinha1602.github.io/ashiq/ on every
-push to main. No files to add; it builds from `src/ashiq/studio.html`.
+publishes the Studio at https://ashishsinha1602.github.io/schemagate/ on every
+push to main. No files to add; it builds from `src/schemagate/studio.html`.
 
 ## 5. Ship
 GitHub → Releases → *Draft a new release* → tag `v0.1.0` → Publish.
-The `publish` workflow builds and uploads. `pip install ashiq` works
+The `publish` workflow builds and uploads. `pip install schemagate` works
 within a minute or two.
 
 ## 6. Version bumps

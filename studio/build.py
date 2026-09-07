@@ -1,7 +1,7 @@
 """Assemble studio.html from the template, the JS port, blake2b and the schemas.
 
 Produces two copies: ``studio/studio.html`` (published as the demo link) and
-``ashiq/src/ashiq/studio.html`` (served by ``ashiq studio`` against a real
+``schemagate/src/schemagate/studio.html`` (served by ``schemagate studio`` against a real
 database, where the Python backend replaces the in-browser selector).
 """
 import json
@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-PKG = HERE.parent / "src" / "ashiq"
+PKG = HERE.parent / "src" / "schemagate"
 
 subprocess.run([sys.executable, str(HERE / "export_schemas.py")], check=True)
 schemas = json.loads((HERE / "schemas.json").read_text("utf-8"))
@@ -42,7 +42,7 @@ descriptions = {
 template = (HERE / "studio.template.html").read_text("utf-8")
 html = (template
         .replace("__BLAKE__", (HERE / "blake2b.browser.js").read_text("utf-8"))
-        .replace("__ASHIQ_JS__", (HERE / "ashiq.js").read_text("utf-8"))
+        .replace("__SCHEMAGATE_JS__", (HERE / "schemagate.js").read_text("utf-8"))
         .replace("__SCHEMAS_JSON__", json.dumps(schemas, ensure_ascii=False).replace("</", "<\\/"))
         .replace("__DESCRIPTIONS_JSON__", json.dumps(descriptions, ensure_ascii=False).replace("</", "<\\/")))
 

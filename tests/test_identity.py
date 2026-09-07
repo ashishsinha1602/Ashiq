@@ -1,5 +1,5 @@
 import pytest
-from ashiq import Principal, IdentityError
+from schemagate import Principal, IdentityError
 
 @pytest.mark.parametrize("bad", ["", "   ", "nonamespace", "no colon here", "okta:"])
 def test_rejects_unnamespaced_subjects(bad):

@@ -1,20 +1,20 @@
 """Oracle-shaped metadata through the real reflection code, no server needed.
 
-The live Oracle run still needs an instance (``ASHIQ_ORACLE_URL``). What
-can be tested without one is everything ashiq does *with* what Oracle's
+The live Oracle run still needs an instance (``SCHEMAGATE_ORACLE_URL``). What
+can be tested without one is everything schemagate does *with* what Oracle's
 SQLAlchemy dialect hands back: uppercase owners and names, ``VARCHAR2(100
 CHAR)`` and ``NUMBER(10, 2)`` type strings, ``DATE``/``TIMESTAMP(6)``/``CLOB``,
 system schemas that must be skipped, view definitions full of ``NVL``,
 ``DECODE`` and ``SYSDATE``, and the object_list shape Select AI expects.
 
-A fake Inspector returns exactly that, and ``ashiq.introspect.reflect`` is
+A fake Inspector returns exactly that, and ``schemagate.introspect.reflect`` is
 run against it unchanged.
 """
 import pytest
 
-from ashiq import Catalog, Principal
-from ashiq.introspect import _SYSTEM_SCHEMAS, reflect
-from ashiq.models import _identifiers
+from schemagate import Catalog, Principal
+from schemagate.introspect import _SYSTEM_SCHEMAS, reflect
+from schemagate.models import _identifiers
 
 # --- what python-oracledb + SQLAlchemy actually return -----------------------
 

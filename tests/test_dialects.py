@@ -1,11 +1,11 @@
 """Reflection across database dialects.
 
-``ashiq.introspect.reflect`` is written against SQLAlchemy's dialect-agnostic
+``schemagate.introspect.reflect`` is written against SQLAlchemy's dialect-agnostic
 ``Inspector`` API, so it should work anywhere SQLAlchemy does. "Should" is
 not evidence, so:
 
 * SQLite runs everywhere and is always tested.
-* Postgres runs whenever ``ASHIQ_POSTGRES_URL`` is set.
+* Postgres runs whenever ``SCHEMAGATE_POSTGRES_URL`` is set.
 * Oracle, SQL Server and MySQL run whenever their URL variables are set.
 * A dialect-independent test asserts we only call Inspector methods that
   every mainstream dialect implements, which is what makes the untested
@@ -13,7 +13,7 @@ not evidence, so:
 
 To certify a dialect against your own database::
 
-    export ASHIQ_ORACLE_URL='oracle+oracledb://user:pw@host:1521/?service_name=FREEPDB1'
+    export SCHEMAGATE_ORACLE_URL='oracle+oracledb://user:pw@host:1521/?service_name=FREEPDB1'
     pytest tests/test_dialects.py -v
 
 or run ``python scripts/certify_dialect.py <url>`` for a standalone report.
@@ -23,8 +23,8 @@ import os
 import pytest
 import sqlalchemy as sa
 
-from ashiq import Catalog, Principal
-from ashiq.introspect import reflect
+from schemagate import Catalog, Principal
+from schemagate.introspect import reflect
 
 # --- a small schema expressed in portable DDL -----------------------------
 # Deliberately not the big fixture: this must run identically on five
@@ -33,7 +33,7 @@ from ashiq.introspect import reflect
 TABLES = sa.MetaData()
 
 customer = sa.Table(
-    "ashiq_customer", TABLES,
+    "schemagate_customer", TABLES,
     sa.Column("id", sa.Integer, primary_key=True),
     sa.Column("account_number", sa.String(40), nullable=False),
     sa.Column("segment", sa.String(40)),
@@ -41,27 +41,27 @@ customer = sa.Table(
 )
 
 invoice = sa.Table(
-    "ashiq_invoice", TABLES,
+    "schemagate_invoice", TABLES,
     sa.Column("id", sa.Integer, primary_key=True),
-    sa.Column("id_customer", sa.Integer, sa.ForeignKey("ashiq_customer.id")),
+    sa.Column("id_customer", sa.Integer, sa.ForeignKey("schemagate_customer.id")),
     sa.Column("total_gross", sa.Numeric(12, 2)),
     sa.Column("status", sa.String(20)),
 )
 
 payroll = sa.Table(
-    "ashiq_payroll", TABLES,
+    "schemagate_payroll", TABLES,
     sa.Column("id", sa.Integer, primary_key=True),
-    sa.Column("id_customer", sa.Integer, sa.ForeignKey("ashiq_customer.id")),
+    sa.Column("id_customer", sa.Integer, sa.ForeignKey("schemagate_customer.id")),
     sa.Column("annual_amount", sa.Numeric(12, 2)),
 )
 
 #: dialect -> the environment variable that certifies it
 DIALECT_ENV = {
     "sqlite": None,                     # always available, no URL needed
-    "postgres": "ASHIQ_POSTGRES_URL",
-    "oracle": "ASHIQ_ORACLE_URL",
-    "mssql": "ASHIQ_MSSQL_URL",
-    "mysql": "ASHIQ_MYSQL_URL",
+    "postgres": "SCHEMAGATE_POSTGRES_URL",
+    "oracle": "SCHEMAGATE_ORACLE_URL",
+    "mssql": "SCHEMAGATE_MSSQL_URL",
+    "mysql": "SCHEMAGATE_MYSQL_URL",
 }
 
 DIALECT_URLS = {
@@ -95,8 +95,8 @@ def engine(request):
 
 def test_reflects_tables_columns_and_types(engine):
     docs = {d.name: d for d in reflect(engine)}
-    assert "ashiq_customer" in docs and "ashiq_invoice" in docs
-    cols = {c.name: c for c in docs["ashiq_customer"].columns}
+    assert "schemagate_customer" in docs and "schemagate_invoice" in docs
+    cols = {c.name: c for c in docs["schemagate_customer"].columns}
     assert set(cols) >= {"id", "account_number", "segment"}
     assert cols["id"].pk is True
     assert cols["account_number"].type, "a type string must be captured"
@@ -104,8 +104,8 @@ def test_reflects_tables_columns_and_types(engine):
 
 def test_reflects_foreign_keys(engine):
     docs = {d.name: d for d in reflect(engine)}
-    refs = {fk.ref_table.lower() for fk in docs["ashiq_invoice"].foreign_keys}
-    assert "ashiq_customer" in refs
+    refs = {fk.ref_table.lower() for fk in docs["schemagate_invoice"].foreign_keys}
+    assert "schemagate_customer" in refs
 
 
 def test_reflection_is_idempotent(engine):
@@ -115,36 +115,36 @@ def test_reflection_is_idempotent(engine):
 
 
 def test_include_and_exclude_patterns(engine):
-    only = {d.name for d in reflect(engine, include=["ashiq_inv%"])}
-    assert only == {"ashiq_invoice"}
-    without = {d.name for d in reflect(engine, exclude=["ashiq_payroll"])}
-    assert "ashiq_payroll" not in without and "ashiq_invoice" in without
+    only = {d.name for d in reflect(engine, include=["schemagate_inv%"])}
+    assert only == {"schemagate_invoice"}
+    without = {d.name for d in reflect(engine, exclude=["schemagate_payroll"])}
+    assert "schemagate_payroll" not in without and "schemagate_invoice" in without
 
 
 def test_end_to_end_selection_and_isolation(engine):
     """The whole library against a real engine, not just reflection."""
     cat = Catalog(name=f"dialect-{engine.dialect.name}")
-    cat.add_all(reflect(engine, include=["ashiq_%"]))
+    cat.add_all(reflect(engine, include=["schemagate_%"]))
     cat.index()
-    cat.restrict("ashiq_payroll", ["payroll"])
+    cat.restrict("schemagate_payroll", ["payroll"])
 
     analyst = Principal("db:ANALYST")
     names = {d.name for d in cat.select("invoice totals per customer",
                                         top_k=5, principal=analyst).objects}
-    assert "ashiq_invoice" in names
-    assert "ashiq_payroll" not in names
+    assert "schemagate_invoice" in names
+    assert "schemagate_payroll" not in names
 
     officer = Principal("db:HR", roles={"payroll"})
     allowed = {d.name for d in cat.select("annual amount per customer",
                                           top_k=5, principal=officer).objects}
-    assert "ashiq_payroll" in allowed
+    assert "schemagate_payroll" in allowed
 
 
 def test_prompt_fragment_renders_for_this_dialect(engine):
     cat = Catalog(name=f"frag-{engine.dialect.name}")
-    cat.add_all(reflect(engine, include=["ashiq_%"]))
+    cat.add_all(reflect(engine, include=["schemagate_%"]))
     fragment = cat.select("invoice totals", top_k=3).prompt_fragment()
-    assert "ashiq_invoice" in fragment
+    assert "schemagate_invoice" in fragment
     assert fragment.count("(") == fragment.count(")")
 
 
@@ -160,7 +160,7 @@ def test_reflect_uses_only_universal_inspector_methods():
     import inspect as pyinspect
     import re
 
-    from ashiq import introspect
+    from schemagate import introspect
 
     source = pyinspect.getsource(introspect)
     called = set(re.findall(r"insp\.(\w+)", source))
@@ -177,7 +177,7 @@ def test_reflect_contains_no_vendor_sql():
     import inspect as pyinspect
     import re
 
-    from ashiq import introspect
+    from schemagate import introspect
 
     source = pyinspect.getsource(introspect).upper()
     for statement in ["SELECT ", "FROM ALL_", "FROM DBA_", "FROM SYS.",

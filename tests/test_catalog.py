@@ -1,5 +1,5 @@
 import pytest
-from ashiq import Catalog, HashingEmbedder, Principal
+from schemagate import Catalog, HashingEmbedder, Principal
 
 def test_reflects_everything(cat):
     assert len(cat._docs) == 42

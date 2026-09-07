@@ -20,29 +20,29 @@ read, RLS strips every row, and the user is told "no records found" — a
 wrong answer delivered with confidence. Nothing in that chain can tell the
 difference between "there is no data" and "you are not allowed to see it."
 
-ashiq works one step earlier. It decides which tables the model is shown,
+schemagate works one step earlier. It decides which tables the model is shown,
 per caller, before any SQL exists. A restricted table is not de-ranked; it is
 absent from the prompt.
 
 ## The mapping
 
-| Vanna | ashiq |
+| Vanna | schemagate |
 |---|---|
 | `vn.train(ddl=...)` (1.x) / tools reading a configured DB (2.x) | `cat = Catalog().bootstrap("postgresql://…")` — reflects the schema once |
 | `vn.train(documentation=...)` | `cat.hint("orders", "…")` — a human note that outranks everything |
 | `User(id=…, group_memberships=[…])` | `Principal("okta:jdoe", roles={…})` |
 | a tool's `access_groups` | `cat.restrict("hr_compensation", ["payroll"])` — on the *table*, not the tool |
 | `vn.ask(question)` / `chat_sse` | `sel = cat.select(question, principal=p)`; put `sel.prompt_fragment()` in your SQL prompt |
-| `vn.generate_sql(...)` | not ashiq's job — keep whatever model call you have |
+| `vn.generate_sql(...)` | not schemagate's job — keep whatever model call you have |
 
-ashiq is not an agent, a chat server, or a SQL generator. It is the schema
+schemagate is not an agent, a chat server, or a SQL generator. It is the schema
 selection step. Keep your Vanna agent, LangChain chain, or hand-rolled loop;
 replace the part that decides what DDL goes in the prompt.
 
 ## Minimal example
 
 ```python
-from ashiq import Catalog, Principal
+from schemagate import Catalog, Principal
 
 cat = Catalog().bootstrap("postgresql://localhost/app")
 cat.restrict("hr_compensation", ["payroll"])          # once, at startup
@@ -60,14 +60,14 @@ does — it just never sees `hr_compensation` unless the caller holds
 
 ## If you're using an agent framework
 
-Claude Desktop, Cursor, or any MCP client: run `python -m ashiq.mcp_server`
+Claude Desktop, Cursor, or any MCP client: run `python -m schemagate.mcp_server`
 and the agent calls `select_schema(question, principal, roles)` as a tool.
-LangChain: `AshiqRetriever` is a `BaseRetriever`. Both are in the README.
+LangChain: `SchemagateRetriever` is a `BaseRetriever`. Both are in the README.
 
 ## What you lose, honestly
 
-Vanna trained on question/SQL pairs and learned from feedback. ashiq does
+Vanna trained on question/SQL pairs and learned from feedback. schemagate does
 not learn; it reflects and ranks. If your accuracy came from a large
-question–SQL memory, keep that memory and use ashiq only for the identity
+question–SQL memory, keep that memory and use schemagate only for the identity
 gate. If it came from schema documentation, `cat.hint()` and
 `cat.describe()` do the same job with less machinery.

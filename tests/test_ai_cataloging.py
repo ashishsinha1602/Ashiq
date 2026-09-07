@@ -9,8 +9,8 @@ import sys
 
 import pytest
 
-from ashiq import Catalog, Column, ForeignKey, HashingEmbedder, ObjectDoc
-from ashiq.ai import (
+from schemagate import Catalog, Column, ForeignKey, HashingEmbedder, ObjectDoc
+from schemagate.ai import (
     APIEmbedder,
     CallableProvider,
     ProviderError,
@@ -18,7 +18,7 @@ from ashiq.ai import (
     auto_provider,
     available_providers,
 )
-from ashiq.ai.describe import _render
+from schemagate.ai.describe import _render
 
 
 def doc(name="cust_ord_ln_t", **kw):
@@ -57,10 +57,10 @@ class FakeProvider:
         return [self.vectors[t] for t in texts]
 
 
-# --- ashiq must work with no AI at all ------------------------------------
+# --- schemagate must work with no AI at all ------------------------------------
 
 def test_core_import_does_not_pull_in_optional_packages():
-    """`import ashiq` must stay one dependency: SQLAlchemy.
+    """`import schemagate` must stay one dependency: SQLAlchemy.
 
     Checked in a fresh interpreter, because this process has already
     imported everything. Nothing optional -- AI providers, MCP, LangChain,
@@ -68,11 +68,11 @@ def test_core_import_does_not_pull_in_optional_packages():
     """
     import subprocess
     probe = (
-        "import sys, ashiq\n"
+        "import sys, schemagate\n"
         "bad = sorted(m for m in sys.modules if m.split('.')[0] in "
         "{'anthropic','openai','google','mcp','langchain_core','oracledb',"
-        "'sentence_transformers'} or m.startswith(('ashiq.ai','ashiq.mcp',"
-        "'ashiq.integrations','ashiq.stores.oracle')))\n"
+        "'sentence_transformers'} or m.startswith(('schemagate.ai','schemagate.mcp',"
+        "'schemagate.integrations','schemagate.stores.oracle')))\n"
         "print(bad)\n"
     )
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True,
@@ -368,7 +368,7 @@ def test_api_embedder_is_a_drop_in_for_the_offline_one():
 
 
 def test_catalog_rejects_mismatched_embedder_and_store_dims():
-    from ashiq import MemoryStore
+    from schemagate import MemoryStore
 
     class DimStore(MemoryStore):
         dim = 8
@@ -393,7 +393,7 @@ def test_available_providers_empty_without_keys():
 
 
 def test_auto_provider_explains_itself_when_no_key_is_set():
-    with pytest.raises(ValueError, match="ashiq works without one"):
+    with pytest.raises(ValueError, match="schemagate works without one"):
         auto_provider(model="whatever", env={})
 
 
@@ -404,7 +404,7 @@ def test_auto_provider_explains_itself_when_no_key_is_set():
 ])
 def test_providers_require_an_explicit_model(cls_name, kwargs):
     """Model IDs change; a hardcoded default eventually 404s for everyone."""
-    import ashiq.ai as ai
+    import schemagate.ai as ai
     with pytest.raises(ValueError, match="model is required"):
         getattr(ai, cls_name)(model="", **kwargs)
 

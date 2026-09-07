@@ -1,4 +1,4 @@
-"""The bundled demo schema. ``ashiq demo`` runs against this with no database.
+"""The bundled demo schema. ``schemagate demo`` runs against this with no database.
 
 A deliberately nasty synthetic schema for testing selection quality.
 

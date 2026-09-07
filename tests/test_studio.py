@@ -4,13 +4,13 @@ import urllib.request
 
 import pytest
 
-from ashiq import studio as st
+from schemagate import studio as st
 
 
 @pytest.fixture(scope="module")
 def server():
-    from ashiq import Catalog
-    from ashiq.demo_schema import HINTS, create_demo_db
+    from schemagate import Catalog
+    from schemagate.demo_schema import HINTS, create_demo_db
     cat = Catalog(name="studio-test").bootstrap(create_demo_db())
     for t, h in HINTS.items():
         cat.hint(t, h)
@@ -33,8 +33,8 @@ def _post(base, payload):
 
 def test_page_is_served_with_the_api_switch(server):
     html = urllib.request.urlopen(server + "/", timeout=10).read().decode()
-    assert "<title>ashiq studio</title>" in html
-    assert 'window.ASHIQ_API="/api"' in html
+    assert "<title>schemagate studio</title>" in html
+    assert 'window.SCHEMAGATE_API="/api"' in html
     assert '"title": "Test"' in html or '"title":"Test"' in html
 
 
@@ -86,6 +86,6 @@ def test_unknown_path_is_404(server):
 
 
 def test_cli_wires_studio():
-    from ashiq.cli import build_parser
+    from schemagate.cli import build_parser
     args = build_parser().parse_args(["studio", "--no-browser", "--port", "0"])
     assert args.func.__name__ == "cmd_studio"

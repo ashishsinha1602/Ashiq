@@ -1,7 +1,7 @@
 """The MCP server, driven by a real MCP client.
 
 The tool functions are tested directly first (no mcp package needed), then
-the whole thing is exercised by spawning ``python -m ashiq.mcp_server`` and
+the whole thing is exercised by spawning ``python -m schemagate.mcp_server`` and
 talking to it over stdio with ``mcp``'s own client -- the same path Claude
 Desktop and Cursor use, and one that works on both SDK 1.x and 2.x.
 """
@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from ashiq import Catalog, Column, ObjectDoc
-from ashiq import mcp_server
+from schemagate import Catalog, Column, ObjectDoc
+from schemagate import mcp_server
 
 
 @pytest.fixture
@@ -83,16 +83,16 @@ def test_describe_object_for_authorised_caller(served):
 
 
 def test_demo_url_builds_the_bundled_schema(monkeypatch):
-    monkeypatch.setenv("ASHIQ_DATABASE_URL", "demo")
-    monkeypatch.delenv("ASHIQ_CATALOG_CONFIG", raising=False)
+    monkeypatch.setenv("SCHEMAGATE_DATABASE_URL", "demo")
+    monkeypatch.delenv("SCHEMAGATE_CATALOG_CONFIG", raising=False)
     cat = mcp_server.build_catalog()
     assert len(cat._docs) == 42
     assert cat._docs["main.hr_compensation"].roles == ["payroll"]
 
 
 def test_missing_url_is_a_clear_error(monkeypatch):
-    monkeypatch.delenv("ASHIQ_DATABASE_URL", raising=False)
-    with pytest.raises(SystemExit, match="ASHIQ_DATABASE_URL"):
+    monkeypatch.delenv("SCHEMAGATE_DATABASE_URL", raising=False)
+    with pytest.raises(SystemExit, match="SCHEMAGATE_DATABASE_URL"):
         mcp_server.build_catalog()
 
 
@@ -102,8 +102,8 @@ def test_config_file_applies_restrictions_and_hints(tmp_path, monkeypatch):
         "restrict": {"billing_invoice": ["finance"]},
         "hint": {"billing_payment": "cash receipts"},
     }))
-    monkeypatch.setenv("ASHIQ_DATABASE_URL", "demo")
-    monkeypatch.setenv("ASHIQ_CATALOG_CONFIG", str(config))
+    monkeypatch.setenv("SCHEMAGATE_DATABASE_URL", "demo")
+    monkeypatch.setenv("SCHEMAGATE_CATALOG_CONFIG", str(config))
     cat = mcp_server.build_catalog()
     assert cat._docs["main.billing_invoice"].roles == ["finance"]
     assert cat._docs["main.billing_payment"].hint == "cash receipts"
@@ -121,10 +121,10 @@ import sys
 
 def _stdio_params():
     from mcp import StdioServerParameters
-    env = {k: v for k, v in os.environ.items() if k != "ASHIQ_CATALOG_CONFIG"}
-    env["ASHIQ_DATABASE_URL"] = "demo"
+    env = {k: v for k, v in os.environ.items() if k != "SCHEMAGATE_CATALOG_CONFIG"}
+    env["SCHEMAGATE_DATABASE_URL"] = "demo"
     return StdioServerParameters(command=sys.executable,
-                                 args=["-m", "ashiq.mcp_server"], env=env)
+                                 args=["-m", "schemagate.mcp_server"], env=env)
 
 
 async def _call(session, tool, args):
@@ -134,7 +134,7 @@ async def _call(session, tool, args):
 
 @pytest.mark.anyio
 async def test_round_trip_over_stdio_subprocess():
-    """What an actual MCP client receives from `python -m ashiq.mcp_server`."""
+    """What an actual MCP client receives from `python -m schemagate.mcp_server`."""
     pytest.importorskip("mcp")
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
@@ -275,12 +275,12 @@ def test_health_reports_state(served):
 
 def test_refresh_keeps_previous_catalog_when_database_is_gone(monkeypatch):
     """The database disappears; the server must keep its last good index."""
-    monkeypatch.setenv("ASHIQ_DATABASE_URL", "demo")
-    monkeypatch.delenv("ASHIQ_CATALOG_CONFIG", raising=False)
+    monkeypatch.setenv("SCHEMAGATE_DATABASE_URL", "demo")
+    monkeypatch.delenv("SCHEMAGATE_CATALOG_CONFIG", raising=False)
     mcp_server.build_catalog()
     before = mcp_server.health()["objects"]
 
-    monkeypatch.setenv("ASHIQ_DATABASE_URL",
+    monkeypatch.setenv("SCHEMAGATE_DATABASE_URL",
                        "postgresql+psycopg://nobody@127.0.0.1:1/nowhere")
     out = mcp_server.refresh_catalog()
     assert out["ok"] is False and out["kept_previous"] is True
@@ -291,8 +291,8 @@ def test_refresh_keeps_previous_catalog_when_database_is_gone(monkeypatch):
 
 
 def test_refresh_succeeds_and_swaps_atomically(monkeypatch):
-    monkeypatch.setenv("ASHIQ_DATABASE_URL", "demo")
-    monkeypatch.delenv("ASHIQ_CATALOG_CONFIG", raising=False)
+    monkeypatch.setenv("SCHEMAGATE_DATABASE_URL", "demo")
+    monkeypatch.delenv("SCHEMAGATE_CATALOG_CONFIG", raising=False)
     mcp_server.build_catalog()
     out = mcp_server.refresh_catalog()
     assert out["ok"] is True and out["objects"] == 42
@@ -300,7 +300,7 @@ def test_refresh_succeeds_and_swaps_atomically(monkeypatch):
 
 
 def test_password_never_appears_in_health(monkeypatch):
-    monkeypatch.setenv("ASHIQ_DATABASE_URL", "demo")
+    monkeypatch.setenv("SCHEMAGATE_DATABASE_URL", "demo")
     mcp_server.build_catalog()
     assert mcp_server._redact("postgresql://alice:s3cret@db.internal/app") == \
         "postgresql://alice:***@db.internal/app"

@@ -24,7 +24,7 @@ def terms() -> list[str]:
     out = []
     env = os.environ.get("NAMECHECK_TERMS", "")
     if env.strip():
-        out += env.splitlines()
+        out += re.split(r"[\n,]", env)   # one per line, or comma-separated
     f = ROOT / ".namecheck"
     if f.exists():
         out += f.read_text().splitlines()

@@ -8,14 +8,14 @@ Python. On 23ai you can also add an HNSW index and keep the same SQL.
 Identity scoping is enforced in the WHERE clause, not in Python, so a
 restricted row is never fetched at all::
 
-    from ashiq import Catalog, Principal
-    from ashiq.stores.oracle import OracleStore
+    from schemagate import Catalog, Principal
+    from schemagate.stores.oracle import OracleStore
 
     store = OracleStore(dsn="user/pw@host:1521/FREEPDB1")
     store.create_schema()                      # once, DDL
     cat = Catalog(store=store).bootstrap("oracle+oracledb://...")
 
-Requires ``pip install 'ashiq[oracle]'``. Every statement here is plain
+Requires ``pip install 'schemagate[oracle]'``. Every statement here is plain
 SQL against one table; nothing depends on an Oracle-specific Python API
 beyond the driver's connection object.
 """
@@ -25,7 +25,7 @@ import array
 import json
 from typing import Any, Dict, List, Optional, Sequence
 
-_DEFAULT_TABLE = "ASHIQ_VECTORS"
+_DEFAULT_TABLE = "SCHEMAGATE_VECTORS"
 
 # One row per (namespace, key). ``scope`` NULL means "visible to everyone";
 # a non-NULL scope is a Principal.scope() digest, never a username.
@@ -83,7 +83,7 @@ class OracleStore:
                 import oracledb
             except ImportError as e:  # pragma: no cover - import guard
                 raise ImportError(
-                    "pip install 'ashiq[oracle]' to use OracleStore"
+                    "pip install 'schemagate[oracle]' to use OracleStore"
                 ) from e
             self._conn = oracledb.connect(user=user, password=password, dsn=dsn)
 

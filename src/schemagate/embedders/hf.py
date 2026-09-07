@@ -1,7 +1,7 @@
 """Sentence-transformers embedder.
 
 Not exercised in CI (no model download in the sandbox). Install with
-``pip install ashiq[huggingface]``. Note that on identifier-heavy schema
+``pip install schemagate[huggingface]``. Note that on identifier-heavy schema
 text a sentence model does not automatically beat the built-in
 HashingEmbedder -- benchmark on your own schema with tests/bench.py before
 taking the dependency.
@@ -17,7 +17,7 @@ class SentenceTransformerEmbedder:
             from sentence_transformers import SentenceTransformer
         except ImportError as e:
             raise ImportError(
-                "pip install 'ashiq[huggingface]' to use SentenceTransformerEmbedder"
+                "pip install 'schemagate[huggingface]' to use SentenceTransformerEmbedder"
             ) from e
         self._m = SentenceTransformer(model, device=device, cache_folder=cache_folder)
         self.dim = int(self._m.get_sentence_embedding_dimension())

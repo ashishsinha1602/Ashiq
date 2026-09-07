@@ -1,10 +1,10 @@
-"""Optional AI features. ashiq works fully without importing this package.
+"""Optional AI features. schemagate works fully without importing this package.
 
 Nothing here is required. The default catalog uses an offline, deterministic
-embedder and no network. Import from ``ashiq.ai`` only when you want a model
+embedder and no network. Import from ``schemagate.ai`` only when you want a model
 to write catalog descriptions or produce embeddings, and bring your own key.
 
-    from ashiq.ai import SchemaDescriber, AnthropicProvider
+    from schemagate.ai import SchemaDescriber, AnthropicProvider
     cat.describe(SchemaDescriber(AnthropicProvider(model="claude-sonnet-4-5")))
 """
 from .describe import SchemaDescriber

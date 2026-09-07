@@ -22,7 +22,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SKIP_DIRS = {".git", ".hypothesis", "__pycache__", "dist", "build", ".pytest_cache", ".venv",
+SKIP_DIRS = {".git", "__pycache__", "dist", "build", ".pytest_cache", ".venv", ".hypothesis",
              ".mypy_cache", ".ruff_cache", "node_modules"}
 SKIP_SUFFIX = {".pyc", ".gz", ".whl", ".png", ".jpg", ".so"}
 
@@ -59,7 +59,7 @@ def test_guard_is_wired_up_and_actually_fails_on_a_hit():
     the tree, so a broken guard is never mistaken for a clean one.
     """
     import os
-    env = dict(os.environ, NAMECHECK_TERMS="ashiq")
+    env = dict(os.environ, NAMECHECK_TERMS="schemagate")
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "check_names.py")],
         capture_output=True, text=True, env=env,
@@ -76,9 +76,9 @@ def test_no_personal_contact_details_in_metadata():
 
 
 #: where each fixture's real source lives -- the commerce schema ships in the
-#: package so `ashiq demo` can use it, and tests/schema_fixture.py re-exports it
+#: package so `schemagate demo` can use it, and tests/schema_fixture.py re-exports it
 FIXTURE_SOURCES = {
-    "schema_fixture": ROOT / "src" / "ashiq" / "demo_schema.py",
+    "schema_fixture": ROOT / "src" / "schemagate" / "demo_schema.py",
     "schema_fixture_health": ROOT / "tests" / "schema_fixture_health.py",
     "schema_fixture_complex": ROOT / "tests" / "schema_fixture_complex.py",
 }

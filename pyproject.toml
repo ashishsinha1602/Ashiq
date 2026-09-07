@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ashiq"
+name = "schemagate"
 version = "0.1.0"
 description = "Identity-scoped schema selection for text-to-SQL: give the model only the tables this caller may read, and 75% fewer prompt tokens"
 readme = "README.md"
@@ -62,16 +62,16 @@ dev         = ["pytest>=8", "ruff", "mypy", "sqlglot>=25", "anyio>=4",
                "hypothesis>=6; python_version >= '3.10'"]
 
 [project.scripts]
-ashiq = "ashiq.cli:main"
+schemagate = "schemagate.cli:main"
 
 [project.urls]
-Homepage      = "https://github.com/ashishsinha1602/ashiq"
-Repository    = "https://github.com/ashishsinha1602/ashiq"
-Issues        = "https://github.com/ashishsinha1602/ashiq/issues"
-Changelog     = "https://github.com/ashishsinha1602/ashiq/blob/main/CHANGELOG.md"
+Homepage      = "https://github.com/ashishsinha1602/schemagate"
+Repository    = "https://github.com/ashishsinha1602/schemagate"
+Issues        = "https://github.com/ashishsinha1602/schemagate/issues"
+Changelog     = "https://github.com/ashishsinha1602/schemagate/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ashiq"]
+packages = ["src/schemagate"]
 
 [tool.hatch.build]
-include = ["src/ashiq/**/*.py", "src/ashiq/py.typed", "src/ashiq/studio.html"]
+include = ["src/schemagate/**/*.py", "src/schemagate/py.typed", "src/schemagate/studio.html"]

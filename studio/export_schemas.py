@@ -2,8 +2,8 @@
 import json, os, sqlite3, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tests"))
 import sqlalchemy as sa
-from ashiq import Catalog
-from ashiq.demo_schema import DDL as C_DDL, HINTS as C_HINTS, GOLDEN as C_GOLDEN, GOLDEN_PARAPHRASE
+from schemagate import Catalog
+from schemagate.demo_schema import DDL as C_DDL, HINTS as C_HINTS, GOLDEN as C_GOLDEN, GOLDEN_PARAPHRASE
 import schema_fixture_health as H, schema_fixture_warehouse as W, schema_fixture_complex as X
 import schema_fixture_finance as Fn, schema_fixture_telemetry as Tl
 

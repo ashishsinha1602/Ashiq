@@ -1,28 +1,28 @@
-"""MCP server: let an agent ask ashiq which tables it needs.
+"""MCP server: let an agent ask schemagate which tables it needs.
 
 Any MCP-capable client -- Claude Desktop, Claude Code, Cursor, an agent you
 wrote -- can call ``select_schema`` and get back the compact DDL for exactly
 the objects a question needs, already filtered to what the caller may see.
 The agent then writes SQL against that, and never sees the rest.
 
-    pip install 'ashiq[mcp]'
-    ASHIQ_DATABASE_URL=postgresql://localhost/app python -m ashiq.mcp_server
+    pip install 'schemagate[mcp]'
+    SCHEMAGATE_DATABASE_URL=postgresql://localhost/app python -m schemagate.mcp_server
 
 Claude Desktop, in ``claude_desktop_config.json``::
 
-    {"mcpServers": {"ashiq": {
-        "command": "python", "args": ["-m", "ashiq.mcp_server"],
-        "env": {"ASHIQ_DATABASE_URL": "postgresql://localhost/app"}}}}
+    {"mcpServers": {"schemagate": {
+        "command": "python", "args": ["-m", "schemagate.mcp_server"],
+        "env": {"SCHEMAGATE_DATABASE_URL": "postgresql://localhost/app"}}}}
 
 To host it for a team instead of one desktop::
 
-    ASHIQ_MCP_TRANSPORT=streamable-http ASHIQ_MCP_PORT=8765 python -m ashiq.mcp_server
+    SCHEMAGATE_MCP_TRANSPORT=streamable-http SCHEMAGATE_MCP_PORT=8765 python -m schemagate.mcp_server
 
 Identity: every tool takes ``principal`` and ``roles``. The server does not
 guess who is asking -- if the client omits them, the caller is treated as
 anonymous and sees only unrestricted objects. Fail closed.
 
-Restrictions and hints come from ``ASHIQ_CATALOG_CONFIG``, a JSON file::
+Restrictions and hints come from ``SCHEMAGATE_CATALOG_CONFIG``, a JSON file::
 
     {"restrict": {"hr_compensation": ["payroll"]},
      "hint":     {"invoice_draft": "drafts only, not revenue"}}
@@ -50,7 +50,7 @@ from . import __version__
 from .catalog import Catalog
 from .identity import IdentityError, Principal
 
-log = logging.getLogger("ashiq.mcp")
+log = logging.getLogger("schemagate.mcp")
 
 _CATALOG: Optional[Catalog] = None
 _LOCK = threading.Lock()
@@ -102,7 +102,7 @@ def build_catalog(url: Optional[str] = None, config_path: Optional[str] = None,
     """Build (or accept) the catalog the server will answer from.
 
     Tests pass ``catalog=`` directly; the CLI path reads
-    ``ASHIQ_DATABASE_URL`` and the optional ``ASHIQ_CATALOG_CONFIG``.
+    ``SCHEMAGATE_DATABASE_URL`` and the optional ``SCHEMAGATE_CATALOG_CONFIG``.
     """
     global _CATALOG
     with _LOCK:
@@ -113,12 +113,12 @@ def build_catalog(url: Optional[str] = None, config_path: Optional[str] = None,
                           last_refresh_ok=True, last_error=None)
             return catalog
 
-        url = url or os.environ.get("ASHIQ_DATABASE_URL")
+        url = url or os.environ.get("SCHEMAGATE_DATABASE_URL")
         if not url:
             raise SystemExit(
-                "ashiq.mcp_server: set ASHIQ_DATABASE_URL to a SQLAlchemy URL, "
-                "or use ASHIQ_DATABASE_URL=demo for the bundled schema")
-        config_path = config_path or os.environ.get("ASHIQ_CATALOG_CONFIG")
+                "schemagate.mcp_server: set SCHEMAGATE_DATABASE_URL to a SQLAlchemy URL, "
+                "or use SCHEMAGATE_DATABASE_URL=demo for the bundled schema")
+        config_path = config_path or os.environ.get("SCHEMAGATE_CATALOG_CONFIG")
         cat = _reflect(url, config_path)
         _CATALOG = cat
         _STATE.update(url=_redact(url), config=config_path,
@@ -262,12 +262,12 @@ def refresh_catalog() -> Dict[str, Any]:
     drops its last good catalog for a bad one.
     """
     global _CATALOG
-    url = os.environ.get("ASHIQ_DATABASE_URL")
+    url = os.environ.get("SCHEMAGATE_DATABASE_URL")
     if not url:
-        return {"error": "no ASHIQ_DATABASE_URL; catalog was provided directly"}
+        return {"error": "no SCHEMAGATE_DATABASE_URL; catalog was provided directly"}
     started = time.time()
     try:
-        cat = _reflect(url, os.environ.get("ASHIQ_CATALOG_CONFIG"))
+        cat = _reflect(url, os.environ.get("SCHEMAGATE_CATALOG_CONFIG"))
     except Exception as e:                           # noqa: BLE001
         _STATE.update(last_refresh_ok=False,
                       last_error=f"refresh: {type(e).__name__}: {e}")
@@ -314,7 +314,7 @@ def _server_class():
     """The high-level server class, whichever SDK major version is installed.
 
     The MCP Python SDK renamed ``FastMCP`` to ``MCPServer`` in 2.0 and moved
-    it. Supporting both means ``pip install ashiq[mcp]`` works whether the
+    it. Supporting both means ``pip install schemagate[mcp]`` works whether the
     resolver picks 1.x or 2.x, instead of breaking on a fresh install the
     week after a major release -- which is precisely what happened in the
     clean-environment check before this shim existed.
@@ -328,7 +328,7 @@ def _server_class():
         from mcp.server.fastmcp import FastMCP              # mcp 1.x
         return FastMCP
     except ImportError as e:
-        raise ImportError("pip install 'ashiq[mcp]' to run the MCP server") from e
+        raise ImportError("pip install 'schemagate[mcp]' to run the MCP server") from e
 
 
 def create_server(catalog: Optional[Catalog] = None):
@@ -336,8 +336,8 @@ def create_server(catalog: Optional[Catalog] = None):
     if catalog is not None:
         build_catalog(catalog=catalog)
     kwargs: Dict[str, Any] = {"instructions": _INSTRUCTIONS}
-    host = os.environ.get("ASHIQ_MCP_HOST")
-    port = os.environ.get("ASHIQ_MCP_PORT")
+    host = os.environ.get("SCHEMAGATE_MCP_HOST")
+    port = os.environ.get("SCHEMAGATE_MCP_PORT")
     cls = _server_class()
     # 1.x takes host/port in the constructor; 2.x takes them in run()
     if cls.__name__ == "FastMCP":
@@ -345,7 +345,7 @@ def create_server(catalog: Optional[Catalog] = None):
             kwargs["host"] = host
         if port:
             kwargs["port"] = int(port)
-    app = cls("ashiq", **kwargs)
+    app = cls("schemagate", **kwargs)
     for tool in (select_schema, list_objects, describe_object,
                  refresh_catalog, health):
         app.tool()(tool)
@@ -353,18 +353,18 @@ def create_server(catalog: Optional[Catalog] = None):
 
 
 def main() -> None:
-    logging.basicConfig(level=os.environ.get("ASHIQ_LOG_LEVEL", "INFO"),
+    logging.basicConfig(level=os.environ.get("SCHEMAGATE_LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     build_catalog()
     app = create_server()
-    transport = os.environ.get("ASHIQ_MCP_TRANSPORT", "stdio")
-    log.info("ashiq %s serving %d objects over %s", __version__,
+    transport = os.environ.get("SCHEMAGATE_MCP_TRANSPORT", "stdio")
+    log.info("schemagate %s serving %d objects over %s", __version__,
              len(_catalog()._docs), transport)
     if transport == "stdio":
         app.run()
         return
-    host = os.environ.get("ASHIQ_MCP_HOST", "127.0.0.1")
-    port = int(os.environ.get("ASHIQ_MCP_PORT", "8765"))
+    host = os.environ.get("SCHEMAGATE_MCP_HOST", "127.0.0.1")
+    port = int(os.environ.get("SCHEMAGATE_MCP_PORT", "8765"))
     try:
         app.run(transport=transport, host=host, port=port)   # mcp 2.x
     except TypeError:

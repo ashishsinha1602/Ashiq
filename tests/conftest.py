@@ -1,7 +1,7 @@
 import sqlite3, sys, os, tempfile, pytest
 sys.path.insert(0, os.path.dirname(__file__))
 from schema_fixture import DDL, HINTS
-from ashiq import Catalog
+from schemagate import Catalog
 
 @pytest.fixture(scope="session")
 def db_url():

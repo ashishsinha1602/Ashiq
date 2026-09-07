@@ -1,6 +1,6 @@
 """The Studio's in-browser selector must rank exactly like the Python one.
 
-``studio/ashiq.js`` is a port of the catalog, embedder and models. This test
+``studio/schemagate.js`` is a port of the catalog, embedder and models. This test
 runs it under Node against the same four schemas and a few hundred
 (question, principal, options) cases, and requires identical object lists,
 identical selection reasons, and scores equal to ten decimal places.
@@ -24,12 +24,12 @@ STUDIO = ROOT / "studio"
 NODE = shutil.which("node")
 
 pytestmark = pytest.mark.skipif(
-    NODE is None or not (STUDIO / "ashiq.js").exists(),
-    reason="needs node and ../studio/ashiq.js")
+    NODE is None or not (STUDIO / "schemagate.js").exists(),
+    reason="needs node and ../studio/schemagate.js")
 
 sys.path.insert(0, os.path.dirname(__file__))
-from ashiq import Catalog, Principal  # noqa: E402
-from ashiq.embedder import HashingEmbedder, tokenize  # noqa: E402
+from schemagate import Catalog, Principal  # noqa: E402
+from schemagate.embedder import HashingEmbedder, tokenize  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +40,7 @@ def schemas():
 
 
 def _python_catalog(spec, hints, describe=None):
-    from ashiq import Column, ForeignKey, ObjectDoc
+    from schemagate import Column, ForeignKey, ObjectDoc
     cat = Catalog()
     for d in spec["docs"]:
         cat.add(ObjectDoc(

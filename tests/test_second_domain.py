@@ -15,7 +15,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 from schema_fixture_health import DDL, DECOYS, GOLDEN, HINTS  # noqa: E402
 
-from ashiq import Catalog, Principal  # noqa: E402
+from schemagate import Catalog, Principal  # noqa: E402
 
 
 @pytest.fixture(scope="module")

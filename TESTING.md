@@ -36,7 +36,7 @@ Each of these was live in the code at the time and would have shipped.
 2. **`hint()` did nothing to retrieval**, including in the README's own
    example. It set the hint but never marked the index stale. Fixed;
    `select()` now rebuilds when anything indexed has changed.
-3. **A lazy export pointed at a module that did not exist.** `from ashiq
+3. **A lazy export pointed at a module that did not exist.** `from schemagate
    import OracleStore` crashed with `ModuleNotFoundError`. The module exists
    now, and a test resolves every lazy export.
 4. **Non-English schemas were unsearchable.** The tokeniser was
@@ -100,7 +100,7 @@ exact name finds it; the selection is JSON-serialisable. Then 1,000 and
 
 ## Oracle-shaped, without an Oracle
 
-`tests/test_oracle_shaped.py` drives `ashiq.introspect.reflect` against a
+`tests/test_oracle_shaped.py` drives `schemagate.introspect.reflect` against a
 fake Inspector that returns exactly what the SQLAlchemy Oracle dialect
 returns: uppercase owners and names, `NUMBER(12, 2)`, `VARCHAR2(200 CHAR)`,
 `TIMESTAMP(6) WITH TIME ZONE`, `CLOB`, `NVARCHAR2`, the full list of system
@@ -114,10 +114,10 @@ shadow demotion of `ORDERS_BKP`, scoping, and the Select AI `object_list`
 shape. This is not a substitute for a live run; it is everything that can
 be tested before one.
 
-## Things that were checked and found to be the database, not ashiq
+## Things that were checked and found to be the database, not schemagate
 
 - PostgreSQL truncates identifiers to 63 bytes at CREATE time. A test asserts
-  ashiq keeps whatever the engine kept and adds no second cap.
+  schemagate keeps whatever the engine kept and adds no second cap.
 - PostgreSQL rejects a foreign key to a table that does not exist yet.
   SQLite allows it. The hostile fixture builds its reference cycle with
   inline FKs on SQLite and with ALTER on everything else.
@@ -151,7 +151,7 @@ cost. What is pinned: only schema metadata is ever sent and `ObjectDoc` has
 no field a row could live in; a failing provider skips that object and
 cataloguing continues; a human hint outranks a generated description;
 results cache by content and a changed table is re-described; `model` is
-required on every provider because model IDs churn; `import ashiq` loads
+required on every provider because model IDs churn; `import schemagate` loads
 none of the provider SDKs, checked in a fresh interpreter.
 
 Measured lift from descriptions, per schema, is in the table at the top.
@@ -176,7 +176,7 @@ to 1e-9 between Python and JavaScript. blake2b output was compared
 byte-for-byte. Python's round-half-to-even was reproduced in the token
 estimator so the numbers match.
 
-The local `ashiq studio` was driven by a real Chromium: scoping flips when a
+The local `schemagate studio` was driven by a real Chromium: scoping flips when a
 role chip is clicked, the CJK question finds the CJK table, the AI toggle
 moves `v_stock_shortfall` from missing to first.
 

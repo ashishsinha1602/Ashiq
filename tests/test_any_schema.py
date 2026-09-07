@@ -16,7 +16,7 @@ import pytest
 hypothesis = pytest.importorskip("hypothesis")  # needs Python 3.10+
 from hypothesis import HealthCheck, given, settings, strategies as st  # noqa: E402
 
-from ashiq import Catalog, Column, ForeignKey, ObjectDoc, Principal
+from schemagate import Catalog, Column, ForeignKey, ObjectDoc, Principal
 
 # --- strategies ------------------------------------------------------------
 
@@ -177,7 +177,7 @@ def test_naming_an_object_outright_finds_it(docs, q):
     """Whatever else is in the catalog, asking for a table by its exact name
     must return it -- unless it is restricted or the name tokenises to
     nothing (pure punctuation)."""
-    from ashiq.embedder import tokenize
+    from schemagate.embedder import tokenize
     cat = Catalog()
     cat.add_all(docs)
     for doc in list(cat._docs.values())[:5]:

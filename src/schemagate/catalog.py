@@ -147,7 +147,7 @@ class Catalog:
         """Fill in ``description`` for catalog objects using a describer.
 
         Entirely optional: without it the catalog uses whatever comments the
-        database already carries. See ``ashiq.ai`` for describers backed by
+        database already carries. See ``schemagate.ai`` for describers backed by
         Claude, GPT or Gemini, or pass anything with a
         ``describe(docs) -> {qname: text}`` method.
 
@@ -271,6 +271,13 @@ class Catalog:
         if self._stale or not self._order:
             self.index()
         return dict(self._shadows)
+
+    def __len__(self) -> int:
+        return len(self._docs)
+
+    def objects(self) -> List[ObjectDoc]:
+        """Every indexed object, in insertion order."""
+        return list(self._docs.values())
 
     @property
     def _ns(self) -> str:

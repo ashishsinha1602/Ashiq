@@ -1,9 +1,10 @@
-__pycache__/
-*.pyc
-dist/
-build/
 *.egg-info/
+*.pyc
+.hypothesis/
+.namecheck
 .pytest_cache/
 .venv/
-.namecheck
-.hypothesis/
+__pycache__/
+build/
+dist/
+studio/schemas.json

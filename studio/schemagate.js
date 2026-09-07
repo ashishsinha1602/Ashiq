@@ -1,6 +1,6 @@
-/* ashiq selector, JavaScript port.
+/* schemagate selector, JavaScript port.
  *
- * A faithful port of ashiq.catalog / ashiq.embedder / ashiq.models so the
+ * A faithful port of schemagate.catalog / schemagate.embedder / schemagate.models so the
  * Studio can run selection in the browser with no server. Same tokeniser,
  * same BM25 constants, same blake2b-bucketed hashing embedder, same RRF
  * fusion, same shadow demotion, same FK expansion, same scoping.
@@ -17,7 +17,7 @@
     catch (e) { b = require("./blake2b.browser.js"); }  // bundled copy: no install needed
     module.exports = factory(b);
   }
-  else root.ashiq = factory(root.blakejs);
+  else root.schemagate = factory(root.blakejs);
 })(typeof self !== "undefined" ? self : this, function (blakejs) {
   "use strict";
 
@@ -31,7 +31,7 @@
   const LAYER_PREFIXES = ["dim_", "fact_", "fct_", "f_", "d_", "v_", "vw_", "view_",
     "bridge_", "br_", "tbl_", "t_", "agg_", "mv_"];
 
-  // ---------------- tokenize (ashiq.embedder.tokenize) ----------------
+  // ---------------- tokenize (schemagate.embedder.tokenize) ----------------
   const CJK = [[0x3040, 0x30FF], [0x3400, 0x4DBF], [0x4E00, 0x9FFF], [0xAC00, 0xD7AF], [0xF900, 0xFAFF]];
   const WORD = /[\p{L}\p{N}]+/gu;
   const isCjk = (ch) => { const p = ch.codePointAt(0); return CJK.some(([a, b]) => p >= a && p <= b); };

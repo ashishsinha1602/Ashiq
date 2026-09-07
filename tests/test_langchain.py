@@ -3,14 +3,14 @@ import pytest
 
 langchain_core = pytest.importorskip("langchain_core")
 
-from ashiq import Principal  # noqa: E402
-from ashiq.integrations.langchain import AshiqRetriever, prompt_fragment  # noqa: E402
+from schemagate import Principal  # noqa: E402
+from schemagate.integrations.langchain import SchemagateRetriever, prompt_fragment  # noqa: E402
 
 
 @pytest.fixture
 def retriever(cat):
     cat.restrict("hr_compensation", ["payroll"])
-    return AshiqRetriever(catalog=cat, top_k=4)
+    return SchemagateRetriever(catalog=cat, top_k=4)
 
 
 def test_is_a_real_langchain_retriever(retriever):
@@ -29,7 +29,7 @@ def test_invoke_returns_documents_with_ddl_and_metadata(retriever):
 
 
 def test_top_k_is_honoured_before_expansion(cat):
-    r = AshiqRetriever(catalog=cat, top_k=2, expand_fks=False)
+    r = SchemagateRetriever(catalog=cat, top_k=2, expand_fks=False)
     assert len(r.invoke("revenue")) <= 2
 
 

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ashiq"
+version = "0.1.1"
+description = "Renamed: this package is now 'schemagate'. pip install schemagate"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{name = "Ashish Sinha"}]
+classifiers = ["Development Status :: 7 - Inactive"]
+dependencies = ["schemagate>=0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/ashishsinha1602/schemagate"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ashiq"]

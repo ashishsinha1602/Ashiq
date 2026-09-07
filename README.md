@@ -1,39 +1,39 @@
-# ashiq
+# schemagate
 
 Picks the handful of tables an NL2SQL model actually needs, and never shows it
 tables the person asking isn't allowed to read.
 
 ```bash
-pip install ashiq
-ashiq demo
+pip install schemagate
+schemagate demo
 ```
 
 That runs against a bundled 42-object schema. No database, no key, nothing to
 configure. Then try it with the questions people actually type:
 
 ```bash
-ashiq demo "which customers owe us money"
-ashiq demo "salary by employee"                                   # restricted table absent
-ashiq demo "salary by employee" --principal okta:hr --role payroll  # now it's there
-ashiq demo "late shipments by carrier" --prompt                    # the DDL the model gets
+schemagate demo "which customers owe us money"
+schemagate demo "salary by employee"                                   # restricted table absent
+schemagate demo "salary by employee" --principal okta:hr --role payroll  # now it's there
+schemagate demo "late shipments by carrier" --prompt                    # the DDL the model gets
 ```
 
 Against your own database it's the same shape:
 
 ```bash
-ashiq select "revenue by month" --url postgresql://localhost/app --principal okta:jdoe --role finance
-ashiq studio --url postgresql://localhost/app        # the same thing, as a page
+schemagate select "revenue by month" --url postgresql://localhost/app --principal okta:jdoe --role finance
+schemagate studio --url postgresql://localhost/app        # the same thing, as a page
 ```
 
-`ashiq studio` opens a local page where you type questions, switch the caller's
+`schemagate studio` opens a local page where you type questions, switch the caller's
 roles, edit hints, and watch what reaches the prompt and what doesn't. The same
-page runs publicly at **https://ashishsinha1602.github.io/ashiq/** on the six
+page runs publicly at **https://ashishsinha1602.github.io/schemagate/** on the six
 bundled schemas, in your browser, with no server behind it. The selector on that page is a JavaScript
 port of this library, and a test runs both against 1,789 cases and requires
 identical rankings.
 
 If you're coming from Vanna (archived March 2026), `docs/migrating-from-vanna.md`
-is the short version: Vanna applied identity when the SQL *ran*; ashiq applies
+is the short version: Vanna applied identity when the SQL *ran*; schemagate applies
 it before the model sees the schema. Your `User` maps to a `Principal` in one
 line.
 
@@ -55,7 +55,7 @@ and the user has no way to tell the difference. Filtering the catalog by
 identity first is the only way I know to avoid it.
 
 ```python
-from ashiq import Catalog, Principal
+from schemagate import Catalog, Principal
 
 cat = Catalog().bootstrap("postgresql://localhost/app")
 cat.hint("invoice_draft", "pre-issue drafts only, not real revenue")
@@ -75,7 +75,7 @@ in the prompt text.
 ## Install
 
 ```bash
-pip install ashiq
+pip install schemagate
 ```
 
 That's the whole thing. One dependency (SQLAlchemy), no API key, no model
@@ -85,10 +85,10 @@ and gives byte-identical results on every machine.
 Extras, all optional:
 
 ```bash
-pip install 'ashiq[postgres]'     'ashiq[oracle]'
-pip install 'ashiq[mssql]'        'ashiq[mysql]'
-pip install 'ashiq[anthropic]'    'ashiq[openai]'      'ashiq[gemini]'
-pip install 'ashiq[huggingface]'
+pip install 'schemagate[postgres]'     'schemagate[oracle]'
+pip install 'schemagate[mssql]'        'schemagate[mysql]'
+pip install 'schemagate[anthropic]'    'schemagate[openai]'      'schemagate[gemini]'
+pip install 'schemagate[huggingface]'
 ```
 
 ## How it picks
@@ -110,7 +110,7 @@ pip install 'ashiq[huggingface]'
 
 Six test schemas ship with the library. Run `python tests/bench.py` and you
 get all of this printed back. `TESTING.md` is the full record of what was
-tested, what broke, and what was found to be the database rather than ashiq.
+tested, what broke, and what was found to be the database rather than schemagate.
 
 | | |
 |---|---|
@@ -124,7 +124,7 @@ tested, what broke, and what was found to be the database rather than ashiq.
 | real table beats its backup/staging copy, 19 cases across schemas | 19/19 |
 | recall without foreign-key expansion | 93.8% |
 | prompt tokens, full schema every call | 2,583 |
-| prompt tokens, ashiq average | 631 (−75.6%) |
+| prompt tokens, schemagate average | 631 (−75.6%) |
 
 Token counts come from an estimator built into the benchmark so the number is
 reproducible with no network and no extra install. `pip install tiktoken` and
@@ -162,10 +162,10 @@ If your users type identifier-shaped questions, you're done, and you never need
 an API key. If they type like people, give the catalog descriptions:
 
 ```python
-from ashiq.ai import SchemaDescriber, AnthropicProvider
+from schemagate.ai import SchemaDescriber, AnthropicProvider
 
 cat.describe(SchemaDescriber(AnthropicProvider(model="claude-sonnet-4-5"),
-                             cache_path=".ashiq-cache.json"))
+                             cache_path=".schemagate-cache.json"))
 ```
 
 One sentence per table, written by the model, indexed like any other schema
@@ -177,7 +177,7 @@ Claude, GPT and Gemini are supported. Anything else goes through
 SDK and you don't want to wait for a release from me.
 
 ```python
-from ashiq.ai import (AnthropicProvider, OpenAIProvider, GeminiProvider,
+from schemagate.ai import (AnthropicProvider, OpenAIProvider, GeminiProvider,
                       CallableProvider, auto_provider, available_providers)
 
 AnthropicProvider(model="claude-sonnet-4-5")                    # ANTHROPIC_API_KEY
@@ -221,7 +221,7 @@ identifier-heavy schema text the offline embedder is often just as good and it
 doesn't cost anything per query.
 
 ```python
-from ashiq.ai import APIEmbedder, OpenAIProvider
+from schemagate.ai import APIEmbedder, OpenAIProvider
 
 provider = OpenAIProvider(model="gpt-4.1-mini",
                           embed_model="text-embedding-3-small")
@@ -231,7 +231,7 @@ cat = Catalog(embedder=APIEmbedder(provider, dim=1536))
 ## Databases
 
 Reflection uses only SQLAlchemy's dialect-agnostic Inspector. There's no
-hand-written SQL in `ashiq.introspect` and a test fails the build if any
+hand-written SQL in `schemagate.introspect` and a test fails the build if any
 appears, so in principle any dialect SQLAlchemy supports will work.
 
 In principle isn't evidence, so there's a script:
@@ -243,7 +243,7 @@ python scripts/certify_dialect.py 'mssql+pyodbc://user:pw@host/db?driver=ODBC+Dr
 python scripts/certify_dialect.py 'mysql+pymysql://user:pw@host/db'
 ```
 
-It creates three `ashiq_cert_` tables, reflects them, runs selection and
+It creates three `schemagate_cert_` tables, reflects them, runs selection and
 identity scoping end to end, drops them again, and exits non-zero if anything
 failed. Point it at a scratch schema.
 
@@ -263,32 +263,32 @@ The same checks run under pytest if you export a URL, which is how CI certifies
 a dialect for good:
 
 ```bash
-export ASHIQ_POSTGRES_URL='postgresql+psycopg://…'
-export ASHIQ_ORACLE_URL='oracle+oracledb://…'
-export ASHIQ_MSSQL_URL='mssql+pyodbc://…'
-export ASHIQ_MYSQL_URL='mysql+pymysql://…'
+export SCHEMAGATE_POSTGRES_URL='postgresql+psycopg://…'
+export SCHEMAGATE_ORACLE_URL='oracle+oracledb://…'
+export SCHEMAGATE_MSSQL_URL='mssql+pyodbc://…'
+export SCHEMAGATE_MYSQL_URL='mysql+pymysql://…'
 pytest tests/test_dialects.py -v
 ```
 
 ## Using it from an agent
 
 If you already have an agent that writes SQL, the fastest way in is to let it
-call ashiq as a tool rather than wiring the library into your code.
+call schemagate as a tool rather than wiring the library into your code.
 
 **MCP.** Claude Desktop, Claude Code, Cursor, or anything else that speaks the
 Model Context Protocol:
 
 ```bash
-pip install 'ashiq[mcp]'
-ASHIQ_DATABASE_URL=postgresql://localhost/app python -m ashiq.mcp_server
+pip install 'schemagate[mcp]'
+SCHEMAGATE_DATABASE_URL=postgresql://localhost/app python -m schemagate.mcp_server
 ```
 
 Claude Desktop config:
 
 ```json
-{"mcpServers": {"ashiq": {
-  "command": "python", "args": ["-m", "ashiq.mcp_server"],
-  "env": {"ASHIQ_DATABASE_URL": "postgresql://localhost/app"}}}}
+{"mcpServers": {"schemagate": {
+  "command": "python", "args": ["-m", "schemagate.mcp_server"],
+  "env": {"SCHEMAGATE_DATABASE_URL": "postgresql://localhost/app"}}}}
 ```
 
 Three tools: `select_schema` (the DDL for a question, scoped to the caller),
@@ -296,12 +296,12 @@ Three tools: `select_schema` (the DDL for a question, scoped to the caller),
 DDL). All three take `principal` and `roles`. If the client leaves them out,
 the caller is anonymous and sees only unrestricted objects. A restricted
 object and a missing one return the same error, so existence doesn't leak.
-`ASHIQ_DATABASE_URL=demo` serves the bundled schema.
+`SCHEMAGATE_DATABASE_URL=demo` serves the bundled schema.
 
 To host it for a team rather than one desktop:
 
 ```bash
-ASHIQ_MCP_TRANSPORT=streamable-http ASHIQ_MCP_PORT=8765 python -m ashiq.mcp_server
+SCHEMAGATE_MCP_TRANSPORT=streamable-http SCHEMAGATE_MCP_PORT=8765 python -m schemagate.mcp_server
 ```
 
 It's built not to die. The index lives in memory after startup, so the
@@ -318,13 +318,13 @@ test for it now.
 **LangChain.** A proper `BaseRetriever`, so it composes:
 
 ```bash
-pip install 'ashiq[langchain]'
+pip install 'schemagate[langchain]'
 ```
 
 ```python
-from ashiq.integrations.langchain import AshiqRetriever, prompt_fragment
+from schemagate.integrations.langchain import SchemagateRetriever, prompt_fragment
 
-retriever = AshiqRetriever(catalog=cat, top_k=6,
+retriever = SchemagateRetriever(catalog=cat, top_k=6,
                            principal=Principal("okta:jdoe", roles={"finance"}))
 chain = retriever | RunnableLambda(prompt_fragment) | your_sql_prompt | llm
 ```
@@ -339,7 +339,7 @@ wrong for a long-lived service. `OracleStore` keeps vectors in Oracle 23ai's
 native `VECTOR` type so the nearest-neighbour search runs in the database:
 
 ```python
-from ashiq.stores.oracle import OracleStore
+from schemagate.stores.oracle import OracleStore
 
 store = OracleStore(dsn="user/pw@host:1521/FREEPDB1", dim=512)
 store.create_schema()                       # idempotent
@@ -359,7 +359,7 @@ predicate, and every statement is checked against an independent Oracle parser,
 but none of it has run against a live 23ai instance yet. To do that:
 
 ```bash
-export ASHIQ_ORACLE_DSN='user/password@host:1521/FREEPDB1'
+export SCHEMAGATE_ORACLE_DSN='user/password@host:1521/FREEPDB1'
 pytest tests/test_store_conformance.py -v
 ```
 
@@ -382,7 +382,7 @@ own to `Catalog(...)`, or empty tuples to switch it off. `cat.shadows()` shows
 what was detected.
 
 **Identifier length.** PostgreSQL truncates names to 63 bytes at creation.
-That's the database doing it, not ashiq, and there's nothing to be done from
+That's the database doing it, not schemagate, and there's nothing to be done from
 this side.
 
 **Non-English schemas** work, including Chinese, Japanese and Korean, and
@@ -404,13 +404,13 @@ v0.1. Alpha, and the API may still move.
 | `MemoryStore` | done |
 | AI cataloging | done, tested offline against fake providers |
 | CLI | done |
-| Studio (`ashiq studio`, and the hosted demo) | done, driven by a real browser in tests |
+| Studio (`schemagate studio`, and the hosted demo) | done, driven by a real browser in tests |
 | MCP server | done, tested through a real MCP client |
 | LangChain retriever | done, tested against langchain-core |
 | `OracleStore` | written and statically verified, needs a live run |
 | pgvector store | not started |
 
-`import ashiq` never imports any provider SDK, and there's a test asserting it.
+`import schemagate` never imports any provider SDK, and there's a test asserting it.
 
 Default embeddings are stable across processes, machines and Python versions,
 so cached or persisted vectors stay valid. That one is enforced by a test that

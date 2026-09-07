@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Certify ashiq against a real database, whatever the dialect.
+"""Certify schemagate against a real database, whatever the dialect.
 
-ashiq reflects schemas through SQLAlchemy's dialect-agnostic Inspector, so
+schemagate reflects schemas through SQLAlchemy's dialect-agnostic Inspector, so
 it should work on any engine SQLAlchemy supports. This script turns that
 "should" into evidence for your database: it creates three small tables,
 reflects them, runs selection and identity scoping end to end, and drops
@@ -12,7 +12,7 @@ everything again.
     python scripts/certify_dialect.py 'mssql+pyodbc://user:pw@host/db?driver=ODBC+Driver+18+for+SQL+Server'
     python scripts/certify_dialect.py 'mysql+pymysql://user:pw@host/db'
 
-It needs permission to CREATE and DROP three tables prefixed ``ashiq_cert_``.
+It needs permission to CREATE and DROP three tables prefixed ``schemagate_cert_``.
 Point it at a scratch schema, never production. Exit code 0 means certified.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from __future__ import annotations
 import sys
 import traceback
 
-PREFIX = "ashiq_cert_"
+PREFIX = "schemagate_cert_"
 
 
 def build_metadata(sa):
@@ -51,11 +51,11 @@ def main(url: str) -> int:
     try:
         import sqlalchemy as sa
     except ImportError:
-        print("SQLAlchemy is required: pip install ashiq")
+        print("SQLAlchemy is required: pip install schemagate")
         return 2
 
-    from ashiq import Catalog, Principal
-    from ashiq.introspect import reflect
+    from schemagate import Catalog, Principal
+    from schemagate.introspect import reflect
 
     checks, failures = [], []
 
@@ -68,7 +68,11 @@ def main(url: str) -> int:
             failures.append((name, e))
             print(f"  FAIL  {name}: {type(e).__name__}: {e}")
 
-    engine = sa.create_engine(url)
+    # Driver options that do not fit in a URL -- an Oracle wallet, for one:
+    #   SCHEMAGATE_CONNECT_ARGS='{"config_dir": "/w", "wallet_location": "/w", "wallet_password": "..."}'
+    import json, os
+    connect_args = json.loads(os.environ.get("SCHEMAGATE_CONNECT_ARGS", "{}"))
+    engine = sa.create_engine(url, connect_args=connect_args)
     print(f"dialect: {engine.dialect.name}  driver: {engine.dialect.driver}")
     try:
         with engine.connect() as conn:
@@ -154,7 +158,7 @@ def main(url: str) -> int:
     if failures:
         print(f"\n{engine.dialect.name.upper()} NOT CERTIFIED")
         print("Please open an issue with the output above:")
-        print("  https://github.com/ashishsinha1602/ashiq/issues")
+        print("  https://github.com/ashishsinha1602/schemagate/issues")
         return 1
     print(f"\n{engine.dialect.name.upper()} CERTIFIED "
           f"(SQLAlchemy {__import__('sqlalchemy').__version__})")

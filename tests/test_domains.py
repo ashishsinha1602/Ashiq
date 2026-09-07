@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 import schema_fixture_finance as finance      # noqa: E402
 import schema_fixture_telemetry as telemetry  # noqa: E402
 
-from ashiq import Catalog, Principal  # noqa: E402
-from ashiq.ai import CallableProvider, SchemaDescriber  # noqa: E402
+from schemagate import Catalog, Principal  # noqa: E402
+from schemagate.ai import CallableProvider, SchemaDescriber  # noqa: E402
 
 DOMAINS = {"finance": finance, "telemetry": telemetry}
 

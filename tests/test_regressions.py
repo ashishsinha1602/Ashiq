@@ -9,7 +9,7 @@ import textwrap
 
 import pytest
 
-from ashiq import Catalog, Column, HashingEmbedder, ObjectDoc
+from schemagate import Catalog, Column, HashingEmbedder, ObjectDoc
 
 
 # --- 1. embeddings must be stable across interpreter processes -------------
@@ -19,7 +19,7 @@ from ashiq import Catalog, Column, HashingEmbedder, ObjectDoc
 
 _PROBE = textwrap.dedent("""
     import json
-    from ashiq import HashingEmbedder
+    from schemagate import HashingEmbedder
     print(json.dumps(HashingEmbedder(dim=128).embed(["cust_order_line total_net"])[0]))
 """)
 
@@ -65,22 +65,22 @@ def test_every_lazy_export_resolves(name):
     Optional third-party imports belong inside __init__, not at module
     scope, so probing for a backend never explodes.
     """
-    import ashiq
-    assert getattr(ashiq, name) is not None
-    assert hasattr(ashiq, name)
+    import schemagate
+    assert getattr(schemagate, name) is not None
+    assert hasattr(schemagate, name)
 
 
 def test_unknown_attribute_raises_attribute_error():
-    import ashiq
+    import schemagate
     with pytest.raises(AttributeError):
-        ashiq.NoSuchThing
-    assert not hasattr(ashiq, "NoSuchThing")
+        schemagate.NoSuchThing
+    assert not hasattr(schemagate, "NoSuchThing")
 
 
 def test_every_public_name_actually_resolves():
-    import ashiq
-    for name in ashiq.__all__:
-        assert getattr(ashiq, name) is not None
+    import schemagate
+    for name in schemagate.__all__:
+        assert getattr(schemagate, name) is not None
 
 
 # --- 3. a hint must take effect without a manual reindex ------------------
@@ -120,7 +120,7 @@ def test_restrict_needs_no_reindex(cat):
 # CJK names became [] -- making those objects unreachable by name in any
 # schema not written in English. Found by the 260-object complex fixture.
 
-from ashiq.embedder import tokenize  # noqa: E402
+from schemagate.embedder import tokenize  # noqa: E402
 
 
 @pytest.mark.parametrize("text,expected", [
@@ -148,7 +148,7 @@ def test_scripts_without_word_boundaries_produce_tokens(text):
 
 
 def test_cjk_query_matches_cjk_identifier():
-    from ashiq import Catalog, Column, ObjectDoc
+    from schemagate import Catalog, Column, ObjectDoc
 
     cat = Catalog()
     cat.add(ObjectDoc(name="売上明細", columns=[Column("金額", "REAL")]))
@@ -172,7 +172,7 @@ def test_ascii_tokenisation_is_byte_identical_to_before():
 # hypothesis in tests/test_any_schema.py.
 
 def test_multiline_comments_cannot_escape_their_comment_line():
-    from ashiq import Column, ObjectDoc
+    from schemagate import Column, ObjectDoc
     doc = ObjectDoc(name="t", hint="first line\nSELECT * FROM secrets",
                     columns=[Column("c", "TEXT", comment="a\r\nb\tc")])
     for line in doc.render_ddl().splitlines():

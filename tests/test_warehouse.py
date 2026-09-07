@@ -5,7 +5,7 @@ The point of this fixture is that several tables are *plausible* for most
 questions and only one is right. It found a real ranking weakness while
 being written -- a 3-column ``_tmp`` copy outscored the 25-column table it
 was copied from, even with a hint -- and the shadow demotion in
-``ashiq.catalog`` exists because of it.
+``schemagate.catalog`` exists because of it.
 """
 import os
 import sqlite3
@@ -19,8 +19,8 @@ from schema_fixture_warehouse import (  # noqa: E402
     DDL, DECOYS, GOLDEN, GOLDEN_NEEDS_DESCRIPTIONS, HINTS, RESTRICTED,
 )
 
-from ashiq import Catalog, Principal  # noqa: E402
-from ashiq.ai import CallableProvider, SchemaDescriber  # noqa: E402
+from schemagate import Catalog, Principal  # noqa: E402
+from schemagate.ai import CallableProvider, SchemaDescriber  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -157,7 +157,7 @@ def test_real_tables_are_never_shadows(wh):
 
 def test_a_standalone_v2_with_no_base_is_not_a_shadow():
     """The rule needs the base to exist; a lone name is left alone."""
-    from ashiq import Column, ObjectDoc
+    from schemagate import Column, ObjectDoc
     cat = Catalog()
     cat.add(ObjectDoc(name="pricing_v2", columns=[Column("price", "REAL")]))
     cat.add(ObjectDoc(name="stg_events", columns=[Column("payload", "TEXT")]))
@@ -165,7 +165,7 @@ def test_a_standalone_v2_with_no_base_is_not_a_shadow():
 
 
 def test_shadow_matching_stays_inside_one_schema():
-    from ashiq import Column, ObjectDoc
+    from schemagate import Column, ObjectDoc
     cat = Catalog()
     cat.add(ObjectDoc(name="account", schema="crm", columns=[Column("id", "INT")]))
     cat.add(ObjectDoc(name="account_old", schema="billing", columns=[Column("id", "INT")]))
