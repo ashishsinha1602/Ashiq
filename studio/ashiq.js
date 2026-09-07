@@ -11,7 +11,12 @@
  * to change this too.
  */
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory(require("blakejs"));
+  if (typeof module === "object" && module.exports) {
+    let b;
+    try { b = require("blakejs"); }            // npm install, if present
+    catch (e) { b = require("./blake2b.browser.js"); }  // bundled copy: no install needed
+    module.exports = factory(b);
+  }
   else root.ashiq = factory(root.blakejs);
 })(typeof self !== "undefined" ? self : this, function (blakejs) {
   "use strict";

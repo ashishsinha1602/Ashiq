@@ -53,10 +53,13 @@ gemini      = ["google-genai>=1.0"]
 ai          = ["anthropic>=0.40", "openai>=1.40", "google-genai>=1.0"]
 huggingface = ["sentence-transformers>=3.0"]
 # integrations
-mcp         = ["mcp>=1.2"]
+mcp         = ["mcp>=1.2; python_version >= '3.10'"]
 langchain   = ["langchain-core>=0.3"]
 dev         = ["pytest>=8", "ruff", "mypy", "sqlglot>=25", "anyio>=4",
-               "mcp>=1.2", "langchain-core>=0.3", "hypothesis>=6"]
+               "langchain-core>=0.3",
+               # these two need 3.10+; on 3.9 their tests skip
+               "mcp>=1.2; python_version >= '3.10'",
+               "hypothesis>=6; python_version >= '3.10'"]
 
 [project.scripts]
 ashiq = "ashiq.cli:main"

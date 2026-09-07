@@ -461,3 +461,5 @@ module.exports = {
   })({exports: {}}, undefined, req);
   return modules['./blake2b'];
 })();
+
+if (typeof module === "object" && module.exports) module.exports = blakejs;

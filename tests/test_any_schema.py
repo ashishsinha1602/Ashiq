@@ -13,7 +13,8 @@ no one sat down and wrote.
 import string
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+hypothesis = pytest.importorskip("hypothesis")  # needs Python 3.10+
+from hypothesis import HealthCheck, given, settings, strategies as st  # noqa: E402
 
 from ashiq import Catalog, Column, ForeignKey, ObjectDoc, Principal
 
