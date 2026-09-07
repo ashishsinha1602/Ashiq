@@ -1,7 +1,21 @@
 # schemagate
 
+[![PyPI](https://img.shields.io/pypi/v/schemagate.svg)](https://pypi.org/project/schemagate/)
+[![Python](https://img.shields.io/pypi/pyversions/schemagate.svg)](https://pypi.org/project/schemagate/)
+[![CI](https://github.com/ashishsinha1602/schemagate/actions/workflows/ci.yml/badge.svg)](https://github.com/ashishsinha1602/schemagate/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Try it in the browser](https://img.shields.io/badge/demo-in%20your%20browser-0F7B6C)](https://ashishsinha1602.github.io/schemagate/)
+
 Picks the handful of tables an NL2SQL model actually needs, and never shows it
 tables the person asking isn't allowed to read.
+
+![Same question, two callers. Without the payroll role hr_compensation is absent from the prompt; with it, it is the first table.](docs/media/before-after.png)
+
+*Same question, same person. Left: no `payroll` role, `hr_compensation` is absent
+from the prompt — not ranked low, absent. Right: role added, it is the first
+table. That decision happens before any SQL is written.
+[Try it in the browser](https://ashishsinha1602.github.io/schemagate/) — no
+install, no database, no model call.*
 
 ```bash
 pip install schemagate
@@ -36,6 +50,40 @@ If you're coming from Vanna (archived March 2026), `docs/migrating-from-vanna.md
 is the short version: Vanna applied identity when the SQL *ran*; schemagate applies
 it before the model sees the schema. Your `User` maps to a `Principal` in one
 line.
+
+## What it saves
+
+Every text-to-SQL call pays for the schema in the prompt. Dump the whole thing
+and you pay for every table on every question; hand the model six tables and
+you pay for six. Measured on the test schemas, average over their golden
+questions, same built-in estimator as `tests/bench.py`:
+
+| schema | objects | full schema, every call | schemagate, average | reduction |
+|---|---:|---:|---:|---:|
+| Commerce | 42 | 2,483 tokens | 604 | 76% |
+| Clinical claims | 27 | 1,568 | 543 | 65% |
+| Claims warehouse (star) | 51 | 3,312 | 880 | 73% |
+| Bank ledger and trading | 39 | 2,255 | 637 | 72% |
+| IoT telemetry | 40 | 2,125 | 448 | 79% |
+| Hostile (4 schemas, copies of everything) | 260 | 16,095 | 444 | **97%** |
+
+The last row is the one that matters: the selection stays around six tables
+no matter how big the schema is, so the saving grows with the schema. Real
+databases are the last row, not the first.
+
+Worked example, with a price you should replace with your own: a 260-object
+schema, 5,000 questions a day, an input price of $3 per million tokens. Full
+schema: 16,095 × 5,000 × 30 = 2.4 billion tokens a month, about $7,200. With
+schemagate: 444 × 5,000 × 30 = 67 million, about $200. The
+[browser demo](https://ashishsinha1602.github.io/schemagate/) has these two
+numbers as editable fields under the stats, so you can put in your own volume
+and price and watch it recompute against whatever question you ask.
+
+Two more things that cost nothing here and money elsewhere: the selector
+itself never calls a model (BM25 plus a hashed embedder, offline,
+milliseconds), and the optional descriptions can be written by any chat window
+you already pay for instead of an API key — see
+[Without an API key](#without-an-api-key).
 
 ## The problem this solves
 
@@ -159,7 +207,30 @@ strings have nothing in common. Ask it about `stock_shortfall` and it's
 excellent.
 
 If your users type identifier-shaped questions, you're done, and you never need
-an API key. If they type like people, give the catalog descriptions:
+an API key. If they type like people, give the catalog descriptions. There are
+two ways, and neither is required.
+
+### Without an API key
+
+Any chat window you already have — Claude.ai, ChatGPT, Gemini, Copilot, a
+local model — can write the descriptions. schemagate gives you the prompt and
+takes the reply:
+
+```bash
+schemagate describe --url postgresql://localhost/app --out prompt.txt
+# paste prompt.txt into a chat; save its JSON reply as reply.json
+schemagate describe --url postgresql://localhost/app --apply reply.json --config catalog.json
+schemagate select   --url postgresql://localhost/app "things we're running out of" --config catalog.json
+```
+
+The prompt is metadata only — names, types, comments, foreign keys, never rows
+— and one paste covers every undescribed object. The reply lands in the
+`describe` block of `catalog.json`, next to your `restrict` and `hint` blocks,
+and `select`, `studio` and the MCP server (`SCHEMAGATE_CATALOG_CONFIG`) all
+read it. From Python it's the same idea: `cat.describe_prompt()` and
+`cat.describe({"v_stock_shortfall": "Items below their reorder level."})`.
+
+### With your own key
 
 ```python
 from schemagate.ai import SchemaDescriber, AnthropicProvider

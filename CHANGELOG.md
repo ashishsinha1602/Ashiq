@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Descriptions without an API key: `Catalog.describe_prompt()` renders one
+  prompt for any chat window; `Catalog.describe()` accepts the JSON reply as a
+  plain dict; `schemagate describe` does both from the shell and saves into the
+  `describe` block of a catalog config, which `select`, `studio` and the MCP
+  server all read (`schemagate.config`).
+- `Catalog.__len__` and `Catalog.objects()`.
+- `scripts/certify_dialect.py` takes driver options via `SCHEMAGATE_CONNECT_ARGS`
+  (wallets don't fit in a URL).
+- README hero image, badges, SECURITY/CONTRIBUTING/CITATION, MCP registry
+  manifest.
+
 ## 0.1.0
 
 First release. (Published for one day as `ashiq` 0.1.0 before the rename;

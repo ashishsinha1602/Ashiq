@@ -75,3 +75,6 @@ packages = ["src/schemagate"]
 
 [tool.hatch.build]
 include = ["src/schemagate/**/*.py", "src/schemagate/py.typed", "src/schemagate/studio.html"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["docs/media", "shim", "studio/node_modules", ".github"]
