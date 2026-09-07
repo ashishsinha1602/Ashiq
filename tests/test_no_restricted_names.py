@@ -22,7 +22,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SKIP_DIRS = {".git", "__pycache__", "dist", "build", ".pytest_cache", ".venv",
+SKIP_DIRS = {".git", ".hypothesis", "__pycache__", "dist", "build", ".pytest_cache", ".venv",
              ".mypy_cache", ".ruff_cache", "node_modules"}
 SKIP_SUFFIX = {".pyc", ".gz", ".whl", ".png", ".jpg", ".so"}
 
