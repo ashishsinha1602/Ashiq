@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.2
+
+One click onto Oracle Cloud, and the OCI provider no longer truncates.
+
+- **Deploy to Oracle Cloud.** Resource Manager accepts a stack from a zip URL,
+  so the button in the README gives the same one-click install a Marketplace
+  listing would, with no partner membership, supplier registration or separate
+  tenancy involved. Each release now carries `schemagate-oci-stack.zip` with the
+  Terraform at the zip root, which is what Resource Manager reads.
+- `oci/quickstart.sh`: schemagate against an existing Autonomous Database from
+  OCI Cloud Shell in about a minute — no VM, no Terraform, no API key.
+- `oci/stack/` catalogues on first boot: a dynamic group and policy let that one
+  instance call OCI Generative AI through its instance principal, so
+  descriptions are written with no key and no prompt leaving the tenancy.
+- **Fixed: descriptions arrived truncated from OCI.** `_oci_text` read only the
+  first content part of a reply, so every Gemini description on a live run was
+  cut off mid-sentence at about ten tokens and business-language recall fell
+  twenty points with nothing logged. It now walks every response shape the
+  service returns.
+- A reply that stops mid-clause is retried with real headroom, and anything
+  still short is collected on `SchemaDescriber.truncated` and raised as one
+  `RuntimeWarning`. A provider that caps output can no longer degrade a catalog
+  in silence.
+
 ## 0.1.1
 
 Oracle, certified live on Autonomous Database 26ai — and the AI cataloging
