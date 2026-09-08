@@ -64,7 +64,7 @@ class OracleStore:
     def __init__(self, dsn: Optional[str] = None, user: Optional[str] = None,
                  password: Optional[str] = None, connection: Any = None,
                  table: str = _DEFAULT_TABLE, dim: int = 512,
-                 distance: str = "COSINE"):
+                 distance: str = "COSINE", **connect_kwargs: Any):
         if connection is None and dsn is None:
             raise ValueError("OracleStore needs either connection= or dsn=")
         if not table.replace("_", "").isalnum():
@@ -85,7 +85,17 @@ class OracleStore:
                 raise ImportError(
                     "pip install 'schemagate[oracle]' to use OracleStore"
                 ) from e
-            self._conn = oracledb.connect(user=user, password=password, dsn=dsn)
+            # Autonomous Database needs a wallet directory and password that
+            # have no place in dsn/user/password. They arrive either as
+            # keyword arguments here or through SCHEMAGATE_CONNECT_ARGS, the
+            # same JSON every other entry point honours. Explicit wins.
+            from ..introspect import connect_args_from_env
+            kwargs = dict(connect_args_from_env())
+            kwargs.update(connect_kwargs)
+            for k, v in (("user", user), ("password", password), ("dsn", dsn)):
+                if v is not None:
+                    kwargs[k] = v
+            self._conn = oracledb.connect(**kwargs)
 
     # ---------------- helpers ----------------
 

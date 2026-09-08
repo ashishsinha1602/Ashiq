@@ -25,6 +25,24 @@ def _match(name: str, patterns: Optional[Iterable[str]]) -> bool:
     return any(fnmatch.fnmatch(n, p.lower().replace("%", "*")) for p in patterns)
 
 
+
+#: Schema-name shapes that are platform plumbing on every Oracle and most
+#: other engines: APEX (APEX_230200, FLOWS_FILES), ORDS, common users
+#: (C##...), and anything with a $ in it. A user's own schema never looks
+#: like this; a hosted platform's always does.
+_INTERNAL_PREFIXES = ("apex_", "flows_", "ords_", "c##", "sys$", "db_", "ggsys",
+                      "ojvmsys", "dvsys", "dvf", "lbacsys", "dbsfwuser", "rqsys",
+                      "pyqsys", "graph$", "mtssys", "adbsnmp", "oci_admin",
+                      "sh$", "ssb$", "remote_scheduler_agent", "audsys",
+                      "cloud$", "gsmuser", "gsmcatuser", "gsmrofuser", "xs$null",
+                      "dip", "anonymous", "public")
+
+
+def _looks_internal(schema: str) -> bool:
+    low = schema.lower()
+    return "$" in low or any(low.startswith(p) for p in _INTERNAL_PREFIXES)
+
+
 def connect_args_from_env() -> dict:
     """Driver keyword arguments for :func:`sqlalchemy.create_engine`, read from
     the ``SCHEMAGATE_CONNECT_ARGS`` environment variable.
@@ -95,9 +113,12 @@ def reflect(engine_or_url, include=None, exclude=None,
     if schemas is None:
         try:
             schemas = [s for s in insp.get_schema_names()
-                       if s.lower() not in _SYSTEM_SCHEMAS]
+                       if s.lower() not in _SYSTEM_SCHEMAS
+                       and not _looks_internal(s)]
         except NotImplementedError:
             schemas = [None]
+        from .dialects import vendor_maintained
+        schemas = [s for s in schemas if s not in vendor_maintained(engine)]
         default = insp.default_schema_name
         if default and default in schemas:
             schemas = [default] + [s for s in schemas if s != default]
@@ -115,9 +136,14 @@ def reflect(engine_or_url, include=None, exclude=None,
             if not _match(name, include) or (exclude and _match(name, exclude)):
                 continue
             try:
-                raw_cols = insp.get_columns(name, schema=schema)
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="Did not recognize type")
+                    raw_cols = insp.get_columns(name, schema=schema)
             except Exception:
                 continue
+            from .dialects import fill_unknown_types
+            fill_unknown_types(engine, schema, name, raw_cols)
             try:
                 pk = set(insp.get_pk_constraint(name, schema=schema
                                                 ).get("constrained_columns") or [])

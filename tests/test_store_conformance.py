@@ -33,9 +33,16 @@ ORACLE_DSN = os.environ.get("SCHEMAGATE_ORACLE_DSN")
 
 def _oracle_store():
     from schemagate.stores.oracle import OracleStore
-    user = os.environ.get("SCHEMAGATE_ORACLE_USER")
-    pw = os.environ.get("SCHEMAGATE_ORACLE_PASSWORD")
-    store = OracleStore(dsn=ORACLE_DSN, user=user, password=pw,
+    # SCHEMAGATE_ORACLE_DSN is either 'user/pw@dsn' or a bare dsn with the
+    # credentials in SCHEMAGATE_ORACLE_USER/PASSWORD; wallet settings come
+    # from SCHEMAGATE_CONNECT_ARGS inside OracleStore itself.
+    dsn, user, pw = ORACLE_DSN, None, None
+    if "@" in dsn and "/" in dsn.split("@", 1)[0]:
+        cred, dsn = dsn.split("@", 1)
+        user, pw = cred.split("/", 1)
+    user = os.environ.get("SCHEMAGATE_ORACLE_USER") or user
+    pw = os.environ.get("SCHEMAGATE_ORACLE_PASSWORD") or pw
+    store = OracleStore(dsn=dsn, user=user, password=pw,
                         table="SCHEMAGATE_CONFORMANCE", dim=DIM)
     store.create_schema()
     return store

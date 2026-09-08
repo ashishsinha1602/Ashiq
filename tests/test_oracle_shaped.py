@@ -368,3 +368,118 @@ def test_engine_from_url_without_env_passes_no_connect_args(monkeypatch):
     monkeypatch.delenv("SCHEMAGATE_CONNECT_ARGS", raising=False)
     engine_from_url("sqlite://")
     assert "connect_args" not in seen
+
+
+# --- found live on Autonomous Database 26ai, 8 Sep 2026 --------------------
+
+def _fake_engine(rows_by_sql):
+    """An engine whose connect() answers exec_driver_sql from a dict."""
+    class Result:
+        def __init__(self, rows): self._rows = rows
+        def fetchall(self): return self._rows
+    class Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def exec_driver_sql(self, sql, params=None):
+            for key, rows in rows_by_sql.items():
+                if key in sql:
+                    return Result(rows)
+            raise AssertionError(f"unexpected SQL: {sql}")
+    class Dialect:
+        name = "oracle"
+        default_schema_name = "ADMIN"
+    class Engine:
+        dialect = Dialect()
+        def connect(self): return Conn()
+    return Engine()
+
+
+def test_oracle_maintained_schemas_are_excluded():
+    """ADMIN on an ADB sees ~1,500 objects; only the user's own should be
+    reflected. ALL_USERS.ORACLE_MAINTAINED is the signal."""
+    from schemagate.dialects import vendor_maintained
+    eng = _fake_engine({"oracle_maintained": [("APEX_230200",), ("ORDS_METADATA",), ("SYS",)]})
+    assert vendor_maintained(eng) == {"APEX_230200", "ORDS_METADATA", "SYS"}
+
+
+def test_vendor_maintained_failure_excludes_nothing():
+    from schemagate.dialects import vendor_maintained
+    class Boom:
+        class dialect: name = "oracle"
+        def connect(self): raise RuntimeError("ORA-00942")
+    assert vendor_maintained(Boom()) == set()
+
+
+def test_non_oracle_engines_get_no_dictionary_query():
+    from schemagate.dialects import vendor_maintained, fill_unknown_types
+    class PG:
+        class dialect: name = "postgresql"
+        def connect(self): raise AssertionError("must not connect")
+    assert vendor_maintained(PG()) == set()
+    cols = [{"name": "x", "type": "NULL"}]
+    fill_unknown_types(PG(), None, "t", cols)
+    assert cols[0]["type"] == "NULL"
+
+
+def test_internal_schema_shapes_are_recognised():
+    from schemagate.introspect import _looks_internal
+    for s in ("APEX_230200", "FLOWS_FILES", "ORDS_PUBLIC_USER", "C##CLOUD$SERVICE",
+              "GRAPH$METADATA", "SH$X", "DBSFWUSER", "PUBLIC"):
+        assert _looks_internal(s), s
+    for s in ("SALES", "HR", "ADMIN", "MYAPP"):
+        assert not _looks_internal(s), s
+
+
+def test_unknown_oracle_types_get_their_real_name():
+    """XMLTYPE, JSON, SDO_GEOMETRY and VECTOR come back from SQLAlchemy as
+    NULL. The prompt must show VECTOR(512, FLOAT32), not NULL."""
+    from schemagate.dialects import fill_unknown_types
+    eng = _fake_engine({"all_tab_columns": [
+        ("EMBEDDING", "VECTOR(512, FLOAT32)", None, None, None),
+        ("DOC", "XMLTYPE", None, None, None),
+        ("PAYLOAD", "JSON", None, None, None),
+        ("NAME", "VARCHAR2", 200, None, None),
+        ("AMT", "NUMBER", 22, 12, 2),
+    ]})
+    cols = [{"name": "embedding", "type": "NULL"}, {"name": "doc", "type": "NULL"},
+            {"name": "payload", "type": "NULL"}, {"name": "name", "type": "VARCHAR2(200 CHAR)"},
+            {"name": "amt", "type": "NULL"}]
+    fill_unknown_types(eng, "ADMIN", "t", cols)
+    got = {c["name"]: c["type"] for c in cols}
+    assert got["embedding"] == "VECTOR(512, FLOAT32)"
+    assert got["doc"] == "XMLTYPE" and got["payload"] == "JSON"
+    assert got["name"] == "VARCHAR2(200 CHAR)"      # known types untouched
+    assert got["amt"] == "NUMBER(12,2)"
+
+
+def test_unknown_type_lookup_is_skipped_when_nothing_is_unknown():
+    from schemagate.dialects import fill_unknown_types
+    class NoConnect:
+        class dialect: name = "oracle"; default_schema_name = "ADMIN"
+        def connect(self): raise AssertionError("must not query")
+    cols = [{"name": "a", "type": "NUMBER"}]
+    fill_unknown_types(NoConnect(), None, "t", cols)
+
+
+def test_python_dash_m_schemagate_works():
+    import subprocess, sys
+    out = subprocess.run([sys.executable, "-m", "schemagate", "--version"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert "schemagate" in (out.stdout + out.stderr).lower()
+
+
+def test_oracle_store_merges_wallet_connect_args(monkeypatch):
+    """OracleStore(dsn='x_high') on an ADB needs the wallet from
+    SCHEMAGATE_CONNECT_ARGS; explicit user/password/dsn win over the env."""
+    import sys, types
+    seen = {}
+    fake = types.ModuleType("oracledb")
+    fake.connect = lambda **kw: seen.update(kw) or object()
+    monkeypatch.setitem(sys.modules, "oracledb", fake)
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS",
+                       '{"config_dir": "/w", "wallet_location": "/w", "wallet_password": "wp", "user": "IGNORED"}')
+    from schemagate.stores.oracle import OracleStore
+    OracleStore(dsn="db_high", user="ADMIN", password="pw", dim=8)
+    assert seen == {"config_dir": "/w", "wallet_location": "/w", "wallet_password": "wp",
+                    "user": "ADMIN", "password": "pw", "dsn": "db_high"}

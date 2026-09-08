@@ -76,7 +76,8 @@ def _engine_for(name):
         pytest.skip(f"set {DIALECT_ENV[name]} to certify {name}")
     if name == "sqlite":
         url = "sqlite:///" + str(pytest.importorskip("tempfile").mktemp(suffix=".db"))
-    return sa.create_engine(url)
+    from schemagate.introspect import engine_from_url
+    return engine_from_url(url)      # SCHEMAGATE_CONNECT_ARGS: wallets, TLS
 
 
 @pytest.fixture(params=list(DIALECT_URLS))
