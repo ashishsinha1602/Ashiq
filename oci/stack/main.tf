@@ -22,6 +22,16 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
 
+# Always Free shapes are not offered in every availability domain -- in a live
+# Phoenix tenancy VM.Standard.E2.1.Micro existed only in AD-3, and asking AD-1
+# for it returned 404-NotAuthorizedOrNotFound at LaunchInstance. So ask each
+# domain what it actually has rather than assuming the first one.
+data "oci_core_shapes" "by_ad" {
+  count               = length(data.oci_identity_availability_domains.ads.availability_domains)
+  compartment_id      = var.compartment_ocid
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[count.index].name
+}
+
 data "oci_core_images" "ol" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Oracle Linux"
@@ -199,6 +209,18 @@ resource "oci_database_autonomous_database" "adb" {
 }
 
 locals {
+  # The availability domains that offer the requested shape, in order.
+  ads_with_shape = [
+    for i, ad in data.oci_identity_availability_domains.ads.availability_domains :
+    ad.name
+    if contains([for sh in data.oci_core_shapes.by_ad[i].shapes : sh.name], var.instance_shape)
+  ]
+  availability_domain = (
+    var.availability_domain != "" ? var.availability_domain :
+    length(local.ads_with_shape) > 0 ? local.ads_with_shape[0] :
+    data.oci_identity_availability_domains.ads.availability_domains[0].name
+  )
+
   # The database this stack creates cannot be referenced here: its ACL names
   # the instance's reserved IP, so it is created after the instance. cloud-init
   # resolves the descriptor at boot instead (see /opt/resolve-db.sh). When
@@ -229,9 +251,13 @@ resource "oci_core_instance" "vm" {
       condition     = var.create_adb || var.database_url != ""
       error_message = "create_adb is false, so database_url is required - there is nothing for the MCP server to reflect."
     }
+    precondition {
+      condition     = var.availability_domain != "" || length(local.ads_with_shape) > 0
+      error_message = "No availability domain in ${var.region} offers ${var.instance_shape}. Always Free shapes are often in only one domain - pick another shape, or set availability_domain explicitly."
+    }
   }
 
-  availability_domain = var.availability_domain != "" ? var.availability_domain : data.oci_identity_availability_domains.ads.availability_domains[0].name
+  availability_domain = local.availability_domain
   shape               = var.instance_shape
   display_name        = "schemagate-mcp"
 
