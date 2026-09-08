@@ -6,7 +6,10 @@ package_update: true
 packages: [python3.11, python3.11-pip]
 write_files:
   - path: /etc/schemagate.env
-    permissions: "0600"
+    # 0640 root:opc -- systemd reads it as root, and the documented re-run
+    # (`sudo -u opc /opt/catalog-once.sh`) needs opc to read it too.
+    permissions: "0640"
+    owner: "root:opc"
     content: |
       SCHEMAGATE_DATABASE_URL=${database_url}
       SCHEMAGATE_CONNECT_ARGS='${connect_args}'
@@ -16,6 +19,7 @@ write_files:
       SCHEMAGATE_CATALOG_CONFIG=/etc/schemagate/catalog.json
       OCI_COMPARTMENT_ID=${compartment_ocid}
       OCI_REGION=${region}
+      OCI_CLI_AUTH=instance_principal
   - path: /etc/schemagate/catalog.json
     content: |
       {"restrict": {}, "hint": {}, "describe": {}}
@@ -31,7 +35,8 @@ write_files:
       /opt/schemagate/bin/schemagate describe \
         --url "$SCHEMAGATE_DATABASE_URL" \
         --provider oci --model "${catalog_model}" --all \
-        --config /etc/schemagate/catalog.json || true
+        --config /etc/schemagate/catalog.json 2>&1 | tee /var/log/schemagate-catalog.log || \
+        echo "cataloguing failed -- selection still works on identifiers alone; see /var/log/schemagate-catalog.log" >&2
       chown opc:opc /etc/schemagate/catalog.json || true
   - path: /etc/systemd/system/schemagate.service
     content: |
@@ -53,7 +58,7 @@ runcmd:
   - /opt/schemagate/bin/pip install 'schemagate[oracle,mcp,oci]'
   - chown -R opc:opc /opt/schemagate /etc/schemagate
   - OCI_CLI_AUTH=instance_principal /opt/catalog-once.sh
-  - firewall-offline-cmd --add-port=${mcp_port}/tcp || true
-  - systemctl restart firewalld || true
+  - firewall-cmd --permanent --add-port=${mcp_port}/tcp || true
+  - firewall-cmd --reload || true
   - systemctl daemon-reload
   - systemctl enable --now schemagate
