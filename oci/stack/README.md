@@ -1,9 +1,13 @@
 # schemagate on OCI — Resource Manager stack
 
-One click from OCI Marketplace (or `zip` this folder and import it into
-Resource Manager): an Always-Free-eligible VM running the schemagate MCP
-server against an Autonomous Database it creates for you, or against a
-database you already have.
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/schemagate/releases/latest/download/schemagate-oci-stack.zip)
+
+One click into your own tenancy: an Always-Free-eligible VM running the
+schemagate MCP server against an Autonomous Database it creates for you, or
+against a database you already have. No Marketplace listing and no partner
+membership needed — the button hands Resource Manager a zip of this folder,
+attached to every release. You can also `zip` it yourself and import it under
+**Resource Manager → Stacks → Create Stack → My configuration**.
 
     mcp_url     http://<public-ip>:8765/mcp      ← Claude Desktop / Cursor / any MCP client
 

@@ -21,13 +21,22 @@ model should see. `quickstart.sh` in this folder runs the same thing.
 Wallet users: unzip it and add `"config_dir"`, `"wallet_location"` and
 `"wallet_password"` to `SCHEMAGATE_CONNECT_ARGS`.
 
-## 2. Full route — `stack/`, a Resource Manager stack
+## 2. One click — `stack/`, a Resource Manager stack
 
 For a shared, always-on **MCP endpoint** your team and Claude Desktop can point
 at: an Always-Free-eligible VM running `python -m schemagate.mcp_server` against
-an Autonomous Database it creates, or one you already have. This is also the
-artifact for an OCI Marketplace "stack" listing; it works standalone by zipping
-the folder and importing it into Resource Manager.
+an Autonomous Database it creates, or one you already have.
+
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/schemagate/releases/latest/download/schemagate-oci-stack.zip)
+
+That opens Resource Manager in your own tenancy with the stack loaded. Nothing
+is installed on your machine, and there is no Marketplace listing or partner
+membership in the way — the button just hands OCI a zip built from this folder
+and attached to every release.
+
+Prefer to do it by hand? `zip` this folder and import it under
+**Developer Services → Resource Manager → Stacks → Create Stack → My
+configuration**.
 
 Use the fast route to try it. Use the stack when you want it running for others.
 
