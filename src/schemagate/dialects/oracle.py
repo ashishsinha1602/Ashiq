@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Set
 
-from . import FILL_UNKNOWN_TYPES, MAINTAINED_SCHEMAS
+from . import FILL_UNKNOWN_TYPES, INTERNAL_SCHEMA, MAINTAINED_SCHEMAS
 
 
 def maintained_schemas(engine) -> Set[str]:
@@ -46,5 +46,24 @@ def unknown_types(engine, schema: Optional[str], table: str, columns: List[dict]
             c["type"] = real
 
 
+#: Schema-name shapes that are Oracle platform plumbing: APEX (APEX_230200,
+#: FLOWS_FILES), ORDS, common users (C##...), Autonomous Database service
+#: schemas, and anything with a $ in it. PUBLIC is Oracle's pseudo-schema --
+#: which is exactly why this list must never be applied to another engine.
+_INTERNAL_PREFIXES = ("apex_", "flows_", "ords_", "c##", "sys$", "db_", "ggsys",
+                      "ojvmsys", "dvsys", "dvf", "lbacsys", "dbsfwuser", "rqsys",
+                      "pyqsys", "graph$", "mtssys", "adbsnmp", "oci_admin",
+                      "sh$", "ssb$", "remote_scheduler_agent", "audsys",
+                      "cloud$", "gsmuser", "gsmcatuser", "gsmrofuser", "xs$null",
+                      "dip", "anonymous", "public",
+                      "odi_repo", "oadc_", "oml$", "omlmod$", "dcat_", "adp_")
+
+
+def looks_internal(schema: str) -> bool:
+    low = schema.lower()
+    return "$" in low or any(low.startswith(p) for p in _INTERNAL_PREFIXES)
+
+
 MAINTAINED_SCHEMAS["oracle"] = maintained_schemas
+INTERNAL_SCHEMA["oracle"] = looks_internal
 FILL_UNKNOWN_TYPES["oracle"] = unknown_types

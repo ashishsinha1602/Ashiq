@@ -15,6 +15,26 @@ from typing import Callable, Dict, List, Optional, Set
 MAINTAINED_SCHEMAS: Dict[str, Callable] = {}
 #: dialect name -> callable(engine, schema, table, columns) -> None (in place)
 FILL_UNKNOWN_TYPES: Dict[str, Callable] = {}
+#: dialect name -> callable(schema name) -> bool
+INTERNAL_SCHEMA: Dict[str, Callable] = {}
+
+
+def is_internal_schema(engine, schema: Optional[str]) -> bool:
+    """Is this schema the platform's rather than the user's?
+
+    Strictly per-dialect. A shared list is a trap: ``PUBLIC`` is a pseudo-schema
+    on Oracle and the default user schema on PostgreSQL, so one engine's tidy-up
+    is another's empty catalog.
+    """
+    if not schema:
+        return False
+    hook = INTERNAL_SCHEMA.get(engine.dialect.name)
+    if hook is None:
+        return False
+    try:
+        return bool(hook(schema))
+    except Exception:
+        return False
 
 
 def vendor_maintained(engine) -> Set[str]:
