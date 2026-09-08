@@ -171,3 +171,23 @@ def test_the_install_marker_is_what_the_lookup_waits_for():
     assert "touch /opt/schemagate/.ready" in extras
     resolve = ci[ci.index("- path: /opt/resolve-db.sh") : ci.index("schemagate-catalog.service")]
     assert "/opt/schemagate/.ready" in resolve
+
+
+def test_the_install_does_not_byte_compile_on_a_one_ocpu_box():
+    """Byte-compiling the OCI SDK's thousands of modules on VM.Standard.E2.1.Micro
+    costs minutes of the first boot, and buys nothing -- Python compiles what it
+    imports, and this venv imports a fraction of it. A live run spent eighteen
+    minutes here and the endpoint never answered."""
+    ci = _cloud_init()
+    extras = ci[ci.index("/opt/pick-extras.sh") : ci.index("- path: /opt/catalog-once.sh")]
+    assert "--no-compile" in extras
+
+
+def test_the_oci_sdk_is_installed_only_when_something_needs_it():
+    """It is the largest thing on the boot path. Cataloguing through OCI
+    Generative AI needs it, and so does the boot-time database lookup; a stack
+    pointed at your own database with neither does not."""
+    ci = _cloud_init()
+    extras = ci[ci.index("/opt/pick-extras.sh") : ci.index("- path: /opt/catalog-once.sh")]
+    assert 'SCHEMAGATE_CREATE_ADB" = "true"' in extras
+    assert "mcp,oci" in extras and '"$extras,mcp"' in extras

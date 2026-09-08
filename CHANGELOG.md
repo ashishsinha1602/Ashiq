@@ -31,7 +31,17 @@ finding something no `terraform plan` can catch.
   CLI; pip no longer upgrades itself first, prefers wheels, and skips a cache
   nothing reads twice. `verify.sh` waits fifteen minutes and says what it is
   waiting for.
-- `tests/test_oci_stack.py` pins each of these. Twelve invariants now, and
+- **The install no longer byte-compiles.** A fifth run applied cleanly and the
+  endpoint still had not answered eighteen minutes into the boot. The database
+  was `AVAILABLE` before the apply even returned, so the wait was not the
+  database -- it was pip compiling the OCI SDK's thousands of modules on one
+  burstable OCPU. `--no-compile` removes that; Python compiles what it imports,
+  and this venv imports a fraction of it. The SDK is also now installed only
+  when something needs it, which takes it off the boot path entirely for a
+  stack pointed at your own database. `verify.sh` takes `SHAPE`, `OCPUS` and
+  `MEMORY_GBS`, and on a timeout it prints what the instance was doing before
+  tearing it down.
+- `tests/test_oci_stack.py` pins each of these. Fourteen invariants now, and
   every one of them came from a failure a live apply produced.
 
 ## 0.1.7
