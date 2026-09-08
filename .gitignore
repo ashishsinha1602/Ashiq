@@ -22,3 +22,4 @@ certify_oracle.py
 RUN_ORACLE_TEST.cmd
 ai.env
 oracle_catalog.json
+oracle_catalog_oci.json

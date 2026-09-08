@@ -40,10 +40,13 @@ _SYSTEM = (
     "most 25 words, saying what the object holds and what question it "
     "answers. Use the business meaning, not the column list. Do not repeat "
     "the object name. Do not speculate about data you cannot see. "
-    "Then write ' | ' and 8 to 12 everyday words or two-word phrases a "
-    "non-technical person might use when asking about this data -- plain "
-    "synonyms and colloquial terms, not column names (for a low-battery "
-    "view: flat, dying, dead, charge, power, running out). "
+    "Then write ' | ' and 12 to 16 everyday words or short phrases a "
+    "non-technical person might use when asking about this data: informal "
+    "names for the people involved (shoppers, buyers, staff, borrowers), "
+    "the places (depot, branch, site, shop), the things and the actions "
+    "(buy from, give back, running out, behind on, came back). Plain "
+    "synonyms and colloquial terms, never column names. For a low-battery "
+    "view: flat, dying, dead, charge, power, running out, units, boxes. "
     "No preamble, no markdown, no quotes -- the sentence, a pipe, the words."
 )
 
@@ -110,7 +113,7 @@ class SchemaDescriber:
 
     def __init__(self, provider: Provider, cache_path: Optional[str] = None,
                  max_columns: int = 30, workers: int = 4,
-                 max_tokens: int = 120, strict: bool = False):
+                 max_tokens: int = 220, strict: bool = False):
         self.provider = provider
         self.cache_path = pathlib.Path(cache_path) if cache_path else None
         self.max_columns = max_columns

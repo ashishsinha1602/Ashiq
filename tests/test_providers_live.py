@@ -122,3 +122,39 @@ def test_embeddings_when_the_provider_offers_them(provider):
     def cos(a, b):
         return sum(x * y for x, y in zip(a, b)) / (math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)))
     assert cos(vecs[0], vecs[1]) > cos(vecs[0], vecs[2]), "invoices should sit nearer balances than firmware"
+
+
+def test_real_embeddings_on_the_full_business_language_set(provider):
+    """The embedding tier. Same 52 questions as tests/test_business_language.py,
+    with the provider's real embedding model replacing the hashing embedder,
+    on catalogs that carry the checked-in Sonnet descriptions. This is the
+    number for 'what does a proper embedding model buy on top of
+    descriptions' -- measured, per provider, never assumed."""
+    if not getattr(provider, "embed_model", None):
+        pytest.skip(f"{provider.name} not configured for embeddings")
+    import json
+    from schemagate.ai import APIEmbedder
+    from run_paraphrase_eval import build, score
+    import paraphrase_eval as EV
+    dim = len(provider.embed(["probe"])[0])
+    hits = total = 0
+    lines = []
+    for name in ("commerce", "health", "warehouse", "finance", "telemetry"):
+        with open(os.path.join(HERE, "descriptions", f"{name}.json"), encoding="utf-8") as fh:
+            desc = json.load(fh)
+        hashing = build(name, use_hints=False)
+        hashing.describe(desc, only_missing=False); hashing.index()
+        h0, n, _ = score(hashing, EV.ALL[name])
+        cat = Catalog(embedder=APIEmbedder(provider, dim=dim, cache_path=f"/tmp/sg_emb_{provider.name.replace(':','_')}.json"))
+        m = __import__("run_paraphrase_eval").MODS[name]
+        import sqlite3, tempfile
+        path = tempfile.mktemp(suffix=".db")
+        con = sqlite3.connect(path); con.executescript(m.DDL); con.commit(); con.close()
+        cat.bootstrap(f"sqlite:///{path}")
+        cat.describe(desc, only_missing=False); cat.index()
+        h1, _, misses = score(cat, EV.ALL[name])
+        hits += h1; total += n
+        lines.append(f"{name:<11} hashing {h0/n:4.0%}   {provider.name} embeddings {h1/n:4.0%}"
+                     + ("   misses: " + "; ".join(q for q, _, _ in misses) if misses else ""))
+    print("\n" + "\n".join(lines) + f"\nALL with {provider.name} embeddings: {hits/total:.0%} ({hits}/{total})")
+    assert hits / total >= 0.85, f"{provider.name}: {hits}/{total}"
