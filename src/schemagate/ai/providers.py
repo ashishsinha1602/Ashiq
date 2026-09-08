@@ -82,7 +82,7 @@ class AnthropicProvider:
     env_var = "ANTHROPIC_API_KEY"
 
     def __init__(self, model: str, api_key: Optional[str] = None,
-                 client: Any = None, timeout: float = 60.0):
+                 client: Any = None, timeout: float = 60.0, max_retries: int = 2):
         if not model:
             raise ValueError("model is required, e.g. model='claude-sonnet-4-5'")
         self.model = model
@@ -98,7 +98,7 @@ class AnthropicProvider:
         key = api_key or os.environ.get(self.env_var)
         if not key:
             raise ValueError(f"no API key: pass api_key= or set {self.env_var}")
-        self._client = anthropic.Anthropic(api_key=key, timeout=timeout)
+        self._client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=max_retries)
 
     def complete(self, system: str, prompt: str, max_tokens: int = 1024) -> str:
         try:

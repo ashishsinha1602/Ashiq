@@ -322,11 +322,11 @@ failed. Point it at a scratch schema.
 |---|---|
 | SQLite | certified, 10/10, in CI |
 | PostgreSQL | certified, 10/10 on PostgreSQL 16, plus the full 260-object suite |
-| Oracle | not yet run against a live instance |
+| Oracle | certified live on Oracle AI Database 26ai (Autonomous Database), Sep 2026: certify script 10/10, the native `VECTOR(512, FLOAT32)` store conformance suite, and the dialect suite. Also stress-tested against a 127-object, 3-domain schema with ~7M rows |
 | SQL Server | not yet run against a live instance |
 | MySQL / MariaDB | not yet run against a live instance |
 
-The bottom three say what they say because I haven't had a live instance to run
+The bottom two say what they say because I haven't had a live instance to run
 them against, not because I expect trouble. Run the script and tell me what
 happens.
 

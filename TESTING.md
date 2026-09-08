@@ -131,7 +131,7 @@ be tested before one.
 |---|---|
 | SQLite | every test, every run |
 | PostgreSQL 16 | live instance: the dialect suite, the certification script (10/10), the full 260-object hostile suite, the studio serving it, and the MCP server surviving the database being stopped underneath it |
-| Oracle | not run live. 26 static tests pin the SQL, bind types and scope predicate; every statement `OracleStore` emits parses under an independent Oracle SQL parser; the `VECTOR(dimensions, format)` argument order was checked against Oracle's documentation because that parser gets it wrong |
+| Oracle | certified live on Oracle AI Database 26ai (Autonomous Database), Sep 2026: `scripts/certify_dialect.py` 10/10, the native `VECTOR(512, FLOAT32)` store conformance suite (`VECTOR_DISTANCE`, MERGE, `array('f')` binds), and the dialect suite. Then stress-tested against a live 127-object, 3-domain schema (90 tables + 37 views) loaded with ~7M rows: shadow detection flagged every backup/staging copy, identity scoping held, and the reflected catalog drove selection end to end. The live run surfaced three real fixes — a JSON payload the driver returns already decoded, wallet connect-args reaching every entry point, and Autonomous Database service schemas (`ORACLE_MAINTAINED`, APEX/ORDS/OML/ODI) excluded from reflection. 26 static tests still pin the SQL and bind types |
 | SQL Server, MySQL | not run live. Reflection uses only SQLAlchemy's dialect-agnostic Inspector, a test fails if any non-universal call appears, and `scripts/certify_dialect.py` certifies an engine in one command |
 
 ## Identity scoping
