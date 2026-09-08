@@ -16,21 +16,17 @@ against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
 up for other people.
 
-> **Not yet applied successfully. Do not use this stack yet.** Run against a
-> live tenancy on 8 September 2026 it *plans* cleanly — all ten resources —
-> and then the apply fails at the Autonomous Database:
+> **The apply is not yet proven end to end.** A live run on 8 September 2026
+> planned all ten resources and then failed at the Autonomous Database:
+> *"One-way TLS connections require a private endpoint or a public IP with an
+> ACL"*. mTLS is off, and 0.1.7 had removed the access-control list.
 >
-> ```
-> 400-InvalidParameter: One-way TLS connections require a private endpoint
-> or a public IP with an ACL.
-> ```
->
-> The database sets `is_mtls_connection_required = false`, and 0.1.7 removed
-> its access-control list, which Oracle does not allow together. Restoring the
-> list is not a one-line change: the list has to name the instance's public
-> IP, and the instance cannot exist before the database, because its
-> cloud-init carries the database's connection descriptor. Tracked; see the
-> changelog for 0.1.7.
+> The list has to name the instance's public IP, so the address is now reserved
+> up front, the database is created after the instance, and cloud-init resolves
+> the connection descriptor at boot through the instance principal
+> (`/opt/resolve-db.sh`). That change is on `main` but **has not itself been
+> applied against a live tenancy yet** — run the certification below and please
+> open an issue if it fails.
 >
 > The Cloud Shell route in [`../README.md`](../README.md) *is* exercised,
 > needs no VM, and is the supported way to run schemagate on OCI today.
