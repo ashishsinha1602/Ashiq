@@ -115,3 +115,21 @@ def test_the_database_does_not_feed_cloud_init():
     assert "read autonomous-database-family" in main, (
         "the boot-time lookup needs the instance principal to read the database"
     )
+
+
+def test_the_availability_domain_is_one_that_offers_the_shape():
+    """A live Phoenix tenancy had VM.Standard.E2.1.Micro in AD-3 only. Taking
+    availability_domains[0] asked AD-1 for a shape it does not have, and
+    LaunchInstance returned 404-NotAuthorizedOrNotFound one second in."""
+    main = (STACK / "main.tf").read_text()
+    vm = main[main.index('resource "oci_core_instance"') :]
+    vm = vm[: vm.index("\n}")]
+    ad = [ln for ln in vm.splitlines() if ln.strip().startswith("availability_domain")]
+    assert len(ad) == 1, ad
+    assert "availability_domains[0]" not in ad[0], (
+        "the first availability domain does not necessarily offer the shape"
+    )
+    assert "local.availability_domain" in ad[0]
+    assert 'data "oci_core_shapes"' in main, (
+        "choosing a domain requires asking each one what shapes it offers"
+    )
