@@ -217,3 +217,17 @@ def test_the_boot_lookup_and_the_database_agree_on_the_display_name():
     assert main.count("adb_display_name = \"schemagate-demo-${local.suffix}\"") == 1
     assert "display_name                = local.adb_display_name" in main
     assert "adb_display_name  = local.adb_display_name" in main
+
+
+def test_the_boot_has_swap_because_the_free_shape_has_a_gigabyte():
+    """VM.Standard.E2.1.Micro is one OCPU and 1 GB with no swap, and the Oracle
+    Linux image brings none. A live boot died inside cloud-init's
+    update_package_sources with a load average of 6.3 on one core: write_files
+    had run, runcmd never did. Everything downstream of dnf is unreachable
+    without this, so no other fix on the boot path can be tested."""
+    ci = _cloud_init()
+    assert "swap:" in ci and "/swapfile" in ci
+    assert "package_update: true" not in ci, (
+        "refreshing every repository's metadata is the most memory-hungry step "
+        "on this boot, and nothing needs it"
+    )
