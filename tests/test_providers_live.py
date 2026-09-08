@@ -42,7 +42,7 @@ def _providers():
                                OCIGenAIProvider, OpenAIProvider)
     out = []
     if os.environ.get("ANTHROPIC_API_KEY"):
-        out.append(AnthropicProvider(model=_model("SCHEMAGATE_ANTHROPIC_MODEL", "claude-sonnet-4-5")))
+        out.append(AnthropicProvider(model=_model("SCHEMAGATE_ANTHROPIC_MODEL", "claude-sonnet-5")))
     if os.environ.get("OPENAI_API_KEY"):
         out.append(OpenAIProvider(model=_model("SCHEMAGATE_OPENAI_MODEL", "gpt-4.1-mini"),
                                   embed_model="text-embedding-3-small"))

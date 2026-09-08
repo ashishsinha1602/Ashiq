@@ -37,6 +37,14 @@ def _identifiers(sql: str, limit: int = 1200) -> str:
     return " ".join(out)[:limit]
 
 
+def _sentence(text: Optional[str]) -> Optional[str]:
+    """The human sentence of a description, without the retrieval words
+    a describer may have appended after ' | '."""
+    if not text:
+        return text
+    return text.split(" | ", 1)[0].strip()
+
+
 def _one_line(text: Optional[str]) -> Optional[str]:
     """Comments and hints go into ``-- ...`` lines. A newline inside one
     would put uncommented text into the DDL the model receives, and
@@ -110,7 +118,7 @@ class ObjectDoc:
 
     def render_ddl(self, max_columns: int = 40) -> str:
         head = f"{self.kind} {self.qname}"
-        note = _one_line(self.hint or self.description)
+        note = _one_line(self.hint or _sentence(self.description))
         lines = [f"-- {note}" if note else "", head + " ("]
         cols = self.columns[:max_columns]
         lines += [f"  {c.render()}," for c in cols]

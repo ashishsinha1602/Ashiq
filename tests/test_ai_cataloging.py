@@ -424,3 +424,20 @@ def test_callable_provider_needs_no_sdk():
 def test_callable_provider_embed_requires_an_embed_fn():
     with pytest.raises(ProviderError, match="embed_fn"):
         CallableProvider(lambda s, p: "x").embed(["a"])
+
+
+def test_everyday_words_are_indexed_but_kept_out_of_the_prompt():
+    """A describer may append ' | word, word' for retrieval. Those words must
+    reach embed_text() and must not appear in the DDL the model sees."""
+    from schemagate.ai.describe import split_description
+    from schemagate.models import Column, ObjectDoc
+    doc = ObjectDoc(name="v_low_battery", schema=None, kind="VIEW",
+                    description="Devices whose battery is below threshold | flat, dying, dead, charge, power",
+                    columns=[Column(name="device_id", type="INTEGER")])
+    assert "dying" in doc.embed_text()
+    ddl = doc.render_ddl()
+    assert "below threshold" in ddl and "dying" not in ddl and " | " not in ddl
+    assert split_description(doc.description) == (
+        "Devices whose battery is below threshold", "flat, dying, dead, charge, power")
+    assert split_description("plain sentence") == ("plain sentence", "")
+    assert split_description(None) == ("", "")

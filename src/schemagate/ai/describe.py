@@ -39,9 +39,26 @@ _SYSTEM = (
     "Given one table or view definition, reply with a single sentence, at "
     "most 25 words, saying what the object holds and what question it "
     "answers. Use the business meaning, not the column list. Do not repeat "
-    "the object name. Do not speculate about data you cannot see. No "
-    "preamble, no markdown, no quotes -- just the sentence."
+    "the object name. Do not speculate about data you cannot see. "
+    "Then write ' | ' and 8 to 12 everyday words or two-word phrases a "
+    "non-technical person might use when asking about this data -- plain "
+    "synonyms and colloquial terms, not column names (for a low-battery "
+    "view: flat, dying, dead, charge, power, running out). "
+    "No preamble, no markdown, no quotes -- the sentence, a pipe, the words."
 )
+
+#: Separates the sentence (shown in prompts) from the everyday words
+#: (indexed for retrieval only). One string keeps every existing path --
+#: paste-in JSON, --config files, caches -- exactly as it was.
+ALIAS_SEP = " | "
+
+
+def split_description(text):
+    """``('sentence', 'word, word, ...')`` from a stored description."""
+    if not text or ALIAS_SEP not in text:
+        return (text or "").strip(), ""
+    head, _, tail = text.partition(ALIAS_SEP)
+    return head.strip(), tail.strip()
 
 
 def _render(doc: ObjectDoc, max_columns: int = 30) -> str:
