@@ -338,19 +338,45 @@ class OCIGenAIProvider:
 
 
 def _oci_text(chat_response: Any) -> str:
-    """Pull the text out of either OCI chat response shape."""
-    text = getattr(chat_response, "text", None)            # Cohere
-    if text:
+    """Pull the text out of any OCI chat response shape.
+
+    Found live: a Gemini response through OCI returned only the first content
+    part, so every description arrived truncated mid-sentence at about ten
+    tokens -- silently, because a short string is still a valid description.
+    This now walks every shape the service uses (Cohere ``text``; generic
+    ``choices[].message.content[]`` where a part may be a ``TextContent``, a
+    bare string, or nested), and joins all of them.
+    """
+    text = getattr(chat_response, "text", None)              # Cohere
+    if isinstance(text, str) and text:
         return text
-    choices = getattr(chat_response, "choices", None) or []  # Generic
+
+    def _part(c: Any) -> str:
+        if isinstance(c, str):
+            return c
+        for attr in ("text", "content", "value"):
+            v = getattr(c, attr, None)
+            if isinstance(v, str) and v:
+                return v
+            if isinstance(v, (list, tuple)):
+                return "".join(_part(x) for x in v)
+        return ""
+
     parts: List[str] = []
-    for ch in choices:
-        content = getattr(getattr(ch, "message", None), "content", None) or []
-        for c in content:
-            t = getattr(c, "text", None)
-            if t:
-                parts.append(t)
-    return "".join(parts)
+    for ch in getattr(chat_response, "choices", None) or []:
+        message = getattr(ch, "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, (list, tuple)):
+            parts.extend(_part(c) for c in content)
+        else:
+            parts.append(_part(message))
+    joined = "".join(parts)
+    if joined:
+        return joined
+    # last resort: some responses carry the text one level up
+    return _part(chat_response)
 
 
 # --------------------------------------------------------------------------
