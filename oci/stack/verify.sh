@@ -190,8 +190,12 @@ if [ "$ok" != "1" ]; then
   echo "-- the instance is still up; this is what it was doing:" >&2
   ssh -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
       -o ConnectTimeout=15 "opc@$IP" \
-      "ls -l /opt/schemagate/.ready 2>&1; sudo tail -3 /var/log/schemagate-resolve-db.log 2>&1; sudo tail -15 /var/log/cloud-init-output.log; uptime" >&2 || true
-  echo "-- no marker means the install is the bottleneck: retry with SHAPE=VM.Standard.A1.Flex" >&2
+      "ls -l /opt/schemagate/.ready 2>&1; sudo tail -3 /var/log/schemagate-resolve-db.log 2>&1; \
+       echo '-- cloud-init:'; sudo cloud-init status --long 2>&1 | head -5; \
+       echo '-- killed by the kernel?'; sudo dmesg 2>/dev/null | grep -iE 'out of memory|killed process' | tail -5; \
+       sudo tail -15 /var/log/cloud-init-output.log; free -m; uptime" >&2 || true
+  echo "-- no marker plus a dead cloud-init means it never got to the install:" >&2
+  echo "   retry with SHAPE=VM.Standard.A1.Flex (2 OCPU, 12 GB, also Always Free)" >&2
   die "MCP endpoint never answered on $IP:8765"
 fi
 

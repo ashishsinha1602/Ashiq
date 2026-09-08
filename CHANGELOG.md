@@ -51,7 +51,18 @@ finding something no `terraform plan` can catch.
   display name is too, which also stops the boot-time lookup resolving an
   abandoned database instead of this one. `verify.sh` reports leftovers before
   it starts, and the README says how to remove them.
-- `tests/test_oci_stack.py` pins each of these. Sixteen invariants now, and
+- **Fixed: cloud-init died before it ever reached the install.** Seven applies
+  in, an SSH into a still-running instance showed why the endpoint never
+  answered: no venv marker, no resolve log, no units -- but `/etc/schemagate.env`
+  written, cloud-init dead inside `update_package_sources` on a signal, and a
+  load average of 6.3 on a single core. `write_files` had run and `runcmd` never
+  started. VM.Standard.E2.1.Micro is one burstable OCPU and one gigabyte of RAM,
+  the Oracle Linux image ships no swap, and dnf's metadata refresh alone can
+  exceed that. The boot now creates a 2 GB swapfile before any package work and
+  no longer refreshes every repository's metadata to install one package that is
+  in the base repository. Every earlier fix on this boot path had never once
+  executed.
+- `tests/test_oci_stack.py` pins each of these. Seventeen invariants now, and
   every one of them came from a failure a live apply produced.
 
 ## 0.1.7

@@ -2,7 +2,22 @@
 # Installs schemagate and runs its MCP server as a systemd service.
 # When catalog_provider is "oci" the instance principal catalogues the schema
 # with OCI Generative AI on first boot -- no API key, nothing leaves the tenancy.
-package_update: true
+# VM.Standard.E2.1.Micro is one burstable OCPU and one gigabyte of RAM, and
+# the Oracle Linux image brings no swap. A live boot died right here: cloud-init
+# took a signal inside update_package_sources, the load average was 6.3 on a
+# single core, and nothing past this point ran -- write_files had completed,
+# runcmd never started. dnf's metadata refresh alone can exceed the memory this
+# shape has. Two gigabytes of swap costs nothing and makes it survivable.
+#
+# cc_mounts is a cloud_init module, so this is in place before any package work.
+swap:
+  filename: /swapfile
+  size: 2147483648
+  maxsize: 2147483648
+
+# No package_update: refreshing every repository's metadata is the most
+# memory-hungry thing on this boot, and python3.11 comes from the base
+# repository, whose cached metadata is already good enough to install it.
 packages: [python3.11, python3.11-pip]
 write_files:
   - path: /etc/schemagate.env
