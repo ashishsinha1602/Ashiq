@@ -10,12 +10,10 @@ build/
 dist/
 site/
 studio/schemas.json
-
 # local Oracle credentials — never commit
 wallet.zip
 wallet/
 atp.env
-
 .venv-win/
 oracle_report.txt
 certify_oracle.py
@@ -23,3 +21,13 @@ RUN_ORACLE_TEST.cmd
 ai.env
 oracle_catalog.json
 oracle_catalog_oci.json
+# local ATP test harnesses (reference personal ATP, not part of the package)
+complex_atp_test.py
+drop_complex.py
+RUN_COMPLEX_TEST.cmd
+DROP_COMPLEX.cmd
+complex_report.txt
+_cache_*.json
+complex_desc_*.json
+_kept_objects.json
+oracle_catalog*.json
