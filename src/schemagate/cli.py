@@ -12,6 +12,7 @@ Everything printed is what your application would get from ``Catalog``.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import List, Optional
 
@@ -139,7 +140,17 @@ def cmd_describe(args) -> int:
         if args.provider == "auto":
             provider = _p.auto_provider(args.model)
         elif args.provider in classes:
-            provider = classes[args.provider](model=args.model)   # key from its env var
+            kwargs = {"model": args.model}
+            if args.provider == "oci":
+                # On an OCI instance there is no ~/.oci/config: the machine
+                # authenticates as itself. OCI_CLI_AUTH is the variable every
+                # other OCI tool reads for this, so honour it here too --
+                # without it a VM-side `describe --provider oci` fails with
+                # ConfigFileNotFound and the catalog is silently left empty.
+                auth = os.environ.get("OCI_CLI_AUTH")
+                if auth:
+                    kwargs["auth"] = auth
+            provider = classes[args.provider](**kwargs)   # key from its env var
         else:
             sys.exit(f"schemagate: unknown provider {args.provider!r}; use anthropic, openai, gemini, oci, local or auto")
         describer = SchemaDescriber(provider, cache_path=args.cache)

@@ -9,7 +9,7 @@
 terraform {
   required_version = ">= 1.2"
   required_providers {
-    oci = { source = "oracle/oci", version = ">= 5.0" }
+    oci = { source = "oracle/oci", version = "~> 7.0" }
   }
 }
 
@@ -27,8 +27,16 @@ data "oci_core_images" "ol" {
   operating_system         = "Oracle Linux"
   operating_system_version = "9"
   shape                    = var.instance_shape
+  state                    = "AVAILABLE"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.images) > 0
+      error_message = "No Oracle Linux 9 image for shape ${var.instance_shape} in ${var.region}. Pick another shape or region."
+    }
+  }
 }
 
 # ---------------- network ----------------
@@ -45,12 +53,36 @@ resource "oci_core_internet_gateway" "igw" {
   display_name   = "schemagate-igw"
 }
 
+# The Autonomous Database ACL below admits this VCN, and Oracle only honours a
+# VCN-OCID ACL entry when the traffic arrives through a service gateway. Without
+# one the ADB sees the VM's public IP, which is not on the list, and every
+# connection is refused -- the stack would apply cleanly and never work.
+data "oci_core_services" "osn" {
+  filter {
+    name   = "name"
+    values = ["All .* Services In Oracle Services Network"]
+    regex  = true
+  }
+}
+
+resource "oci_core_service_gateway" "sgw" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.vcn.id
+  display_name   = "schemagate-sgw"
+  services { service_id = data.oci_core_services.osn.services[0]["id"] }
+}
+
 resource "oci_core_route_table" "rt" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.vcn.id
   route_rules {
     destination       = "0.0.0.0/0"
     network_entity_id = oci_core_internet_gateway.igw.id
+  }
+  route_rules {
+    destination       = data.oci_core_services.osn.services[0]["cidr_block"]
+    destination_type  = "SERVICE_CIDR_BLOCK"
+    network_entity_id = oci_core_service_gateway.sgw.id
   }
 }
 
@@ -72,7 +104,7 @@ resource "oci_core_security_list" "sl" {
   }
   ingress_security_rules {
     protocol = "6"
-    source   = var.allowed_cidr
+    source   = var.ssh_cidr
     tcp_options {
       min = 22
       max = 22
@@ -97,15 +129,15 @@ resource "oci_core_subnet" "subnet" {
 resource "oci_identity_dynamic_group" "dg" {
   count          = var.catalog_provider == "oci" ? 1 : 0
   compartment_id = var.tenancy_ocid
-  name           = "schemagate-mcp-dg"
+  name           = "schemagate-mcp-dg-${substr(md5(var.compartment_ocid), 0, 8)}"
   description    = "The schemagate MCP instance"
-  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
+  matching_rule  = "ALL {instance.id = '${oci_core_instance.vm.id}'}"
 }
 
 resource "oci_identity_policy" "genai" {
   count          = var.catalog_provider == "oci" ? 1 : 0
   compartment_id = var.tenancy_ocid
-  name           = "schemagate-genai-policy"
+  name           = "schemagate-genai-policy-${substr(md5(var.compartment_ocid), 0, 8)}"
   description    = "Let the schemagate instance call OCI Generative AI for schema descriptions"
   statements = [
     "Allow dynamic-group ${oci_identity_dynamic_group.dg[0].name} to use generative-ai-family in tenancy",
@@ -116,10 +148,10 @@ resource "oci_identity_policy" "genai" {
 resource "oci_database_autonomous_database" "adb" {
   count                       = var.create_adb ? 1 : 0
   compartment_id              = var.compartment_ocid
-  db_name                     = "schemagate"
+  db_name                     = "sg${substr(md5(var.compartment_ocid), 0, 8)}"
   display_name                = "schemagate-demo"
   db_workload                 = "OLTP"
-  db_version                  = "23ai"
+  db_version                  = var.adb_version
   is_free_tier                = true
   admin_password              = var.adb_admin_password
   is_mtls_connection_required = false # TLS without a wallet
@@ -132,7 +164,10 @@ locals {
   # `oracle+oracledb://@` and credentials travel in connect_args, the pattern
   # SQLAlchemy documents for thin-mode Oracle. When create_adb is false,
   # database_url is used as-is.
-  adb_dsn      = var.create_adb ? oci_database_autonomous_database.adb[0].connection_strings[0].profiles[0].value : ""
+  adb_dsn = var.create_adb ? one([
+    for p in oci_database_autonomous_database.adb[0].connection_strings[0].profiles : p.value
+    if p.tls_authentication == "SERVER" && endswith(lower(p.display_name), "_low")
+  ]) : ""
   database_url = var.create_adb ? "oracle+oracledb://@" : var.database_url
   connect_args = var.create_adb ? jsonencode({
     user     = "ADMIN"

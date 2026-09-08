@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.1.4
+
+An audit of the OCI stack — which had never been applied — found that its
+headline feature never ran and that a default deploy could not have worked.
+
+- **Fixed: `describe --provider oci` ignored instance-principal auth.** On an
+  OCI VM there is no `~/.oci/config`; the machine authenticates as itself. The
+  CLI built `OCIGenAIProvider` with the default `auth="config"`, failed with
+  `ConfigFileNotFound`, and the stack's `|| true` swallowed it — so the
+  first-boot cataloguing the README promised silently never happened. The CLI
+  now honours `OCI_CLI_AUTH`, as every other OCI tool does.
+- **The stack now creates a service gateway.** The database's access-control
+  list admits the VCN, and Oracle only honours a VCN entry when traffic arrives
+  through a service gateway. Without one the database refused the VM's
+  connections — the stack applied cleanly and never worked.
+- The DSN is now selected as the LOW, server-authentication profile rather than
+  `profiles[0]`, which can be a mutual-TLS profile that thin-mode
+  python-oracledb cannot use without a wallet.
+- `adb_version` defaults to 19c: Always Free offers it in every home region,
+  while 26ai and 23ai exist in only a few and 23ai stops being a valid value in
+  December 2026.
+- Database, dynamic-group and policy names are suffixed from the compartment,
+  so a second deploy in one tenancy no longer collides.
+- The image lookup asserts it found one instead of indexing an empty list.
+- `allowed_cidr` and `ssh_cidr` are now separate and have **no defaults** — the
+  MCP endpoint has no authentication of its own, so the stack refuses
+  `0.0.0.0/0` rather than shipping an internet-facing schema browser.
+- Password validation matches Oracle's actual rule, including its rejection of
+  passwords containing "admin".
+- cloud-init: online `firewall-cmd` instead of `firewall-offline-cmd`, an env
+  file the documented re-run command can actually read, and cataloguing output
+  captured to `/var/log/schemagate-catalog.log` instead of discarded.
+- The stack README now states plainly that it has not been applied end to end,
+  and lists the home-region, tenancy-admin and credential-exposure caveats.
+
 ## 0.1.2
 
 One click onto Oracle Cloud, and the OCI provider no longer truncates.

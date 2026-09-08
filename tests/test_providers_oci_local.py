@@ -279,3 +279,56 @@ def test_describer_retries_a_truncated_reply_then_warns_once():
     assert out2["v_low_battery"] == "This view shows which devices are"  # still usable
     assert d2.truncated == ["v_low_battery"]
     assert len(w) == 1 and "truncated" in str(w[0].message)
+
+
+def test_cli_passes_instance_principal_auth_for_oci(monkeypatch):
+    """On an OCI VM there is no ~/.oci/config -- the machine authenticates as
+    itself. Without this the stack's first-boot cataloguing failed silently
+    with ConfigFileNotFound and every table went undescribed."""
+    import sys, types
+    from schemagate import cli
+    seen = {}
+
+    class FakeOCI:
+        def __init__(self, **kw): seen.update(kw)
+        name = "oci:fake"
+        def complete(self, system, prompt, max_tokens=1024): return "x."
+
+    monkeypatch.setattr(cli, "_open", lambda a: __import__("schemagate").Catalog())
+    monkeypatch.setenv("OCI_CLI_AUTH", "instance_principal")
+    from schemagate.ai import providers as _p
+    monkeypatch.setattr(_p, "OCIGenAIProvider", FakeOCI)
+
+    args = types.SimpleNamespace(provider="oci", model="google.gemini-2.5-pro",
+                                 cache=None, config=None, all=True, apply=None,
+                                 url="sqlite://", schemas=None, include=None, exclude=None)
+    try:
+        cli.cmd_describe(args)
+    except Exception:
+        pass
+    assert seen.get("auth") == "instance_principal", seen
+    assert seen.get("model") == "google.gemini-2.5-pro"
+
+
+def test_cli_omits_auth_when_env_is_unset(monkeypatch):
+    import types
+    from schemagate import cli
+    from schemagate.ai import providers as _p
+    seen = {}
+
+    class FakeOCI:
+        def __init__(self, **kw): seen.update(kw)
+        name = "oci:fake"
+        def complete(self, s, p, max_tokens=1024): return "x."
+
+    monkeypatch.delenv("OCI_CLI_AUTH", raising=False)
+    monkeypatch.setattr(cli, "_open", lambda a: __import__("schemagate").Catalog())
+    monkeypatch.setattr(_p, "OCIGenAIProvider", FakeOCI)
+    args = types.SimpleNamespace(provider="oci", model="m", cache=None, config=None,
+                                 all=True, apply=None, url="sqlite://", schemas=None,
+                                 include=None, exclude=None)
+    try:
+        cli.cmd_describe(args)
+    except Exception:
+        pass
+    assert "auth" not in seen, seen

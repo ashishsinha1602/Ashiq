@@ -40,6 +40,12 @@ configuration**.
 
 Use the fast route to try it. Use the stack when you want it running for others.
 
+The stack needs a couple of decisions the fast route does not: it is home-region
+only, `catalog_provider = "oci"` needs tenancy-admin rights, and you must supply
+CIDRs for the MCP endpoint and for SSH — there are no defaults, because the
+endpoint has no auth of its own. [`stack/README.md`](stack/README.md) covers all
+of it. It has not been applied end to end yet; the Cloud Shell route has.
+
 ## Certification
 
 The Oracle dialect and the native `VECTOR` store are certified live on Oracle AI

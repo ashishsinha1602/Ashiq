@@ -2,21 +2,28 @@
 title: schemagate MCP server
 description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key.
 schemaVersion: 1.1.0
-version: "0.1.2"
+version: "0.1.4"
 locale: en
 variableGroups:
   - title: Where
     variables: [compartment_ocid, region]
   - title: Database
-    variables: [create_adb, adb_admin_password, database_url]
+    variables: [create_adb, adb_version, adb_admin_password, database_url]
   - title: Cataloguing
     variables: [catalog_provider, catalog_model]
   - title: Instance
-    variables: [ssh_public_key, instance_shape, allowed_cidr, mcp_port]
+    variables: [ssh_public_key, instance_shape, allowed_cidr, ssh_cidr, mcp_port]
 variables:
   tenancy_ocid: { type: oci:identity:compartment:id, visible: false }
   region: { type: oci:identity:region:name, required: true, title: Region }
   compartment_ocid: { type: oci:identity:compartment:id, required: true, title: Compartment }
+  adb_version:
+    type: enum
+    title: Autonomous Database version
+    description: Always Free offers 19c in every home region; 26ai and 23ai only in a few.
+    enum: ["19c", "26ai", "23ai"]
+    default: "19c"
+    visible: create_adb
   create_adb:
     type: boolean
     title: Create an Always Free Autonomous Database
@@ -43,14 +50,15 @@ variables:
     title: OCI Generative AI model
     default: google.gemini-2.5-pro
     visible:
-      eq: [catalog_provider, oci]
+      eq: ["${catalog_provider}", "oci"]
   ssh_public_key: { type: oci:core:ssh:publickey, required: true, title: SSH public key }
   instance_shape:
     type: oci:core:instanceshape:name
     title: Shape
     default: VM.Standard.E2.1.Micro
     dependsOn: { compartmentId: "${compartment_ocid}" }
-  allowed_cidr: { type: string, title: CIDR allowed to reach the MCP endpoint, default: 0.0.0.0/0 }
+  allowed_cidr: { type: string, required: true, title: CIDR allowed to reach the MCP endpoint (it has no auth of its own) }
+  ssh_cidr: { type: string, required: true, title: CIDR allowed to SSH }
   mcp_port: { type: number, title: MCP port, default: 8765 }
 outputs:
   mcp_url: { title: MCP endpoint, type: link }
