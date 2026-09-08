@@ -85,10 +85,10 @@ def _reflect(url: str, config_path: Optional[str]) -> Catalog:
             cat.hint(table, text)
         cat.restrict("hr_compensation", ["payroll"])
     else:
-        import sqlalchemy as sa
+        from .introspect import engine_from_url
         # pool_pre_ping: a connection that died while idle is replaced
         # rather than raised on first use after a database restart
-        engine = sa.create_engine(url, pool_pre_ping=True)
+        engine = engine_from_url(url, pool_pre_ping=True)
         try:
             cat = Catalog().bootstrap(engine)
         finally:

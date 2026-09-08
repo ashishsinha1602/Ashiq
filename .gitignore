@@ -10,3 +10,15 @@ build/
 dist/
 site/
 studio/schemas.json
+
+# local Oracle credentials — never commit
+wallet.zip
+wallet/
+atp.env
+
+.venv-win/
+oracle_report.txt
+certify_oracle.py
+RUN_ORACLE_TEST.cmd
+ai.env
+oracle_catalog.json

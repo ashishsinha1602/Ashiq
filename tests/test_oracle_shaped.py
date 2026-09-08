@@ -280,3 +280,91 @@ def test_ddl_is_valid_looking_for_oracle_types(cat):
     frag = cat.select("customer segment", top_k=2).prompt_fragment()
     assert "VARCHAR2(200 CHAR)" in frag
     assert frag.count("(") == frag.count(")")
+
+
+# --- SCHEMAGATE_CONNECT_ARGS -------------------------------------------------
+# Autonomous Database cannot be reached by URL alone: the wallet directory and
+# wallet password have nowhere to live in a URL. These cover the env-var route
+# without needing an instance.
+
+def test_connect_args_env_is_empty_when_unset(monkeypatch):
+    from schemagate.introspect import connect_args_from_env
+    monkeypatch.delenv("SCHEMAGATE_CONNECT_ARGS", raising=False)
+    assert connect_args_from_env() == {}
+
+
+def test_connect_args_env_is_empty_when_blank(monkeypatch):
+    from schemagate.introspect import connect_args_from_env
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS", "   ")
+    assert connect_args_from_env() == {}
+
+
+def test_connect_args_env_parses_a_wallet_config(monkeypatch):
+    from schemagate.introspect import connect_args_from_env
+    monkeypatch.setenv(
+        "SCHEMAGATE_CONNECT_ARGS",
+        '{"config_dir": "./wallet", "wallet_location": "./wallet",'
+        ' "wallet_password": "pw", "user": "ADMIN", "dsn": "db_high"}',
+    )
+    args = connect_args_from_env()
+    assert args["config_dir"] == "./wallet"
+    assert args["dsn"] == "db_high"
+
+
+def test_connect_args_env_rejects_malformed_json(monkeypatch):
+    import pytest
+    from schemagate.introspect import connect_args_from_env
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS", "{not json}")
+    with pytest.raises(ValueError, match="valid JSON"):
+        connect_args_from_env()
+
+
+def test_connect_args_env_rejects_a_json_array(monkeypatch):
+    import pytest
+    from schemagate.introspect import connect_args_from_env
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS", '["a", "b"]')
+    with pytest.raises(ValueError, match="JSON object"):
+        connect_args_from_env()
+
+
+def test_engine_from_url_passes_env_connect_args_to_the_driver(monkeypatch):
+    import sqlalchemy as sa
+    from schemagate.introspect import engine_from_url
+    seen = {}
+
+    def fake_create_engine(url, **kwargs):
+        seen["url"] = url
+        seen["kwargs"] = kwargs
+        return "engine"
+
+    monkeypatch.setattr(sa, "create_engine", fake_create_engine)
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS", '{"wallet_password": "pw"}')
+    assert engine_from_url("oracle+oracledb://@", pool_pre_ping=True) == "engine"
+    assert seen["url"] == "oracle+oracledb://@"
+    assert seen["kwargs"]["connect_args"] == {"wallet_password": "pw"}
+    assert seen["kwargs"]["pool_pre_ping"] is True
+
+
+def test_engine_from_url_lets_explicit_connect_args_win(monkeypatch):
+    import sqlalchemy as sa
+    from schemagate.introspect import engine_from_url
+    seen = {}
+
+    monkeypatch.setattr(sa, "create_engine",
+                        lambda url, **kw: seen.update(kw) or "engine")
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS",
+                       '{"dsn": "from_env", "wallet_password": "pw"}')
+    engine_from_url("oracle+oracledb://@", connect_args={"dsn": "explicit"})
+    assert seen["connect_args"] == {"dsn": "explicit", "wallet_password": "pw"}
+
+
+def test_engine_from_url_without_env_passes_no_connect_args(monkeypatch):
+    import sqlalchemy as sa
+    from schemagate.introspect import engine_from_url
+    seen = {}
+
+    monkeypatch.setattr(sa, "create_engine",
+                        lambda url, **kw: seen.update(kw) or "engine")
+    monkeypatch.delenv("SCHEMAGATE_CONNECT_ARGS", raising=False)
+    engine_from_url("sqlite://")
+    assert "connect_args" not in seen

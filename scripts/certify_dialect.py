@@ -70,8 +70,8 @@ def main(url: str) -> int:
 
     # Driver options that do not fit in a URL -- an Oracle wallet, for one:
     #   SCHEMAGATE_CONNECT_ARGS='{"config_dir": "/w", "wallet_location": "/w", "wallet_password": "..."}'
-    import json, os
-    connect_args = json.loads(os.environ.get("SCHEMAGATE_CONNECT_ARGS", "{}"))
+    from schemagate.introspect import connect_args_from_env
+    connect_args = connect_args_from_env()
     engine = sa.create_engine(url, connect_args=connect_args)
     print(f"dialect: {engine.dialect.name}  driver: {engine.dialect.driver}")
     try:

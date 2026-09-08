@@ -13,6 +13,8 @@ from .providers import (
     AnthropicProvider,
     CallableProvider,
     GeminiProvider,
+    LocalProvider,
+    OCIGenAIProvider,
     OpenAIProvider,
     Provider,
     ProviderError,
@@ -24,5 +26,6 @@ __all__ = [
     "SchemaDescriber", "APIEmbedder",
     "Provider", "ProviderError", "CallableProvider",
     "AnthropicProvider", "OpenAIProvider", "GeminiProvider",
+    "OCIGenAIProvider", "LocalProvider",
     "auto_provider", "available_providers",
 ]

@@ -25,14 +25,71 @@ def _match(name: str, patterns: Optional[Iterable[str]]) -> bool:
     return any(fnmatch.fnmatch(n, p.lower().replace("%", "*")) for p in patterns)
 
 
+def connect_args_from_env() -> dict:
+    """Driver keyword arguments for :func:`sqlalchemy.create_engine`, read from
+    the ``SCHEMAGATE_CONNECT_ARGS`` environment variable.
+
+    Some databases cannot be described by a URL alone. Oracle Autonomous
+    Database is the usual case: the connection needs a wallet directory and a
+    wallet password, which have no place in a URL, so the URL degenerates to
+    ``oracle+oracledb://@`` and everything else travels here::
+
+        export SCHEMAGATE_CONNECT_ARGS='{"config_dir": "./wallet",
+                                         "wallet_location": "./wallet",
+                                         "wallet_password": "...",
+                                         "user": "ADMIN", "password": "...",
+                                         "dsn": "mydb_high"}'
+
+    Returns an empty dict when the variable is unset. A value that is not
+    valid JSON, or is valid JSON but not an object, raises ``ValueError`` --
+    silently ignoring a malformed value would surface later as a confusing
+    authentication failure.
+    """
+    import json
+    import os
+
+    raw = os.environ.get("SCHEMAGATE_CONNECT_ARGS")
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(
+            "SCHEMAGATE_CONNECT_ARGS is not valid JSON: %s" % exc
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            "SCHEMAGATE_CONNECT_ARGS must be a JSON object, got %s"
+            % type(parsed).__name__
+        )
+    return parsed
+
+
+def engine_from_url(url: str, **kwargs):
+    """``create_engine(url)`` with :func:`connect_args_from_env` merged in.
+
+    Explicit ``connect_args`` passed by the caller win over the environment,
+    key by key.
+    """
+    from sqlalchemy import create_engine
+
+    env_args = connect_args_from_env()
+    if env_args:
+        merged = dict(env_args)
+        merged.update(kwargs.pop("connect_args", None) or {})
+        kwargs["connect_args"] = merged
+    return create_engine(url, **kwargs)
+
+
 def reflect(engine_or_url, include=None, exclude=None,
             schemas: Optional[List[str]] = None,
             include_views: bool = True) -> List[ObjectDoc]:
     """Return an ObjectDoc per table/view. ``include``/``exclude`` accept glob
     or SQL-LIKE style patterns ('sales_%', 'v_*')."""
-    from sqlalchemy import create_engine, inspect
+    from sqlalchemy import inspect
 
-    engine = create_engine(engine_or_url) if isinstance(engine_or_url, str) else engine_or_url
+    engine = (engine_from_url(engine_or_url)
+              if isinstance(engine_or_url, str) else engine_or_url)
     insp = inspect(engine)
 
     if schemas is None:

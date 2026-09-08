@@ -134,13 +134,14 @@ def cmd_describe(args) -> int:
         if not args.model:
             sys.exit("schemagate: --model is required with --provider (model ids change; pick one)")
         classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
-                   "gemini": _p.GeminiProvider}
+                   "gemini": _p.GeminiProvider, "oci": _p.OCIGenAIProvider,
+                   "local": _p.LocalProvider}
         if args.provider == "auto":
             provider = _p.auto_provider(args.model)
         elif args.provider in classes:
             provider = classes[args.provider](model=args.model)   # key from its env var
         else:
-            sys.exit(f"schemagate: unknown provider {args.provider!r}; use anthropic, openai, gemini or auto")
+            sys.exit(f"schemagate: unknown provider {args.provider!r}; use anthropic, openai, gemini, oci, local or auto")
         describer = SchemaDescriber(provider, cache_path=args.cache)
         n = cat.describe(describer, only_missing=not args.all)
         got = {d.qname: d.description for d in cat.objects() if d.description}
@@ -241,7 +242,8 @@ def build_parser() -> argparse.ArgumentParser:
     describe.add_argument("--all", action="store_true",
                           help="include objects that already have a comment or hint")
     describe.add_argument("--provider", metavar="NAME",
-                          help="anthropic | openai | gemini | auto -- uses your own key from the environment")
+                          help="anthropic | openai | gemini | oci | local | auto -- key from the environment; "
+                               "oci uses ~/.oci/config, local needs no key at all")
     describe.add_argument("--model", metavar="ID", help="model id for --provider")
     describe.add_argument("--cache", metavar="FILE", help="description cache for --provider")
     describe.set_defaults(func=cmd_describe)
