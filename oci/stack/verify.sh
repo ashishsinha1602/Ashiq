@@ -23,6 +23,13 @@
 # explicit poll that prints the state it sees.
 
 ZIP_URL="${ZIP_URL:-https://github.com/ashishsinha1602/schemagate/releases/latest/download/schemagate-oci-stack.zip}"
+# Overridable so a slow first boot can be retried on a bigger box without
+# editing the stack. VM.Standard.A1.Flex is the other Always Free shape and is
+# several times faster here, but Ampere capacity is not always available --
+# which is why the default stays on the shape that always is.
+SHAPE="${SHAPE:-VM.Standard.E2.1.Micro}"
+OCPUS="${OCPUS:-2}"
+MEMORY_GBS="${MEMORY_GBS:-12}"
 COMPARTMENT="${COMPARTMENT:-${OCI_TENANCY:-}}"
 REGION="${OCI_REGION:-${OCI_CLI_REGION:-}}"
 KEEP="${KEEP:-0}"
@@ -111,6 +118,9 @@ cat > "$WORK/vars.json" <<JSON
   "adb_version": "19c",
   "catalog_provider": "oci",
   "catalog_model": "google.gemini-2.5-pro",
+  "instance_shape": "${SHAPE}",
+  "instance_ocpus": "${OCPUS}",
+  "instance_memory_gbs": "${MEMORY_GBS}",
   "ssh_public_key": "${PUBKEY}",
   "allowed_cidr": "${CIDR}",
   "ssh_cidr": "${CIDR}",
@@ -163,7 +173,14 @@ for i in $(seq 1 60); do
   [ $((i % 8)) -eq 0 ] && echo "   still waiting, $((i*15))s -- the instance installs Python and schemagate, then resolves the database"
   sleep 15
 done
-[ "$ok" = "1" ] || die "MCP endpoint never answered on $IP:8765"
+if [ "$ok" != "1" ]; then
+  echo "-- the instance is still up; this is what it was doing:" >&2
+  ssh -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -o ConnectTimeout=15 "opc@$IP" \
+      "ls -l /opt/schemagate/.ready 2>&1; sudo tail -3 /var/log/schemagate-resolve-db.log 2>&1; sudo tail -15 /var/log/cloud-init-output.log; uptime" >&2 || true
+  echo "-- no marker means the install is the bottleneck: retry with SHAPE=VM.Standard.A1.Flex" >&2
+  die "MCP endpoint never answered on $IP:8765"
+fi
 
 SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 opc@$IP"
 

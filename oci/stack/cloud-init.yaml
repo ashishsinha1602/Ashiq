@@ -41,12 +41,25 @@ write_files:
         mysql*|mariadb*)       extras="mysql" ;;
         *)                     extras="oracle" ;;
       esac
-      echo "database URL scheme -> installing schemagate[$extras,mcp,oci]"
-      # --prefer-binary: this is a 1-OCPU machine and a source build of any
-      # driver would add minutes. --no-cache-dir: nothing here is installed
-      # twice, so the cache is pure write cost on a slow disk.
-      /opt/schemagate/bin/pip install --prefer-binary --no-cache-dir \
-        --disable-pip-version-check "schemagate[$extras,mcp,oci]"
+      # The OCI SDK is by far the largest thing installed here -- thousands of
+      # modules -- and only two things in this stack need it: cataloguing
+      # through OCI Generative AI, and the boot-time database lookup. Pointed
+      # at your own database with no OCI cataloguing, nothing does, so do not
+      # make that boot wait for it.
+      if [ "${catalog_provider}" = "oci" ] || [ "$SCHEMAGATE_CREATE_ADB" = "true" ]; then
+        extras="$extras,mcp,oci"
+      else
+        extras="$extras,mcp"
+      fi
+      echo "database URL scheme -> installing schemagate[$extras]"
+      # --no-compile is the difference between a usable first boot and an
+      # unusable one on a 1-OCPU Always Free shape. Byte-compiling the OCI SDK
+      # there costs minutes of pure CPU, and it buys nothing: Python compiles
+      # what it imports anyway, and this venv imports a fraction of it.
+      # --prefer-binary so no driver is built from source; --no-cache-dir
+      # because nothing here is installed twice.
+      /opt/schemagate/bin/pip install --prefer-binary --no-compile --no-cache-dir \
+        --disable-pip-version-check "schemagate[$extras]"
       # resolve-db.sh waits on this rather than on `import oci`, which would
       # start succeeding part-way through the install above.
       touch /opt/schemagate/.ready
