@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.1.7
+
+**The stack has now been applied in a real tenancy.** Doing it found a bug that
+no `terraform plan` can catch, because only the API rejects it.
+
+- **Fixed: the stack could never apply.** 0.1.4 added a service gateway so the
+  database's access-control list could name the VCN — Oracle honours a VCN
+  entry only when traffic arrives through one. The OCI API refuses a route
+  table that holds both a service gateway for all services and an internet
+  gateway default route: *"Internet Gateway target cannot be used together
+  with Service Gateway target for All Services in the same routing table"*.
+  The instance needs the internet gateway to install anything at all, so the
+  service gateway is gone. Every apply since 0.1.4 would have failed here,
+  after provisioning the database and before creating the instance.
+- With the service gateway goes the VCN-scoped access-control list: naming the
+  instance's public IP instead is circular, since cloud-init already carries
+  the database's connection descriptor. The demo database this stack creates
+  is therefore reachable over TLS with the ADMIN password and nothing else —
+  it is created empty and destroyed with the stack, and the README says so
+  plainly. New `adb_allowed_cidrs` narrows it, and `create_adb = false`
+  against your own database remains the path for real data.
+- **Fixed: `verify.sh` reported nothing when a job failed.** It waited with
+  `oci resource-manager job get --wait-for-state`, which that subcommand does
+  not accept; the non-zero exit tripped `set -e` and ran the teardown trap
+  before any diagnostic printed, so a failed plan looked like the script
+  silently skipping three steps. Every wait is now an explicit poll that
+  prints the state it sees, and both failure paths dump the job's error lines.
+- `tests/test_oci_stack.py` pins the routing rule and asserts `schema.yaml` and
+  `variables.tf` declare the same variables.
+
 ## 0.1.6
 
 The stack's keyless cataloguing raced the permission that authorises it, and

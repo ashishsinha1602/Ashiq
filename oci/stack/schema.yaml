@@ -8,7 +8,7 @@ variableGroups:
   - title: Where
     variables: [compartment_ocid, region]
   - title: Database
-    variables: [create_adb, adb_version, adb_admin_password, database_url]
+    variables: [create_adb, adb_version, adb_admin_password, adb_allowed_cidrs, database_url]
   - title: Cataloguing
     variables: [catalog_provider, catalog_model]
   - title: Instance
@@ -57,6 +57,13 @@ variables:
     title: Shape
     default: VM.Standard.E2.1.Micro
     dependsOn: { compartmentId: "${compartment_ocid}" }
+  adb_allowed_cidrs:
+    type: array
+    items: { type: string }
+    required: false
+    visible: create_adb
+    title: Public CIDRs allowed to reach the database this stack creates
+    description: Leave empty and the database is reachable over TLS with the ADMIN password only, which is fine for the throwaway demo. If you set it, include the instance's own public IP or the MCP server cannot connect.
   allowed_cidr: { type: string, required: true, title: CIDR allowed to reach the MCP endpoint (it has no auth of its own) }
   ssh_cidr: { type: string, required: true, title: CIDR allowed to SSH }
   instance_ocpus:
