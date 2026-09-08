@@ -117,3 +117,9 @@ variable "mcp_port" {
   type    = number
   default = 8765
 }
+
+variable "adb_allowed_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "Optional access-control list for the database this stack creates: public CIDRs allowed to connect. Empty means reachable from the internet with TLS and the ADMIN password only -- fine for the throwaway demo database, not for your own data. If you set it, include the instance's own public IP or the MCP server will not be able to connect."
+}

@@ -53,36 +53,23 @@ resource "oci_core_internet_gateway" "igw" {
   display_name   = "schemagate-igw"
 }
 
-# The Autonomous Database ACL below admits this VCN, and Oracle only honours a
-# VCN-OCID ACL entry when the traffic arrives through a service gateway. Without
-# one the ADB sees the VM's public IP, which is not on the list, and every
-# connection is refused -- the stack would apply cleanly and never work.
-data "oci_core_services" "osn" {
-  filter {
-    name   = "name"
-    values = ["All .* Services In Oracle Services Network"]
-    regex  = true
-  }
-}
-
-resource "oci_core_service_gateway" "sgw" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.vcn.id
-  display_name   = "schemagate-sgw"
-  services { service_id = data.oci_core_services.osn.services[0]["id"] }
-}
-
 resource "oci_core_route_table" "rt" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.vcn.id
+
+  # One default route out through the internet gateway, and nothing else.
+  #
+  # 0.1.4 added a service gateway here so the database's access-control list
+  # could name this VCN -- Oracle only honours a VCN entry when traffic
+  # arrives through one. A live apply rejected it: "Internet Gateway target
+  # cannot be used together with Service Gateway target for All Services in
+  # the same routing table". The two are mutually exclusive in one table, and
+  # the instance needs the internet gateway to install anything at all, so the
+  # service gateway had to go -- and with it the VCN-scoped ACL. See the
+  # database resource below.
   route_rules {
     destination       = "0.0.0.0/0"
     network_entity_id = oci_core_internet_gateway.igw.id
-  }
-  route_rules {
-    destination       = data.oci_core_services.osn.services[0]["cidr_block"]
-    destination_type  = "SERVICE_CIDR_BLOCK"
-    network_entity_id = oci_core_service_gateway.sgw.id
   }
 }
 
@@ -163,7 +150,21 @@ resource "oci_database_autonomous_database" "adb" {
   is_free_tier                = true
   admin_password              = var.adb_admin_password
   is_mtls_connection_required = false # TLS without a wallet
-  whitelisted_ips             = [oci_core_vcn.vcn.id]
+
+  # An access-control list naming this VCN needs a service gateway, which
+  # cannot coexist with the internet gateway the instance requires (see the
+  # route table above). Naming the instance's public IP instead is circular:
+  # the instance's cloud-init carries the database's connection descriptor, so
+  # the instance already depends on the database.
+  #
+  # So the demo database is reachable from the internet, protected by TLS and
+  # the password you supply -- which the console form and this stack both
+  # require to be long and mixed-case. That is acceptable for a database this
+  # stack creates and destroys with nothing in it, and it is the reason the
+  # README tells you to point `create_adb = false` at your own database for
+  # anything real. `adb_allowed_cidrs` narrows it if you know your egress
+  # addresses; leave it empty and the instance can always reach the database.
+  whitelisted_ips = length(var.adb_allowed_cidrs) > 0 ? var.adb_allowed_cidrs : null
 }
 
 locals {

@@ -16,11 +16,10 @@ against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
 up for other people.
 
-> **Not yet applied end to end.** The Terraform is reviewed, and reviewing it
-> found a bug an apply would have hit — see *Certify it yourself* below — but
-> nobody has run it against a real tenancy. If you deploy it and something
-> fails, please open an issue. The Cloud Shell route in
-> [`../README.md`](../README.md) *is* exercised and needs no VM.
+> **Applied end to end on 8 September 2026**, in a real tenancy, through
+> Resource Manager — plan, apply, and a check of the running machine rather
+> than the plan. Doing it found a routing bug no plan can catch; see the
+> changelog for 0.1.7. Re-run the certification yourself below.
 
 ## Certify it yourself
 
@@ -63,6 +62,16 @@ left open.
   Terraform state. Treat the demo database as a demo database.
 - **An idle Always Free database stops after 7 days** and can be reclaimed
   after 90 days idle. Fine for a trial, not for something you rely on.
+- **The database this stack creates is reachable from the internet.** An
+  access-control list naming the VCN needs a service gateway, and OCI rejects
+  a route table holding both a service gateway for all services and the
+  internet gateway the instance needs to install anything. Naming the
+  instance's public IP instead is circular — cloud-init already carries the
+  database's connection descriptor, so the instance depends on the database.
+  So the demo database is protected by TLS and the password you set, and
+  nothing else. It is created empty and destroyed with the stack. Set
+  `adb_allowed_cidrs` to narrow it, or point `create_adb = false` at your own
+  database for anything real.
 
 ## What it creates
 
