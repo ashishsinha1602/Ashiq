@@ -44,7 +44,7 @@ def test_the_endpoint_starts_before_cataloguing_not_after():
     """Cataloguing now retries for up to twelve minutes. Running it inline in
     runcmd would hold the MCP server down for all of it."""
     run = _cloud_init()[_cloud_init().index("runcmd:") :]
-    assert run.index("enable --now schemagate\n") < run.index("schemagate-catalog")
+    assert run.index("start --no-block schemagate\n") < run.index("schemagate-catalog")
 
 
 def test_one_route_table_never_mixes_an_internet_and_a_service_gateway():
@@ -133,3 +133,41 @@ def test_the_availability_domain_is_one_that_offers_the_shape():
     assert 'data "oci_core_shapes"' in main, (
         "choosing a domain requires asking each one what shapes it offers"
     )
+
+
+def test_the_database_lookup_does_not_wait_for_the_install():
+    """Oracle spends minutes provisioning the Autonomous Database. That clock
+    runs whether or not anyone is watching it, so the wait belongs alongside
+    the pip install, not after it. Letting schemagate.service pull resolve-db
+    in as a dependency put it after -- a real apply spent the install time,
+    then started the database wait from zero, and the endpoint missed a
+    ten-minute window."""
+    ci = _cloud_init()
+    run = ci[ci.index("runcmd:") :]
+    started = run.index("start --no-block schemagate-resolve-db")
+    installed = run.index("/opt/pick-extras.sh")
+    assert started < installed, (
+        "start the database lookup before the install, not after it"
+    )
+
+
+def test_nothing_on_the_boot_path_installs_the_oci_cli():
+    """The lookup needs two API calls. The SDK that makes them is already in
+    the venv as schemagate[oci]; reaching for the CLI instead would add a
+    repository and a package install to every first boot."""
+    ci = _cloud_init()
+    assert "dnf install" not in ci and "yum install" not in ci, (
+        "the only packages a first boot installs are the ones cloud-init's "
+        "`packages:` list declares, before runcmd"
+    )
+    assert "/opt/resolve-db.py" in ci, "the lookup is Python, against the SDK"
+
+
+def test_the_install_marker_is_what_the_lookup_waits_for():
+    """`import oci` starts succeeding part-way through the install, so waiting
+    on it would race a half-unpacked venv."""
+    ci = _cloud_init()
+    extras = ci[ci.index("/opt/pick-extras.sh") : ci.index("- path: /opt/catalog-once.sh")]
+    assert "touch /opt/schemagate/.ready" in extras
+    resolve = ci[ci.index("- path: /opt/resolve-db.sh") : ci.index("schemagate-catalog.service")]
+    assert "/opt/schemagate/.ready" in resolve
