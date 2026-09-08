@@ -2,7 +2,7 @@
 title: schemagate MCP server
 description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key.
 schemaVersion: 1.1.0
-version: "0.1.1"
+version: "0.1.2"
 locale: en
 variableGroups:
   - title: Where
