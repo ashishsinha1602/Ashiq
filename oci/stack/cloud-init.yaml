@@ -20,6 +20,9 @@ write_files:
       OCI_COMPARTMENT_ID=${compartment_ocid}
       OCI_REGION=${region}
       OCI_CLI_AUTH=instance_principal
+      SCHEMAGATE_CREATE_ADB=${create_adb}
+      SCHEMAGATE_ADB_DISPLAY_NAME=${adb_display_name}
+      SCHEMAGATE_ADB_PASSWORD='${adb_admin_password}'
   - path: /etc/schemagate/catalog.json
     content: |
       {"restrict": {}, "hint": {}, "describe": {}}
@@ -78,6 +81,47 @@ write_files:
       done
       echo "cataloguing failed after 12 attempts -- selection still works on identifiers alone. Re-run: sudo OCI_CLI_AUTH=instance_principal /opt/catalog-once.sh" >> "$log"
       exit 1
+  - path: /opt/resolve-db.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Resolve the connection descriptor for the database this stack creates.
+      #
+      # Terraform cannot hand it to us. The database's access-control list has
+      # to name this instance's public IP -- Oracle refuses one-way TLS on a
+      # public database with no list -- so the database is created *after* the
+      # instance. By the time it exists this machine is already booting, so we
+      # look it up here with the instance principal and fill in the env file.
+      #
+      # When create_adb is false the operator supplied the URL and there is
+      # nothing to resolve.
+      set -a; . /etc/schemagate.env; set +a
+      [ "$SCHEMAGATE_CREATE_ADB" = "true" ] || exit 0
+      log=/var/log/schemagate-resolve-db.log
+
+      # Provisioning an Autonomous Database takes minutes, and the IAM policy
+      # that lets us read it is created alongside it, then has to propagate.
+      for attempt in $(seq 1 60); do
+        id="$(oci db autonomous-database list \
+                --compartment-id "$OCI_COMPARTMENT_ID" \
+                --display-name "$SCHEMAGATE_ADB_DISPLAY_NAME" \
+                --lifecycle-state AVAILABLE \
+                --query 'data[0].id' --raw-output 2>>"$log")"
+        [ -n "$id" ] && [ "$id" != "null" ] && break
+        echo "attempt $attempt: database not available yet ($(date -Is))" >> "$log"
+        sleep 20
+      done
+      [ -n "$id" ] && [ "$id" != "null" ] || { echo "gave up waiting for the database" >> "$log"; exit 1; }
+
+      dsn="$(oci db autonomous-database get --autonomous-database-id "$id" \
+               --query 'data."connection-strings".profiles' --raw-output 2>>"$log" \
+             | python3.11 -c 'import json,sys; ps=json.load(sys.stdin) or []; print(next((p["value"] for p in ps if p.get("tls-authentication")=="SERVER" and str(p.get("display-name","")).lower().endswith("_low")), ""))')"
+      [ -n "$dsn" ] || { echo "no walletless _low profile on $id" >> "$log"; exit 1; }
+
+      args="$(SG_DSN="$dsn" python3.11 -c 'import json,os; print(json.dumps({"user":"ADMIN","password":os.environ["SCHEMAGATE_ADB_PASSWORD"],"dsn":os.environ["SG_DSN"]}))')"
+      # Replace the placeholder line rather than appending a second one.
+      sed -i "s|^SCHEMAGATE_CONNECT_ARGS=.*|SCHEMAGATE_CONNECT_ARGS='$args'|" /etc/schemagate.env
+      echo "resolved $id ($(date -Is))" >> "$log"
   - path: /etc/systemd/system/schemagate-catalog.service
     content: |
       [Unit]
@@ -87,12 +131,24 @@ write_files:
       Type=oneshot
       ExecStart=/opt/catalog-once.sh
       RemainAfterExit=yes
+  - path: /etc/systemd/system/schemagate-resolve-db.service
+    content: |
+      [Unit]
+      Description=schemagate: resolve the database connection descriptor
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/resolve-db.sh
+      RemainAfterExit=yes
   - path: /etc/systemd/system/schemagate.service
     content: |
       [Unit]
       Description=schemagate MCP server
-      After=network-online.target
+      After=network-online.target schemagate-resolve-db.service
       Wants=network-online.target
+      # The server reads the connection descriptor at start-up, and when this
+      # stack creates the database that descriptor is only known once
+      # resolve-db has looked it up. It is a no-op for a supplied database_url.
+      Requires=schemagate-resolve-db.service
       [Service]
       EnvironmentFile=/etc/schemagate.env
       ExecStart=/opt/schemagate/bin/python -m schemagate.mcp_server
@@ -109,8 +165,12 @@ runcmd:
   - firewall-cmd --permanent --add-port=${mcp_port}/tcp || true
   - firewall-cmd --reload || true
   - systemctl daemon-reload
-  # The endpoint comes up first, on identifiers alone, and cataloguing runs
-  # behind it -- otherwise the retry loop above would hold the MCP server down
-  # for up to twelve minutes waiting for an IAM policy to propagate.
+  # resolve-db first: when this stack creates the database, the server has
+  # nothing to connect to until the descriptor is looked up. It exits
+  # immediately when the operator supplied database_url.
+  - systemctl enable --now schemagate-resolve-db
+  # Then the endpoint, on identifiers alone, with cataloguing behind it --
+  # otherwise the retry loop above would hold the MCP server down for up to
+  # twelve minutes waiting for an IAM policy to propagate.
   - systemctl enable --now schemagate
   - systemctl start --no-block schemagate-catalog

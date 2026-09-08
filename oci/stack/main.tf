@@ -113,8 +113,28 @@ resource "oci_core_subnet" "subnet" {
 # The instance principal is what makes cataloguing work with no API key and no
 # prompt leaving the tenancy. Both live at tenancy root, which is where OCI
 # requires dynamic groups and where GenAI policies are normally written.
+data "oci_core_vnic_attachments" "vm" {
+  compartment_id = var.compartment_ocid
+  instance_id    = oci_core_instance.vm.id
+}
+
+data "oci_core_private_ips" "vm" {
+  vnic_id = data.oci_core_vnic_attachments.vm.vnic_attachments[0].vnic_id
+}
+
+# Reserved rather than ephemeral: the database's ACL has to name this address,
+# and an ephemeral address does not exist until the instance is running.
+resource "oci_core_public_ip" "mcp" {
+  compartment_id = var.compartment_ocid
+  display_name   = "schemagate-mcp-ip"
+  lifetime       = "RESERVED"
+  private_ip_id  = data.oci_core_private_ips.vm.private_ips[0].id
+}
+
+# Needed for keyless cataloguing, and also for the boot-time database lookup
+# when this stack creates the database -- so it exists for either reason.
 resource "oci_identity_dynamic_group" "dg" {
-  count          = var.catalog_provider == "oci" ? 1 : 0
+  count          = (var.catalog_provider == "oci" || var.create_adb) ? 1 : 0
   compartment_id = var.tenancy_ocid
   name           = "schemagate-mcp-dg-${substr(md5(var.compartment_ocid), 0, 8)}"
   description    = "The schemagate MCP instance"
@@ -122,13 +142,16 @@ resource "oci_identity_dynamic_group" "dg" {
 }
 
 resource "oci_identity_policy" "genai" {
-  count          = var.catalog_provider == "oci" ? 1 : 0
+  count          = (var.catalog_provider == "oci" || var.create_adb) ? 1 : 0
   compartment_id = var.tenancy_ocid
   name           = "schemagate-genai-policy-${substr(md5(var.compartment_ocid), 0, 8)}"
-  description    = "Let the schemagate instance call OCI Generative AI for schema descriptions"
-  statements = [
-    "Allow dynamic-group ${oci_identity_dynamic_group.dg[0].name} to use generative-ai-family in compartment id ${var.compartment_ocid}",
-  ]
+  description    = "Let the schemagate instance read its database's descriptor and call OCI Generative AI"
+  statements = compact([
+    var.catalog_provider == "oci" ? "Allow dynamic-group ${oci_identity_dynamic_group.dg[0].name} to use generative-ai-family in compartment id ${var.compartment_ocid}" : "",
+    # /opt/resolve-db.sh reads the connection descriptor at boot, because the
+    # database is created after this instance (its ACL names the instance's IP).
+    var.create_adb ? "Allow dynamic-group ${oci_identity_dynamic_group.dg[0].name} to read autonomous-database-family in compartment id ${var.compartment_ocid}" : "",
+  ])
 }
 
 # ---------------- database (optional) ----------------
@@ -164,34 +187,36 @@ resource "oci_database_autonomous_database" "adb" {
   # README tells you to point `create_adb = false` at your own database for
   # anything real. `adb_allowed_cidrs` narrows it if you know your egress
   # addresses; leave it empty and the instance can always reach the database.
-  whitelisted_ips = length(var.adb_allowed_cidrs) > 0 ? var.adb_allowed_cidrs : null
+  # Oracle refuses one-way TLS (mTLS off) on a public database with no ACL:
+  # "One-way TLS connections require a private endpoint or a public IP with an
+  # ACL". 0.1.7 set this to null and every apply failed here.
+  #
+  # The list has to name the instance's public IP, so the address is reserved
+  # up front and attached to the instance afterwards -- that is why this
+  # database is created *after* the instance, and why cloud-init looks its
+  # connection descriptor up at boot rather than receiving it from Terraform.
+  whitelisted_ips = concat([oci_core_public_ip.mcp.ip_address], var.adb_allowed_cidrs)
 }
 
 locals {
-  # When we created the database: the walletless TLS descriptor Oracle hands
-  # back, passed to python-oracledb as `dsn`. The SQLAlchemy URL stays
-  # `oracle+oracledb://@` and credentials travel in connect_args, the pattern
-  # SQLAlchemy documents for thin-mode Oracle. When create_adb is false,
-  # database_url is used as-is.
-  adb_dsn = var.create_adb ? one([
-    for p in oci_database_autonomous_database.adb[0].connection_strings[0].profiles : p.value
-    if p.tls_authentication == "SERVER" && endswith(lower(p.display_name), "_low")
-  ]) : ""
+  # The database this stack creates cannot be referenced here: its ACL names
+  # the instance's reserved IP, so it is created after the instance. cloud-init
+  # resolves the descriptor at boot instead (see /opt/resolve-db.sh). When
+  # create_adb is false, database_url is used as-is and nothing is resolved.
   database_url = var.create_adb ? "oracle+oracledb://@" : var.database_url
-  connect_args = var.create_adb ? jsonencode({
-    user     = "ADMIN"
-    password = var.adb_admin_password
-    dsn      = local.adb_dsn
-  }) : "{}"
+  connect_args = var.create_adb ? "{}" : "{}"
 
   cloud_init = templatefile("${path.module}/cloud-init.yaml", {
-    database_url     = local.database_url
-    connect_args     = local.connect_args
-    mcp_port         = var.mcp_port
-    catalog_provider = var.catalog_provider
-    catalog_model    = var.catalog_model
-    compartment_ocid = var.compartment_ocid
-    region           = var.region
+    database_url      = local.database_url
+    connect_args      = local.connect_args
+    mcp_port          = var.mcp_port
+    catalog_provider  = var.catalog_provider
+    catalog_model     = var.catalog_model
+    compartment_ocid  = var.compartment_ocid
+    region            = var.region
+    create_adb        = var.create_adb ? "true" : "false"
+    adb_display_name  = "schemagate-demo"
+    adb_admin_password = var.adb_admin_password
   })
 }
 
@@ -221,7 +246,7 @@ resource "oci_core_instance" "vm" {
   }
   create_vnic_details {
     subnet_id        = oci_core_subnet.subnet.id
-    assign_public_ip = true
+    assign_public_ip = false # the reserved IP below is attached instead
     hostname_label   = "schemagate"
   }
   source_details {
@@ -235,11 +260,11 @@ resource "oci_core_instance" "vm" {
 }
 
 output "mcp_url" {
-  value       = "http://${oci_core_instance.vm.public_ip}:${var.mcp_port}/mcp"
+  value       = "http://${oci_core_public_ip.mcp.ip_address}:${var.mcp_port}/mcp"
   description = "Point Claude Desktop, Cursor or any MCP client here"
 }
 output "ssh" {
-  value = "ssh opc@${oci_core_instance.vm.public_ip}"
+  value = "ssh opc@${oci_core_public_ip.mcp.ip_address}"
 }
 output "catalogued_with" {
   value = var.catalog_provider == "oci" ? "OCI Generative AI (${var.catalog_model}), keyless via instance principal" : "identifiers only"

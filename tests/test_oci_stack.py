@@ -80,3 +80,38 @@ def test_the_stack_refuses_a_wildcard_cidr():
     """The MCP endpoint has no authentication of its own."""
     v = (STACK / "variables.tf").read_text()
     assert v.count('!= "0.0.0.0/0"') >= 2
+
+
+def test_one_way_tls_database_always_has_an_access_control_list():
+    """0.1.7 set whitelisted_ips to null when adb_allowed_cidrs was empty, and
+    every apply failed: "One-way TLS connections require a private endpoint or
+    a public IP with an ACL". mTLS off and no list is not a legal combination,
+    so the list must never be conditional on a variable the user can leave
+    empty."""
+    main = (STACK / "main.tf").read_text()
+    adb = main[main.index('resource "oci_database_autonomous_database"') :]
+    adb = adb[: adb.index("\n}")]
+    assert "is_mtls_connection_required = false" in adb
+    acl = [ln for ln in adb.splitlines() if "whitelisted_ips" in ln]
+    assert len(acl) == 1, acl
+    assert "null" not in acl[0], (
+        "an empty access-control list with mTLS off is rejected at apply time"
+    )
+    assert "oci_core_public_ip" in acl[0], (
+        "the list must name the instance's reserved public IP, or the instance "
+        "cannot reach the database it was given"
+    )
+
+
+def test_the_database_does_not_feed_cloud_init():
+    """The ACL names the instance's IP, so the database is created after the
+    instance. Referencing the database from cloud-init would be a dependency
+    cycle Terraform refuses to plan; the descriptor is resolved at boot."""
+    main = (STACK / "main.tf").read_text()
+    block = main[main.index("locals {") : main.index("templatefile(")]
+    assert "oci_database_autonomous_database" not in block
+    ci = _cloud_init()
+    assert "/opt/resolve-db.sh" in ci
+    assert "read autonomous-database-family" in main, (
+        "the boot-time lookup needs the instance principal to read the database"
+    )
