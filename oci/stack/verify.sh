@@ -42,7 +42,9 @@ wait_job() {
     st="$(oci resource-manager job get --job-id "$job" \
             --query 'data."lifecycle-state"' --raw-output 2>/dev/null)"
     case "$st" in SUCCEEDED|FAILED|CANCELED) break ;; esac
-    printf '   %s\r' "${st:-...}"
+    # >&2: this runs inside ST="$(wait_job ...)", so anything on stdout is
+    # captured into the caller's variable alongside the state.
+    printf '   %s\r' "${st:-...}" >&2
     sleep 15
   done
   echo "$st"
