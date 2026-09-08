@@ -1,0 +1,57 @@
+# Resource Manager form definition (OCI Marketplace stack listing)
+title: schemagate MCP server
+description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key.
+schemaVersion: 1.1.0
+version: "0.1.1"
+locale: en
+variableGroups:
+  - title: Where
+    variables: [compartment_ocid, region]
+  - title: Database
+    variables: [create_adb, adb_admin_password, database_url]
+  - title: Cataloguing
+    variables: [catalog_provider, catalog_model]
+  - title: Instance
+    variables: [ssh_public_key, instance_shape, allowed_cidr, mcp_port]
+variables:
+  tenancy_ocid: { type: oci:identity:compartment:id, visible: false }
+  region: { type: oci:identity:region:name, required: true, title: Region }
+  compartment_ocid: { type: oci:identity:compartment:id, required: true, title: Compartment }
+  create_adb:
+    type: boolean
+    title: Create an Always Free Autonomous Database
+    default: true
+  adb_admin_password:
+    type: password
+    title: ADMIN password for the new database
+    visible: create_adb
+    required: create_adb
+    pattern: "^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])[^\"']{12,30}$"
+  database_url:
+    type: password
+    title: SQLAlchemy URL of your existing database
+    visible: { not: [create_adb] }
+    required: { not: [create_adb] }
+  catalog_provider:
+    type: enum
+    title: Write table descriptions with
+    description: OCI Generative AI catalogues the schema on first boot using the instance principal - no API key, and the prompt never leaves your tenancy. Descriptions roughly double business-language retrieval accuracy.
+    enum: [oci, none]
+    default: oci
+  catalog_model:
+    type: string
+    title: OCI Generative AI model
+    default: google.gemini-2.5-pro
+    visible:
+      eq: [catalog_provider, oci]
+  ssh_public_key: { type: oci:core:ssh:publickey, required: true, title: SSH public key }
+  instance_shape:
+    type: oci:core:instanceshape:name
+    title: Shape
+    default: VM.Standard.E2.1.Micro
+    dependsOn: { compartmentId: "${compartment_ocid}" }
+  allowed_cidr: { type: string, title: CIDR allowed to reach the MCP endpoint, default: 0.0.0.0/0 }
+  mcp_port: { type: number, title: MCP port, default: 8765 }
+outputs:
+  mcp_url: { title: MCP endpoint, type: link }
+  catalogued_with: { title: Cataloguing, type: string }
