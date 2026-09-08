@@ -23,6 +23,24 @@ write_files:
   - path: /etc/schemagate/catalog.json
     content: |
       {"restrict": {}, "hint": {}, "describe": {}}
+  - path: /opt/pick-extras.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # The stack can point at any SQLAlchemy database, so install the driver
+      # that matches the URL rather than assuming Oracle. Without this a
+      # PostgreSQL or SQL Server URL fails at import with ModuleNotFoundError.
+      set -a; . /etc/schemagate.env; set +a
+      url="$SCHEMAGATE_DATABASE_URL"
+      case "$url" in
+        postgres*|postgresql*) extras="postgres" ;;
+        mssql*)                extras="mssql" ;;
+        mysql*|mariadb*)       extras="mysql" ;;
+        *)                     extras="oracle" ;;
+      esac
+      echo "database URL scheme -> installing schemagate[$extras,mcp,oci]"
+      /opt/schemagate/bin/pip install "schemagate[$extras,mcp,oci]"
+
   - path: /opt/catalog-once.sh
     permissions: "0755"
     content: |
@@ -55,7 +73,7 @@ write_files:
 runcmd:
   - python3.11 -m venv /opt/schemagate
   - /opt/schemagate/bin/pip install --upgrade pip
-  - /opt/schemagate/bin/pip install 'schemagate[oracle,mcp,oci]'
+  - /opt/pick-extras.sh
   - chown -R opc:opc /opt/schemagate /etc/schemagate
   - OCI_CLI_AUTH=instance_principal /opt/catalog-once.sh
   - firewall-cmd --permanent --add-port=${mcp_port}/tcp || true

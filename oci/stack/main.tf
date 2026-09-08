@@ -140,13 +140,21 @@ resource "oci_identity_policy" "genai" {
   name           = "schemagate-genai-policy-${substr(md5(var.compartment_ocid), 0, 8)}"
   description    = "Let the schemagate instance call OCI Generative AI for schema descriptions"
   statements = [
-    "Allow dynamic-group ${oci_identity_dynamic_group.dg[0].name} to use generative-ai-family in tenancy",
+    "Allow dynamic-group ${oci_identity_dynamic_group.dg[0].name} to use generative-ai-family in compartment id ${var.compartment_ocid}",
   ]
 }
 
 # ---------------- database (optional) ----------------
 resource "oci_database_autonomous_database" "adb" {
   count                       = var.create_adb ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.adb_admin_password != ""
+      error_message = "create_adb is true, so adb_admin_password is required."
+    }
+  }
+
   compartment_id              = var.compartment_ocid
   db_name                     = "sg${substr(md5(var.compartment_ocid), 0, 8)}"
   display_name                = "schemagate-demo"
@@ -189,9 +197,27 @@ locals {
 # ---------------- instance ----------------
 resource "oci_core_instance" "vm" {
   compartment_id      = var.compartment_ocid
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+
+  lifecycle {
+    precondition {
+      condition     = var.create_adb || var.database_url != ""
+      error_message = "create_adb is false, so database_url is required - there is nothing for the MCP server to reflect."
+    }
+  }
+
+  availability_domain = var.availability_domain != "" ? var.availability_domain : data.oci_identity_availability_domains.ads.availability_domains[0].name
   shape               = var.instance_shape
   display_name        = "schemagate-mcp"
+
+  # Every Flex shape requires shape_config at the API, and A1.Flex is the other
+  # Always Free option, so a user will pick one. Omitting it returns a 400.
+  dynamic "shape_config" {
+    for_each = length(regexall("Flex", var.instance_shape)) > 0 ? [1] : []
+    content {
+      ocpus         = var.instance_ocpus
+      memory_in_gbs = var.instance_memory_gbs
+    }
+  }
   create_vnic_details {
     subnet_id        = oci_core_subnet.subnet.id
     assign_public_ip = true

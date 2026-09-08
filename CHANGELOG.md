@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.5
+
+**PostgreSQL users on 0.1.1-0.1.4 should upgrade: their catalog was empty.**
+
+- **Fixed: PostgreSQL reflected nothing at all.** 0.1.1 added an
+  internal-schema filter for Oracle Autonomous Database and put `public` on
+  the list, because `PUBLIC` is a pseudo-schema on Oracle. On PostgreSQL
+  `public` is the user's entire database, so every schema was filtered out and
+  `Catalog.bootstrap()` returned zero objects. Caught by running
+  `scripts/certify_dialect.py` against a live PostgreSQL 16, which failed 7 of
+  10 checks.
+- Internal-schema detection now lives behind a per-dialect hook
+  (`schemagate.dialects.is_internal_schema`) and applies only to the engine
+  that defines it. A test asserts no cross-dialect list exists in
+  `introspect.py`, because that is what caused this.
+- **PostgreSQL 16 re-certified live**: certify script 10/10, plus the dialect
+  and 260-object hostile suites.
+- The OCI stack installs the driver matching your database URL instead of
+  always Oracle, so `create_adb = false` with a PostgreSQL, SQL Server or MySQL
+  URL now works rather than failing at import.
+- Stack: `shape_config` for Flex shapes (A1.Flex is the other Always Free
+  option and would 400 without it), a selectable availability domain for the
+  "out of host capacity" case, GenAI policy scoped to the compartment instead
+  of the tenancy, and preconditions that catch a missing password or database
+  URL at plan time.
+
 ## 0.1.4
 
 An audit of the OCI stack — which had never been applied — found that its

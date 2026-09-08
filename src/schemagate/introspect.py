@@ -26,26 +26,6 @@ def _match(name: str, patterns: Optional[Iterable[str]]) -> bool:
 
 
 
-#: Schema-name shapes that are platform plumbing on every Oracle and most
-#: other engines: APEX (APEX_230200, FLOWS_FILES), ORDS, common users
-#: (C##...), and anything with a $ in it. A user's own schema never looks
-#: like this; a hosted platform's always does.
-_INTERNAL_PREFIXES = ("apex_", "flows_", "ords_", "c##", "sys$", "db_", "ggsys",
-                      "ojvmsys", "dvsys", "dvf", "lbacsys", "dbsfwuser", "rqsys",
-                      "pyqsys", "graph$", "mtssys", "adbsnmp", "oci_admin",
-                      "sh$", "ssb$", "remote_scheduler_agent", "audsys",
-                      "cloud$", "gsmuser", "gsmcatuser", "gsmrofuser", "xs$null",
-                      "dip", "anonymous", "public",
-                      # Autonomous Database service schemas that are not
-                      # flagged ORACLE_MAINTAINED (seen live, 26ai)
-                      "odi_repo", "oadc_", "oml$", "omlmod$", "dcat_", "adp_")
-
-
-def _looks_internal(schema: str) -> bool:
-    low = schema.lower()
-    return "$" in low or any(low.startswith(p) for p in _INTERNAL_PREFIXES)
-
-
 def connect_args_from_env() -> dict:
     """Driver keyword arguments for :func:`sqlalchemy.create_engine`, read from
     the ``SCHEMAGATE_CONNECT_ARGS`` environment variable.
@@ -116,12 +96,17 @@ def reflect(engine_or_url, include=None, exclude=None,
     if schemas is None:
         try:
             schemas = [s for s in insp.get_schema_names()
-                       if s.lower() not in _SYSTEM_SCHEMAS
-                       and not _looks_internal(s)]
+                       if s.lower() not in _SYSTEM_SCHEMAS]
         except NotImplementedError:
             schemas = [None]
-        from .dialects import vendor_maintained
-        schemas = [s for s in schemas if s not in vendor_maintained(engine)]
+        # Anything beyond that is vendor-specific, and has to be: "PUBLIC" is a
+        # pseudo-schema on Oracle and the user's entire database on PostgreSQL,
+        # so one shared list of "internal-looking" names empties one engine's
+        # catalog in order to tidy up another's.
+        from .dialects import is_internal_schema, vendor_maintained
+        maintained = vendor_maintained(engine)
+        schemas = [s for s in schemas
+                   if s not in maintained and not is_internal_schema(engine, s)]
         default = insp.default_schema_name
         if default and default in schemas:
             schemas = [default] + [s for s in schemas if s != default]

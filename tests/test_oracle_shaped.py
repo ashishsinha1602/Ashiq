@@ -422,7 +422,7 @@ def test_non_oracle_engines_get_no_dictionary_query():
 
 
 def test_internal_schema_shapes_are_recognised():
-    from schemagate.introspect import _looks_internal
+    from schemagate.dialects.oracle import looks_internal as _looks_internal
     for s in ("APEX_230200", "FLOWS_FILES", "ORDS_PUBLIC_USER", "C##CLOUD$SERVICE",
               "GRAPH$METADATA", "SH$X", "DBSFWUSER", "PUBLIC",
               "ODI_REPO_USER", "OADC_CATALOG_USER", "OML$PROXY"):
@@ -484,3 +484,32 @@ def test_oracle_store_merges_wallet_connect_args(monkeypatch):
     OracleStore(dsn="db_high", user="ADMIN", password="pw", dim=8)
     assert seen == {"config_dir": "/w", "wallet_location": "/w", "wallet_password": "wp",
                     "user": "ADMIN", "password": "pw", "dsn": "db_high"}
+
+
+def test_public_schema_is_internal_on_oracle_but_not_postgres():
+    """The regression this pins: "public" was on a shared internal-schema list.
+    On Oracle PUBLIC is a pseudo-schema; on PostgreSQL it is the user's entire
+    database. Filtering it globally made every PostgreSQL catalog empty."""
+    from schemagate.dialects import is_internal_schema
+
+    class Eng:
+        def __init__(self, name):
+            self.dialect = type("d", (), {"name": name})()
+
+    assert is_internal_schema(Eng("oracle"), "PUBLIC")
+    assert is_internal_schema(Eng("oracle"), "APEX_260100")
+    assert not is_internal_schema(Eng("postgresql"), "public")
+    assert not is_internal_schema(Eng("postgresql"), "APEX_260100")
+    assert not is_internal_schema(Eng("mysql"), "public")
+    assert not is_internal_schema(Eng("sqlite"), "public")
+    assert not is_internal_schema(Eng("oracle"), None)
+
+
+def test_no_shared_internal_schema_list_outside_the_oracle_dialect():
+    """A cross-dialect list of 'internal-looking' names is how the PostgreSQL
+    catalog got emptied. Keep the notion inside the dialect that owns it."""
+    import inspect as pyinspect
+    from schemagate import introspect
+    src = pyinspect.getsource(introspect)
+    assert "_INTERNAL_PREFIXES" not in src
+    assert "_looks_internal" not in src

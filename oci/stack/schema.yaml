@@ -2,7 +2,7 @@
 title: schemagate MCP server
 description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key.
 schemaVersion: 1.1.0
-version: "0.1.4"
+version: "0.1.5"
 locale: en
 variableGroups:
   - title: Where
@@ -12,7 +12,7 @@ variableGroups:
   - title: Cataloguing
     variables: [catalog_provider, catalog_model]
   - title: Instance
-    variables: [ssh_public_key, instance_shape, allowed_cidr, ssh_cidr, mcp_port]
+    variables: [ssh_public_key, instance_shape, instance_ocpus, instance_memory_gbs, availability_domain, allowed_cidr, ssh_cidr, mcp_port]
 variables:
   tenancy_ocid: { type: oci:identity:compartment:id, visible: false }
   region: { type: oci:identity:region:name, required: true, title: Region }
@@ -59,6 +59,19 @@ variables:
     dependsOn: { compartmentId: "${compartment_ocid}" }
   allowed_cidr: { type: string, required: true, title: CIDR allowed to reach the MCP endpoint (it has no auth of its own) }
   ssh_cidr: { type: string, required: true, title: CIDR allowed to SSH }
+  instance_ocpus:
+    type: number
+    title: OCPUs (Flex shapes only)
+    default: 1
+  instance_memory_gbs:
+    type: number
+    title: Memory in GB (Flex shapes only)
+    default: 6
+  availability_domain:
+    type: oci:identity:availabilitydomain:name
+    title: Availability domain (blank = first; Always Free micro exists in only one)
+    required: false
+    dependsOn: { compartmentId: "${compartment_ocid}" }
   mcp_port: { type: number, title: MCP port, default: 8765 }
 outputs:
   mcp_url: { title: MCP endpoint, type: link }

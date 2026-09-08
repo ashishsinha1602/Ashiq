@@ -72,8 +72,27 @@ variable "ssh_public_key" {
   description = "SSH public key for the opc user"
 }
 variable "instance_shape" {
-  type    = string
-  default = "VM.Standard.E2.1.Micro" # Always Free eligible
+  type        = string
+  default     = "VM.Standard.E2.1.Micro" # Always Free eligible
+  description = "Compute shape. VM.Standard.E2.1.Micro and VM.Standard.A1.Flex are the Always Free options; a Flex shape also needs instance_ocpus and instance_memory_gbs."
+}
+
+variable "instance_ocpus" {
+  type        = number
+  default     = 1
+  description = "OCPUs, for Flex shapes only. Always Free allows up to 4 across all A1.Flex instances."
+}
+
+variable "instance_memory_gbs" {
+  type        = number
+  default     = 6
+  description = "Memory in GB, for Flex shapes only. Always Free allows up to 24 across all A1.Flex instances."
+}
+
+variable "availability_domain" {
+  type        = string
+  default     = ""
+  description = "Availability domain name. Leave empty for the first one. Always Free micro instances exist in only one AD, so if you hit \"Out of host capacity\", try another."
 }
 variable "allowed_cidr" {
   type        = string
