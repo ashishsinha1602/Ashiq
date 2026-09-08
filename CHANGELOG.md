@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.6
+
+The stack's keyless cataloguing raced the permission that authorises it, and
+there is now a script that proves a deployment works rather than asserting it.
+
+- **Fixed: first-boot cataloguing raced its own IAM policy.** The dynamic
+  group's matching rule needs the instance OCID, so Terraform cannot create the
+  group or the Generative AI policy until the instance exists — by which time
+  the instance is already running `catalog-once.sh`. Authorisation also takes
+  minutes to propagate after the policy is written. The single attempt on first
+  boot usually lost that race and failed with `NotAuthorizedOrNotFound`, which
+  the stack logged and moved past, leaving a catalog with no descriptions in it.
+  Cataloguing now retries for twelve minutes and restarts the server when it
+  succeeds.
+- The MCP endpoint now comes up *before* cataloguing rather than after, so the
+  retry window no longer holds the service down.
+- `oci/stack/verify.sh`: end-to-end certification of the stack in your own
+  tenancy, through Resource Manager — the same path the Deploy button takes. It
+  uploads the released zip, plans, applies, then checks the machine rather than
+  the plan: the MCP port answers, the instance can reach the database through
+  the service gateway, and cataloguing genuinely called OCI Generative AI
+  through the instance principal. Destroys everything afterwards. It generates
+  its own key and password and narrows both CIDRs to the calling shell.
+- `tests/test_oci_stack.py` pins the cloud-init template contract and the
+  ordering above; nothing else in the suite would have noticed either.
+
 ## 0.1.5
 
 **PostgreSQL users on 0.1.1-0.1.4 should upgrade: their catalog was empty.**

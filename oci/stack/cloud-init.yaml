@@ -46,16 +46,47 @@ write_files:
     content: |
       #!/bin/bash
       # One-off: describe the schema with OCI Generative AI, using the VM's
-      # instance principal. Failure is not fatal -- selection still works on
-      # identifiers alone, and this can be re-run by hand at any time.
+      # instance principal.
+      #
+      # This retries, and the reason is an ordering problem in the stack that
+      # only shows up on a real apply. The dynamic group's matching rule needs
+      # this instance's OCID, so Terraform cannot create the group or the
+      # policy until after the instance exists -- and the instance is booting
+      # and running this script by then. IAM authorisation also takes minutes
+      # to propagate after the policy is written. A single attempt on first
+      # boot therefore races the permission it needs and usually loses,
+      # failing with NotAuthorizedOrNotFound.
+      #
+      # Failure after all attempts is not fatal: selection still works on
+      # identifiers alone, and this script can be re-run by hand at any time.
       set -a; . /etc/schemagate.env; set +a
       [ "${catalog_provider}" = "oci" ] || exit 0
-      /opt/schemagate/bin/schemagate describe \
-        --url "$SCHEMAGATE_DATABASE_URL" \
-        --provider oci --model "${catalog_model}" --all \
-        --config /etc/schemagate/catalog.json 2>&1 | tee /var/log/schemagate-catalog.log || \
-        echo "cataloguing failed -- selection still works on identifiers alone; see /var/log/schemagate-catalog.log" >&2
-      chown opc:opc /etc/schemagate/catalog.json || true
+      log=/var/log/schemagate-catalog.log
+      for attempt in $(seq 1 12); do
+        echo "=== cataloguing attempt $attempt of 12 ($(date -Is)) ===" >> "$log"
+        if /opt/schemagate/bin/schemagate describe \
+             --url "$SCHEMAGATE_DATABASE_URL" \
+             --provider oci --model "${catalog_model}" --all \
+             --config /etc/schemagate/catalog.json >> "$log" 2>&1; then
+          echo "cataloguing succeeded on attempt $attempt" >> "$log"
+          chown opc:opc /etc/schemagate/catalog.json || true
+          # The server read the catalog at start-up, so it needs to read it again.
+          systemctl restart schemagate || true
+          exit 0
+        fi
+        sleep 60
+      done
+      echo "cataloguing failed after 12 attempts -- selection still works on identifiers alone. Re-run: sudo OCI_CLI_AUTH=instance_principal /opt/catalog-once.sh" >> "$log"
+      exit 1
+  - path: /etc/systemd/system/schemagate-catalog.service
+    content: |
+      [Unit]
+      Description=schemagate one-off schema cataloguing
+      After=schemagate.service
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/catalog-once.sh
+      RemainAfterExit=yes
   - path: /etc/systemd/system/schemagate.service
     content: |
       [Unit]
@@ -75,8 +106,11 @@ runcmd:
   - /opt/schemagate/bin/pip install --upgrade pip
   - /opt/pick-extras.sh
   - chown -R opc:opc /opt/schemagate /etc/schemagate
-  - OCI_CLI_AUTH=instance_principal /opt/catalog-once.sh
   - firewall-cmd --permanent --add-port=${mcp_port}/tcp || true
   - firewall-cmd --reload || true
   - systemctl daemon-reload
+  # The endpoint comes up first, on identifiers alone, and cataloguing runs
+  # behind it -- otherwise the retry loop above would hold the MCP server down
+  # for up to twelve minutes waiting for an IAM policy to propagate.
   - systemctl enable --now schemagate
+  - systemctl start --no-block schemagate-catalog

@@ -16,11 +16,32 @@ against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
 up for other people.
 
-> **Not yet applied end to end.** The Terraform is reviewed and cross-checked
-> against the OCI provider docs, but nobody has run `terraform apply` on it
-> yet. If you deploy it and something fails, please open an issue — that is
-> the fastest way to get it fixed. The Cloud Shell route in
+> **Not yet applied end to end.** The Terraform is reviewed, and reviewing it
+> found a bug an apply would have hit — see *Certify it yourself* below — but
+> nobody has run it against a real tenancy. If you deploy it and something
+> fails, please open an issue. The Cloud Shell route in
 > [`../README.md`](../README.md) *is* exercised and needs no VM.
+
+## Certify it yourself
+
+`verify.sh` runs the whole thing in your own tenancy through Resource Manager,
+which is the same path the Deploy button takes, and then checks the machine
+rather than the plan: that the MCP port answers, that the instance can actually
+reach the database through the service gateway, and that cataloguing really
+called OCI Generative AI through the instance principal rather than failing
+quietly. It destroys everything it created afterwards.
+
+```bash
+# in OCI Cloud Shell, which is already authenticated as you
+curl -fsSLO https://raw.githubusercontent.com/ashishsinha1602/schemagate/main/oci/stack/verify.sh
+bash verify.sh                      # apply, verify, destroy  (~15 min)
+KEEP=1 bash verify.sh               # leave it standing
+COMPARTMENT=ocid1.compartment... bash verify.sh
+```
+
+It generates its own SSH key and ADMIN password, and narrows `allowed_cidr`
+and `ssh_cidr` to the shell's own address, so nothing is typed and nothing is
+left open.
 
 ## Before you deploy
 
