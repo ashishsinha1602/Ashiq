@@ -111,6 +111,23 @@ class OracleStore:
     def _read_lob(value: Any) -> Any:
         return value.read() if hasattr(value, "read") else value
 
+    @classmethod
+    def _payload(cls, value: Any) -> dict:
+        """Decode a payload however the driver hands it back.
+
+        Found live on 26ai: a CLOB CHECK (IS JSON) column can come back as a
+        LOB, a str, bytes, or -- with python-oracledb 4 and native JSON
+        handling -- an already-decoded dict. All four must land as a dict.
+        """
+        value = cls._read_lob(value)
+        if value is None or value == "":
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, (bytes, bytearray)):
+            value = value.decode("utf-8")
+        return json.loads(value)
+
     # ---------------- schema ----------------
 
     def create_schema(self, with_index: bool = True) -> None:
@@ -189,7 +206,7 @@ class OracleStore:
             rows = cur.fetchall()
         out = []
         for vkey, payload, dist in rows:
-            data = json.loads(self._read_lob(payload)) if payload else {}
+            data = self._payload(payload)
             out.append({**data, "_key": vkey, "_distance": float(dist)})
         return out
 
@@ -205,7 +222,7 @@ class OracleStore:
             row = cur.fetchone()
         if not row:
             return None
-        return json.loads(self._read_lob(row[0])) if row[0] else {}
+        return self._payload(row[0])
 
     def count(self, ns: str, scope: Optional[str] = None) -> int:
         sql = f"""
