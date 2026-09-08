@@ -103,6 +103,19 @@ echo "compartment  : $COMPARTMENT"
 echo "region       : $REGION"
 echo "reaching from: $CIDR"
 
+# Names are unique per apply now, so leftovers cannot collide -- but Always
+# Free allows only two Autonomous Databases, and an abandoned one will fail
+# this run for a different reason. Say so before spending ten minutes on it.
+LEFT_DG="$(oci iam dynamic-group list --all \
+  --query "length(data[?contains(name, 'schemagate')])" --raw-output 2>/dev/null || echo 0)"
+LEFT_DB="$(oci db autonomous-database list --compartment-id "$COMPARTMENT" --all \
+  --query "length(data[?contains(\"display-name\", 'schemagate') && \"lifecycle-state\" != 'TERMINATED'])" \
+  --raw-output 2>/dev/null || echo 0)"
+if [ "${LEFT_DG:-0}" != "0" ] || [ "${LEFT_DB:-0}" != "0" ]; then
+  echo "leftovers    : ${LEFT_DG:-0} dynamic group(s), ${LEFT_DB:-0} database(s) from earlier runs"
+  echo "               \"Cleaning up after a run that did not finish\" in README.md removes them"
+fi
+
 curl -fsSL "$ZIP_URL" -o "$WORK/stack.zip" || die "could not download $ZIP_URL"
 unzip -l "$WORK/stack.zip" | grep -q ' main.tf$' \
   || die "main.tf is not at the root of the zip -- Resource Manager will not read it"

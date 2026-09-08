@@ -41,6 +41,36 @@ up for other people.
 > The Cloud Shell route in [`../README.md`](../README.md) *is* exercised,
 > needs no VM, and is the supported way to run schemagate on OCI today.
 
+## Cleaning up after a run that did not finish
+
+Every name the stack creates is unique per apply, so a leftover cannot collide
+with a new run. It can still get in the way: Always Free allows only two
+Autonomous Databases, and an abandoned one uses a slot. `verify.sh` says so
+before it starts. To clear them:
+
+```bash
+# Autonomous Databases from earlier runs
+oci db autonomous-database list --compartment-id "$OCI_TENANCY" --all \
+  --query "data[?contains(\"display-name\",'schemagate')].{name:\"display-name\",state:\"lifecycle-state\",id:id}" \
+  --output table
+oci db autonomous-database delete --autonomous-database-id <id> --force
+
+# Dynamic groups and policies are tenancy-scoped, not compartment-scoped
+oci iam dynamic-group list --all \
+  --query "data[?contains(name,'schemagate')].{name:name,id:id}" --output table
+oci iam dynamic-group delete --dynamic-group-id <id> --force
+
+oci iam policy list --compartment-id "$OCI_TENANCY" --all \
+  --query "data[?contains(name,'schemagate')].{name:name,id:id}" --output table
+oci iam policy delete --policy-id <id> --force
+
+# A RESERVED public IP outlives the instance it was attached to
+oci network public-ip list --compartment-id "$OCI_TENANCY" --scope REGION --all \
+  --query "data[?contains(\"display-name\",'schemagate')].{name:\"display-name\",ip:\"ip-address\",id:id}" \
+  --output table
+oci network public-ip delete --public-ip-id <id> --force
+```
+
 ## Certify it yourself
 
 `verify.sh` runs the whole thing in your own tenancy through Resource Manager,

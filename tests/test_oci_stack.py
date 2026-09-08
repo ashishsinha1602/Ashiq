@@ -191,3 +191,29 @@ def test_the_oci_sdk_is_installed_only_when_something_needs_it():
     extras = ci[ci.index("/opt/pick-extras.sh") : ci.index("- path: /opt/catalog-once.sh")]
     assert 'SCHEMAGATE_CREATE_ADB" = "true"' in extras
     assert "mcp,oci" in extras and '"$extras,mcp"' in extras
+
+
+def test_tenancy_unique_names_are_unique_per_apply_not_per_compartment():
+    """A dynamic group and a policy are tenancy-scoped, and an Autonomous
+    Database name must be unique across the region. Deriving all three from
+    md5(compartment_ocid) made them identical on every run, so one leftover --
+    a destroy that did not finish -- failed every later apply with
+    "DynamicResourceGroup with the same displayName already exists"."""
+    main = (STACK / "main.tf").read_text()
+    assert "md5(var.compartment_ocid)" not in main, (
+        "a name keyed on the compartment is the same on every run in it"
+    )
+    assert "substr(md5(oci_core_vcn.vcn.id), 0, 8)" in main
+    for unique in ('name           = "schemagate-mcp-dg-${local.suffix}"',
+                   'name           = "schemagate-genai-policy-${local.suffix}"',
+                   'db_name                     = "sg${local.suffix}"'):
+        assert unique in main, unique
+
+
+def test_the_boot_lookup_and_the_database_agree_on_the_display_name():
+    """resolve-db finds the database by display name. A name shared with a
+    leftover from an earlier run would resolve the wrong database."""
+    main = (STACK / "main.tf").read_text()
+    assert main.count("adb_display_name = \"schemagate-demo-${local.suffix}\"") == 1
+    assert "display_name                = local.adb_display_name" in main
+    assert "adb_display_name  = local.adb_display_name" in main

@@ -41,7 +41,17 @@ finding something no `terraform plan` can catch.
   stack pointed at your own database. `verify.sh` takes `SHAPE`, `OCPUS` and
   `MEMORY_GBS`, and on a timeout it prints what the instance was doing before
   tearing it down.
-- `tests/test_oci_stack.py` pins each of these. Fourteen invariants now, and
+- **Fixed: a second run in the same tenancy could not apply.** The dynamic
+  group, the policy and the database name were all derived from
+  `md5(compartment_ocid)`, which is the same on every run in that compartment.
+  One leftover from an earlier run -- a destroy that did not finish -- and the
+  next apply failed with *"DynamicResourceGroup with the same displayName
+  already exists"* and *"a database named sg... already exists"*. All three are
+  now keyed on the VCN's OCID, which is unique to the apply. The database's
+  display name is too, which also stops the boot-time lookup resolving an
+  abandoned database instead of this one. `verify.sh` reports leftovers before
+  it starts, and the README says how to remove them.
+- `tests/test_oci_stack.py` pins each of these. Sixteen invariants now, and
   every one of them came from a failure a live apply produced.
 
 ## 0.1.7
