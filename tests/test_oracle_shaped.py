@@ -424,9 +424,10 @@ def test_non_oracle_engines_get_no_dictionary_query():
 def test_internal_schema_shapes_are_recognised():
     from schemagate.introspect import _looks_internal
     for s in ("APEX_230200", "FLOWS_FILES", "ORDS_PUBLIC_USER", "C##CLOUD$SERVICE",
-              "GRAPH$METADATA", "SH$X", "DBSFWUSER", "PUBLIC"):
+              "GRAPH$METADATA", "SH$X", "DBSFWUSER", "PUBLIC",
+              "ODI_REPO_USER", "OADC_CATALOG_USER", "OML$PROXY"):
         assert _looks_internal(s), s
-    for s in ("SALES", "HR", "ADMIN", "MYAPP"):
+    for s in ("SALES", "HR", "ADMIN", "MYAPP", "SH", "SSB", "OMLAPP"):
         assert not _looks_internal(s), s
 
 

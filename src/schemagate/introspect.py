@@ -35,7 +35,10 @@ _INTERNAL_PREFIXES = ("apex_", "flows_", "ords_", "c##", "sys$", "db_", "ggsys",
                       "pyqsys", "graph$", "mtssys", "adbsnmp", "oci_admin",
                       "sh$", "ssb$", "remote_scheduler_agent", "audsys",
                       "cloud$", "gsmuser", "gsmcatuser", "gsmrofuser", "xs$null",
-                      "dip", "anonymous", "public")
+                      "dip", "anonymous", "public",
+                      # Autonomous Database service schemas that are not
+                      # flagged ORACLE_MAINTAINED (seen live, 26ai)
+                      "odi_repo", "oadc_", "oml$", "omlmod$", "dcat_", "adp_")
 
 
 def _looks_internal(schema: str) -> bool:

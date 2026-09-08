@@ -298,3 +298,17 @@ def test_vector_type_matches_oracle_documented_argument_order():
     """
     ddl = _statements_emitted()[0]
     assert "VECTOR(8, FLOAT32)" in ddl
+
+
+def test_payload_decodes_every_shape_the_driver_returns():
+    """Live on 26ai, python-oracledb 4 returned the JSON payload already
+    decoded as a dict; json.loads(dict) raised TypeError in get()."""
+    from schemagate.stores.oracle import OracleStore
+    class Lob:
+        def read(self): return '{"a": 1}'
+    assert OracleStore._payload(Lob()) == {"a": 1}
+    assert OracleStore._payload('{"a": 1}') == {"a": 1}
+    assert OracleStore._payload(b'{"a": 1}') == {"a": 1}
+    assert OracleStore._payload({"a": 1}) == {"a": 1}
+    assert OracleStore._payload(None) == {}
+    assert OracleStore._payload("") == {}
