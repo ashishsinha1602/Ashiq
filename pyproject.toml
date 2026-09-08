@@ -50,8 +50,9 @@ mysql       = ["PyMySQL>=1.1"]
 anthropic   = ["anthropic>=0.40"]
 openai      = ["openai>=1.40"]
 gemini      = ["google-genai>=1.0"]
-ai          = ["anthropic>=0.40", "openai>=1.40", "google-genai>=1.0"]
-huggingface = ["sentence-transformers>=3.0"]
+ai          = ["anthropic>=0.40", "openai>=1.40", "google-genai>=1.0", "oci>=2.130"]
+oci         = ["oci>=2.130"]
+huggingface = ["sentence-transformers>=3.0", "transformers>=4.40", "torch>=2.1"]
 # integrations
 mcp         = ["mcp>=1.2; python_version >= '3.10'"]
 langchain   = ["langchain-core>=0.3"]
@@ -78,3 +79,8 @@ include = ["src/schemagate/**/*.py", "src/schemagate/py.typed", "src/schemagate/
 
 [tool.hatch.build.targets.sdist]
 exclude = ["docs/media", "shim", "studio/node_modules", ".github"]
+
+[tool.pytest.ini_options]
+markers = [
+    "live: needs real credentials and network (provider keys, OCI config, a database); skipped otherwise",
+]
