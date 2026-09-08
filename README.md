@@ -403,6 +403,28 @@ chain = retriever | RunnableLambda(prompt_fragment) | your_sql_prompt | llm
 The principal is bound at construction on purpose. Build one retriever per
 caller; a chain can't forget to pass identity if the retriever already has it.
 
+## On Oracle Cloud
+
+Certified live on Oracle AI Database 26ai. Two ways in, neither of which needs
+an API key — cataloguing runs on OCI Generative AI under your own OCI identity,
+so the prompts (schema metadata only, never rows) stay in your tenancy.
+
+**From Cloud Shell, about a minute, no VM:**
+
+```bash
+pip install --user 'schemagate[oracle,oci]'
+schemagate describe --url 'oracle+oracledb://@' --provider oci \
+    --model google.gemini-2.5-pro --config catalog.json
+```
+
+**Or one click, for an MCP endpoint that stays up for your team:**
+
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/schemagate/releases/latest/download/schemagate-oci-stack.zip)
+
+That opens Resource Manager in your own tenancy with the stack loaded — an
+Always-Free-eligible VM running the MCP server against an Autonomous Database
+it creates, or one you already have. Details and the Terraform: [`oci/`](oci/).
+
 ## Keeping the index in Oracle
 
 `MemoryStore` rebuilds on every process start. Fine for a few hundred objects,
