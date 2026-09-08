@@ -94,6 +94,25 @@ def _fingerprint(doc: ObjectDoc, model: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
+def looks_truncated(text: str) -> bool:
+    """Did the provider cut the reply off mid-sentence?
+
+    A description that stops mid-clause is still a valid-looking string, so a
+    provider that truncates degrades retrieval silently -- which is exactly
+    what happened on a live OCI Generative AI run, where every description
+    arrived at about ten tokens and recall dropped twenty points with no error
+    anywhere. Cheap structural check: the model was asked for a sentence, so a
+    reply with no terminal punctuation that is also suspiciously short is
+    almost certainly cut.
+    """
+    text = (text or "").strip()
+    if not text:
+        return True
+    if text.endswith((".", "!", "?")) or ALIAS_SEP.strip() in text:
+        return False
+    return len(text.split()) < 12
+
+
 class SchemaDescriber:
     """Generate one-sentence descriptions for catalog objects.
 
@@ -121,6 +140,8 @@ class SchemaDescriber:
         self.max_tokens = max_tokens
         self.strict = strict
         self.failures: List[str] = []
+        #: objects whose reply came back cut off even after a retry
+        self.truncated: List[str] = []
         self._cache: Dict[str, str] = self._load_cache()
 
     # ---------------- cache ----------------
@@ -163,6 +184,21 @@ class SchemaDescriber:
         if not text:
             self.failures.append(doc.qname)
             return None
+        if looks_truncated(text):
+            # One retry with real headroom, in case the provider applied a
+            # smaller cap than we asked for. If it comes back cut again the
+            # description is still usable -- but say so, loudly, rather than
+            # quietly serving a worse catalog.
+            try:
+                retry = self.provider.complete(_SYSTEM, _render(doc, self.max_columns),
+                                               max_tokens=max(self.max_tokens, 512))
+                retry = " ".join((retry or "").split()).strip().strip('"')
+            except ProviderError:
+                retry = ""
+            if retry and not looks_truncated(retry):
+                text = retry
+            else:
+                self.truncated.append(doc.qname)
         self._cache[key] = text
         return text
 
@@ -170,6 +206,7 @@ class SchemaDescriber:
         """Return ``{qname: description}``. Objects that failed are absent."""
         docs = list(docs)
         self.failures = []
+        self.truncated = []
         if not docs:
             return {}
         if self.workers == 1:
@@ -178,6 +215,14 @@ class SchemaDescriber:
             with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 results = list(pool.map(self._describe_one, docs))
         self._save_cache()
+        if self.truncated:
+            import warnings
+            warnings.warn(
+                f"{getattr(self.provider, 'name', 'provider')} returned a truncated "
+                f"description for {len(self.truncated)} of {len(docs)} objects "
+                f"(e.g. {', '.join(self.truncated[:3])}). Retrieval will be worse "
+                f"than it should be; check the provider's output token limit.",
+                RuntimeWarning, stacklevel=2)
         return {d.qname: t for d, t in zip(docs, results) if t}
 
     # what the provider would receive, for review before spending money

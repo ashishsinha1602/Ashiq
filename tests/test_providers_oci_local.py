@@ -195,3 +195,87 @@ def test_cli_knows_the_new_providers():
     from schemagate import cli
     src = inspect.getsource(cli)
     assert '"oci": _p.OCIGenAIProvider' in src and '"local": _p.LocalProvider' in src
+
+
+# --- found live: Gemini through OCI returned only the first content part ----
+# Every description arrived cut off at ~10 tokens. Recall fell 20 points and
+# nothing raised. These pin the shapes and the detection.
+
+def test_oci_text_joins_every_content_part():
+    """The live bug: only the first part was read, so the sentence was cut."""
+    msg = _Obj(content=[_Obj(text="This view shows which devices are "),
+                        _Obj(text="running low on battery. "),
+                        _Obj(text="| flat, dying, dead")])
+    got = _oci_text(_Obj(text=None, choices=[_Obj(message=msg)]))
+    assert got == "This view shows which devices are running low on battery. | flat, dying, dead"
+
+
+def test_oci_text_handles_a_bare_string_content():
+    assert _oci_text(_Obj(text=None, choices=[_Obj(message=_Obj(content="plain reply."))])) == "plain reply."
+
+
+def test_oci_text_handles_string_parts_and_nesting():
+    msg = _Obj(content=["a ", _Obj(text="b "), _Obj(content=[_Obj(text="c")])])
+    assert _oci_text(_Obj(text=None, choices=[_Obj(message=msg)])) == "a b c"
+
+
+def test_oci_text_prefers_cohere_text_when_present():
+    assert _oci_text(_Obj(text="cohere wins", choices=[])) == "cohere wins"
+
+
+def test_oci_text_survives_an_unknown_shape():
+    assert _oci_text(_Obj(text=None, choices=[_Obj(message=None)])) == ""
+
+
+def test_truncation_is_detected():
+    from schemagate.ai.describe import looks_truncated
+    # the exact strings the live run produced
+    assert looks_truncated("This view shows which devices are")
+    assert looks_truncated("This view shows which customers are")
+    assert looks_truncated("")
+    # complete replies are not flagged
+    assert not looks_truncated("Devices whose battery is below threshold.")
+    assert not looks_truncated("Devices below threshold | flat, dying, dead, charge")
+    # long but unpunctuated is left alone -- do not cry wolf
+    assert not looks_truncated(" ".join(["word"] * 14))
+
+
+def test_describer_retries_a_truncated_reply_then_warns_once():
+    """A provider that caps output must not silently degrade the catalog."""
+    import warnings
+    from schemagate.ai import SchemaDescriber
+    from schemagate.models import Column, ObjectDoc
+
+    class Capped:
+        name = "capped"
+        def __init__(self): self.calls = []
+        def complete(self, system, prompt, max_tokens=1024):
+            self.calls.append(max_tokens)
+            return "This view shows which devices are"   # always cut
+
+    class Recovers:
+        name = "recovers"
+        def __init__(self): self.calls = []
+        def complete(self, system, prompt, max_tokens=1024):
+            self.calls.append(max_tokens)
+            return ("This view shows which devices are" if len(self.calls) == 1
+                    else "Devices whose battery is low. | flat, dying, dead")
+
+    docs = [ObjectDoc(name="v_low_battery", schema=None, kind="VIEW",
+                      columns=[Column(name="device_id", type="INTEGER")])]
+
+    p = Recovers()
+    d = SchemaDescriber(p, max_tokens=220, workers=1)
+    out = d.describe(docs)
+    assert out["v_low_battery"].startswith("Devices whose battery")
+    assert p.calls == [220, 512], "the retry must ask for more room"
+    assert d.truncated == []
+
+    p2 = Capped()
+    d2 = SchemaDescriber(p2, max_tokens=220, workers=1)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        out2 = d2.describe(docs)
+    assert out2["v_low_battery"] == "This view shows which devices are"  # still usable
+    assert d2.truncated == ["v_low_battery"]
+    assert len(w) == 1 and "truncated" in str(w[0].message)
