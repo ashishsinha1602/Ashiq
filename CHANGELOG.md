@@ -2,8 +2,10 @@
 
 ## 0.1.7
 
-**The stack has now been applied in a real tenancy.** Doing it found a bug that
-no `terraform plan` can catch, because only the API rejects it.
+**Applying the stack in a real tenancy for the first time found a bug that no
+`terraform plan` can catch, because only the API rejects it. The apply still
+does not complete** — the fix below moved the failure rather than removing it;
+see *Still broken* at the end of this entry.
 
 - **Fixed: the stack could never apply.** 0.1.4 added a service gateway so the
   database's access-control list could name the VCN — Oracle honours a VCN
@@ -29,6 +31,15 @@ no `terraform plan` can catch, because only the API rejects it.
   prints the state it sees, and both failure paths dump the job's error lines.
 - `tests/test_oci_stack.py` pins the routing rule and asserts `schema.yaml` and
   `variables.tf` declare the same variables.
+
+**Still broken after this release.** Removing the access-control list made the
+database itself invalid: with `is_mtls_connection_required = false` and no
+list, Oracle rejects the create with *"One-way TLS connections require a
+private endpoint or a public IP with an ACL"*. The apply now gets as far as the
+database and fails there. Restoring the list needs the instance's public IP,
+and the instance cannot precede the database because its cloud-init carries the
+connection descriptor — so this needs a real change, not a parameter. Use the
+Cloud Shell route in `oci/README.md` until then.
 
 ## 0.1.6
 
