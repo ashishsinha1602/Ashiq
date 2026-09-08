@@ -32,8 +32,12 @@ APPLIED=0
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die()  { printf '\n\033[31mFAILED: %s\033[0m\n' "$*" >&2; teardown; exit 1; }
+# The job log comes back as JSON with literal \n escapes, so it is one enormous
+# line until they are turned back into newlines. Splitting on commas instead
+# printed the whole plan and buried the error.
 errs() { oci resource-manager job get-job-logs-content --job-id "$1" \
-           | tr ',' '\n' | grep -i -E '\[error\]|error:|fail' | tail -25; }
+           | python3 -c 'import sys; sys.stdout.write(sys.stdin.read().replace("\\n", "\n"))' \
+           | grep -i -E '\[error\]|error:|Suggestion:|Request Target:' | tail -30; }
 
 # Poll until the job leaves the running states. Echoes the final state.
 wait_job() {
