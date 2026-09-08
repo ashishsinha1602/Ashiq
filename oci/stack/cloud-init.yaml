@@ -42,7 +42,14 @@ write_files:
         *)                     extras="oracle" ;;
       esac
       echo "database URL scheme -> installing schemagate[$extras,mcp,oci]"
-      /opt/schemagate/bin/pip install "schemagate[$extras,mcp,oci]"
+      # --prefer-binary: this is a 1-OCPU machine and a source build of any
+      # driver would add minutes. --no-cache-dir: nothing here is installed
+      # twice, so the cache is pure write cost on a slow disk.
+      /opt/schemagate/bin/pip install --prefer-binary --no-cache-dir \
+        --disable-pip-version-check "schemagate[$extras,mcp,oci]"
+      # resolve-db.sh waits on this rather than on `import oci`, which would
+      # start succeeding part-way through the install above.
+      touch /opt/schemagate/.ready
 
   - path: /opt/catalog-once.sh
     permissions: "0755"
@@ -81,47 +88,106 @@ write_files:
       done
       echo "cataloguing failed after 12 attempts -- selection still works on identifiers alone. Re-run: sudo OCI_CLI_AUTH=instance_principal /opt/catalog-once.sh" >> "$log"
       exit 1
+  - path: /opt/resolve-db.py
+    permissions: "0755"
+    content: |
+      """Print the walletless connection descriptor for this stack's database.
+
+      Terraform cannot hand it to us. The database's access-control list has
+      to name this instance's public IP -- Oracle refuses one-way TLS on a
+      public database with no list -- so the database is created *after* the
+      instance, and does not exist when cloud-init writes the env file.
+
+      The lookup goes through the OCI Python SDK that schemagate[oci] already
+      installs. Shelling out to the OCI CLI instead would put a second package
+      install (oraclelinux-developer-release-el9, then python3-oci-cli) on the
+      boot path for the sake of the same two API calls.
+      """
+      import os
+      import sys
+      import time
+
+      import oci
+
+      GIVE_UP_AFTER = 30 * 60
+
+
+      def find(client, compartment, name):
+          """The database, once it exists and we are allowed to see it.
+
+          The IAM policy that authorises this read is created alongside the
+          database and then has to propagate, so a service error here means
+          "not yet", not "never".
+          """
+          try:
+              found = client.list_autonomous_databases(
+                  compartment_id=compartment, display_name=name,
+                  lifecycle_state="AVAILABLE").data
+          except oci.exceptions.ServiceError as e:
+              print("not readable yet (HTTP %s)" % e.status, file=sys.stderr)
+              return None
+          return found[0] if found else None
+
+
+      def main():
+          signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+          client = oci.database.DatabaseClient({}, signer=signer)
+          compartment = os.environ["OCI_COMPARTMENT_ID"]
+          name = os.environ["SCHEMAGATE_ADB_DISPLAY_NAME"]
+
+          deadline = time.monotonic() + GIVE_UP_AFTER
+          db = find(client, compartment, name)
+          while db is None and time.monotonic() < deadline:
+              time.sleep(15)
+              db = find(client, compartment, name)
+          if db is None:
+              print("gave up waiting for %s" % name, file=sys.stderr)
+              return 1
+
+          # _low, and SERVER authentication: every mTLS profile needs a wallet
+          # this instance was never given.
+          for profile in db.connection_strings.profiles or []:
+              name_of = (profile.display_name or "").lower()
+              if profile.tls_authentication == "SERVER" and name_of.endswith("_low"):
+                  print(profile.value)
+                  return 0
+          print("no walletless _low profile on %s" % db.id, file=sys.stderr)
+          return 1
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
   - path: /opt/resolve-db.sh
     permissions: "0755"
     content: |
       #!/bin/bash
-      # Resolve the connection descriptor for the database this stack creates.
-      #
-      # Terraform cannot hand it to us. The database's access-control list has
-      # to name this instance's public IP -- Oracle refuses one-way TLS on a
-      # public database with no list -- so the database is created *after* the
-      # instance. By the time it exists this machine is already booting, so we
-      # look it up here with the instance principal and fill in the env file.
-      #
+      # Fill in the connection descriptor for the database this stack creates.
       # When create_adb is false the operator supplied the URL and there is
       # nothing to resolve.
       set -a; . /etc/schemagate.env; set +a
       [ "$SCHEMAGATE_CREATE_ADB" = "true" ] || exit 0
       log=/var/log/schemagate-resolve-db.log
+      py=/opt/schemagate/bin/python
 
-      # Provisioning an Autonomous Database takes minutes, and the IAM policy
-      # that lets us read it is created alongside it, then has to propagate.
-      for attempt in $(seq 1 60); do
-        id="$(oci db autonomous-database list \
-                --compartment-id "$OCI_COMPARTMENT_ID" \
-                --display-name "$SCHEMAGATE_ADB_DISPLAY_NAME" \
-                --lifecycle-state AVAILABLE \
-                --query 'data[0].id' --raw-output 2>>"$log")"
-        [ -n "$id" ] && [ "$id" != "null" ] && break
-        echo "attempt $attempt: database not available yet ($(date -Is))" >> "$log"
-        sleep 20
+      # This unit is started at the top of runcmd, so that Oracle's several
+      # minutes of database provisioning run underneath the pip install
+      # instead of after it. The price is that the SDK the lookup needs may
+      # not be installed yet -- so wait for the marker pick-extras.sh writes
+      # when it is done. The database is not ready during that window either,
+      # so the wait costs nothing.
+      for _ in $(seq 1 180); do
+        [ -f /opt/schemagate/.ready ] && break
+        sleep 5
       done
-      [ -n "$id" ] && [ "$id" != "null" ] || { echo "gave up waiting for the database" >> "$log"; exit 1; }
+      [ -f /opt/schemagate/.ready ] || { echo "schemagate was never installed" >> "$log"; exit 1; }
 
-      dsn="$(oci db autonomous-database get --autonomous-database-id "$id" \
-               --query 'data."connection-strings".profiles' --raw-output 2>>"$log" \
-             | python3.11 -c 'import json,sys; ps=json.load(sys.stdin) or []; print(next((p["value"] for p in ps if p.get("tls-authentication")=="SERVER" and str(p.get("display-name","")).lower().endswith("_low")), ""))')"
-      [ -n "$dsn" ] || { echo "no walletless _low profile on $id" >> "$log"; exit 1; }
+      dsn="$("$py" /opt/resolve-db.py 2>>"$log")"
+      [ -n "$dsn" ] || { echo "could not resolve a connection descriptor" >> "$log"; exit 1; }
 
-      args="$(SG_DSN="$dsn" python3.11 -c 'import json,os; print(json.dumps({"user":"ADMIN","password":os.environ["SCHEMAGATE_ADB_PASSWORD"],"dsn":os.environ["SG_DSN"]}))')"
+      args="$(SG_DSN="$dsn" "$py" -c 'import json,os; print(json.dumps({"user":"ADMIN","password":os.environ["SCHEMAGATE_ADB_PASSWORD"],"dsn":os.environ["SG_DSN"]}))')"
       # Replace the placeholder line rather than appending a second one.
       sed -i "s|^SCHEMAGATE_CONNECT_ARGS=.*|SCHEMAGATE_CONNECT_ARGS='$args'|" /etc/schemagate.env
-      echo "resolved $id ($(date -Is))" >> "$log"
+      echo "resolved a descriptor ($(date -Is))" >> "$log"
   - path: /etc/systemd/system/schemagate-catalog.service
     content: |
       [Unit]
@@ -158,19 +224,25 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 runcmd:
+  # The database lookup goes first, not last. Oracle takes several minutes to
+  # provision an Autonomous Database, and none of that has to wait for pip:
+  # the unit blocks on the venv marker, which the lines below are busy
+  # earning. Starting it here rather than letting schemagate.service pull it
+  # in takes the install off the critical path entirely.
+  - systemctl daemon-reload
+  - systemctl enable schemagate-resolve-db
+  - systemctl start --no-block schemagate-resolve-db
   - python3.11 -m venv /opt/schemagate
-  - /opt/schemagate/bin/pip install --upgrade pip
   - /opt/pick-extras.sh
   - chown -R opc:opc /opt/schemagate /etc/schemagate
   - firewall-cmd --permanent --add-port=${mcp_port}/tcp || true
   - firewall-cmd --reload || true
-  - systemctl daemon-reload
-  # resolve-db first: when this stack creates the database, the server has
-  # nothing to connect to until the descriptor is looked up. It exits
-  # immediately when the operator supplied database_url.
-  - systemctl enable --now schemagate-resolve-db
-  # Then the endpoint, on identifiers alone, with cataloguing behind it --
-  # otherwise the retry loop above would hold the MCP server down for up to
-  # twelve minutes waiting for an IAM policy to propagate.
-  - systemctl enable --now schemagate
+  # schemagate.service Requires/After resolve-db, so systemd still holds the
+  # server back until the descriptor is written -- by now that unit has had
+  # the whole install running alongside it. --no-block so a database that is
+  # still provisioning does not hold cloud-init open.
+  - systemctl enable schemagate
+  - systemctl start --no-block schemagate
+  # Then cataloguing, behind the endpoint -- its retry loop would otherwise
+  # hold the MCP server down for twelve minutes waiting on IAM propagation.
   - systemctl start --no-block schemagate-catalog

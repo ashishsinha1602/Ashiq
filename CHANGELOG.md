@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+Stack only — no library change. Four applies against a live tenancy, each one
+finding something no `terraform plan` can catch.
+
+- **Fixed: the database could not be created.** One-way TLS on a public
+  Autonomous Database requires an access-control list, and 0.1.7 had removed
+  it. The list has to name the instance's public IP, so that address is now
+  reserved up front and attached to the VNIC; the database is created after
+  the instance, and `/opt/resolve-db.sh` looks the connection descriptor up at
+  boot through the instance principal rather than Terraform baking it into
+  cloud-init (which would be a dependency cycle).
+- **Fixed: `LaunchInstance` returned 404-NotAuthorizedOrNotFound.** The stack
+  took `availability_domains[0]`; a live Phoenix tenancy offers
+  `VM.Standard.E2.1.Micro` in AD-3 only. It now asks each domain which shapes
+  it offers and picks one that has the shape.
+- **Fixed: `verify.sh` tore down a successful plan.** `wait_job` printed its
+  progress on stdout, which the caller was capturing, so the state it returned
+  was `ACCEPTED\r   IN_PROGRESS\rSUCCEEDED` and never matched. It also split
+  the job log on commas instead of decoding it, dropping the `Suggestion:` and
+  `Request Target:` lines that say what actually failed.
+- **The first boot is faster, and the endpoint check waits long enough.** The
+  fourth run applied cleanly and then failed the endpoint check. Oracle spends
+  most of ten minutes provisioning the database, and the lookup that waits for
+  it was running *after* the pip install rather than underneath it — the two
+  waits added up. The lookup now starts at the top of `runcmd` and blocks on a
+  marker the install writes, so the install is off the critical path; the
+  lookup uses the OCI Python SDK already in the venv instead of installing the
+  CLI; pip no longer upgrades itself first, prefers wheels, and skips a cache
+  nothing reads twice. `verify.sh` waits fifteen minutes and says what it is
+  waiting for.
+- `tests/test_oci_stack.py` pins each of these. Twelve invariants now, and
+  every one of them came from a failure a live apply produced.
+
 ## 0.1.7
 
 **Applying the stack in a real tenancy for the first time found a bug that no

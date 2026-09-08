@@ -157,9 +157,10 @@ echo "mcp_url: $MCP_URL"
 say "5/6  Verifying the machine, not the plan"
 echo "-- waiting for the MCP port (cloud-init installs Python first)"
 ok=0
-for i in $(seq 1 40); do
+for i in $(seq 1 60); do
   code="$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' "http://$IP:8765/mcp" 2>/dev/null)"
   case "$code" in 2*|4*) ok=1; echo "   answering after $((i*15))s (HTTP $code)"; break ;; esac
+  [ $((i % 8)) -eq 0 ] && echo "   still waiting, $((i*15))s -- the instance installs Python and schemagate, then resolves the database"
   sleep 15
 done
 [ "$ok" = "1" ] || die "MCP endpoint never answered on $IP:8765"

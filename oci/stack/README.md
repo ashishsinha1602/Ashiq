@@ -16,17 +16,27 @@ against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
 up for other people.
 
-> **The apply is not yet proven end to end.** A live run on 8 September 2026
-> planned all ten resources and then failed at the Autonomous Database:
-> *"One-way TLS connections require a private endpoint or a public IP with an
-> ACL"*. mTLS is off, and 0.1.7 had removed the access-control list.
+> **The apply now succeeds; the endpoint has not yet answered.** Three live
+> runs in a real tenancy each found a different bug, and each is fixed and
+> pinned by a test: the database rejected one-way TLS with no access-control
+> list (the instance's public IP is now reserved up front, and cloud-init
+> resolves the connection descriptor at boot through the instance principal);
+> `LaunchInstance` returned 404 because the first availability domain does not
+> necessarily offer the shape (the stack now asks each one); and `verify.sh`
+> tore down a good plan because its progress output leaked into the job state
+> it returned.
 >
-> The list has to name the instance's public IP, so the address is now reserved
-> up front, the database is created after the instance, and cloud-init resolves
-> the connection descriptor at boot through the instance principal
-> (`/opt/resolve-db.sh`). That change is on `main` but **has not itself been
-> applied against a live tenancy yet** — run the certification below and please
-> open an issue if it fails.
+> The fourth run applied all ten resources. It then failed the endpoint check:
+> the MCP port had not answered within ten minutes. Two causes, both fixed
+> here — the database lookup ran *after* the pip install rather than
+> alongside it, so the two waits were added together instead of overlapped,
+> and the check itself gave up too early. **That fix has not been applied
+> against a live tenancy yet** — run the certification below and please open
+> an issue if it fails.
+>
+> Expect the first boot to take about as long as Oracle takes to provision the
+> Autonomous Database, which is most of ten minutes. The instance installs
+> Python and schemagate underneath that wait, not after it.
 >
 > The Cloud Shell route in [`../README.md`](../README.md) *is* exercised,
 > needs no VM, and is the supported way to run schemagate on OCI today.
