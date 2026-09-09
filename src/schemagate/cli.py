@@ -240,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
         "describe",
         help="AI descriptions for your objects -- with a key, or with none",
         description="Without --provider or --apply, prints a prompt: paste it into "
-                    "any chat (Claude, ChatGPT, Gemini, a local model), save the JSON "
+                    "any chat (ChatGPT, Gemini, a local model), save the JSON "
                     "reply, then run again with --apply reply.json. No API key needed.")
     describe.add_argument("--url", required=True, help="SQLAlchemy URL")
     describe.add_argument("--include", action="append", metavar="PATTERN")

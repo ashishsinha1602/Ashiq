@@ -7,7 +7,7 @@ them. With one-sentence descriptions on the catalog -- the output of
 ``schemagate describe`` -- the keyless hashing embedder gets nearly all of
 them, including on the four schemas that were never inspected while tuning.
 
-The fixtures under tests/descriptions/ are what claude-sonnet-5 returned,
+The fixtures under tests/descriptions/ are what an Anthropic model returned,
 blind, for ``Catalog.describe_prompt()`` on 8 Sep 2026 -- sentence plus the
 everyday words the prompt asks for. Checked in so this stays offline and
 deterministic. Measured: identifiers alone 56%, with descriptions 92%

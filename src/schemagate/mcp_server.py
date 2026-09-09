@@ -8,7 +8,7 @@ The agent then writes SQL against that, and never sees the rest.
     pip install 'schemagate[mcp]'
     SCHEMAGATE_DATABASE_URL=postgresql://localhost/app python -m schemagate.mcp_server
 
-Claude Desktop, in ``claude_desktop_config.json``::
+A desktop MCP client, in its config file::
 
     {"mcpServers": {"schemagate": {
         "command": "python", "args": ["-m", "schemagate.mcp_server"],

@@ -70,11 +70,11 @@ class CallableProvider:
 
 
 # --------------------------------------------------------------------------
-# Anthropic (Claude)
+# Anthropic
 # --------------------------------------------------------------------------
 
 class AnthropicProvider:
-    """Claude via the official ``anthropic`` SDK.
+    """Anthropic models via the official ``anthropic`` SDK.
 
     ``pip install anthropic``. Key from ``api_key=`` or ``ANTHROPIC_API_KEY``.
     """

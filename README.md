@@ -212,7 +212,7 @@ two ways, and neither is required.
 
 ### Without an API key
 
-Any chat window you already have — Claude.ai, ChatGPT, Gemini, Copilot, a
+Any chat window you already have — ChatGPT, Gemini, Copilot, a
 local model — can write the descriptions. schemagate gives you the prompt and
 takes the reply:
 
@@ -243,7 +243,7 @@ One sentence per table, written by the model, indexed like any other schema
 text. On the bundled schema that takes the business-words row from 50% to 100%
 with no change to the identifier-style questions.
 
-Claude, GPT and Gemini are supported. Anything else goes through
+Anthropic, OpenAI and Gemini are supported. Anything else goes through
 `CallableProvider`, which is also your escape hatch when a vendor changes their
 SDK and you don't want to wait for a release from me.
 

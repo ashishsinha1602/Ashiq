@@ -15,7 +15,7 @@ keywords = [
   "schema-linking", "schema-selection", "schema-retrieval", "database",
   "vector-search", "bm25", "hybrid-search", "row-level-security", "rls",
   "vpd", "oracle", "oracle-23ai", "postgresql", "sql-server", "sqlalchemy",
-  "mcp", "model-context-protocol", "langchain", "claude", "gemini", "openai",
+  "mcp", "model-context-protocol", "langchain", "anthropic", "gemini", "openai",
   "ai-agent", "data-catalog", "prompt-engineering",
 ]
 classifiers = [

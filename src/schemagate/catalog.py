@@ -148,7 +148,7 @@ class Catalog:
 
         Entirely optional: without it the catalog uses whatever comments the
         database already carries. See ``schemagate.ai`` for describers backed by
-        Claude, GPT or Gemini, or pass anything with a
+        Anthropic, OpenAI or Gemini, or pass anything with a
         ``describe(docs) -> {qname: text}`` method.
 
         ``only_missing=True`` (default) skips objects that already have a
@@ -183,7 +183,7 @@ class Catalog:
         return len(written)
 
     def describe_prompt(self, only_missing: bool = True, max_columns: int = 30) -> str:
-        """A single prompt you can paste into any chat -- Claude, ChatGPT,
+        """A single prompt you can paste into any chat -- ChatGPT,
         Gemini, a local model -- to get descriptions without an API key.
 
         The reply is JSON mapping object name to a one-sentence description;

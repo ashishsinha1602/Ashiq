@@ -2,7 +2,7 @@
 
 The tool functions are tested directly first (no mcp package needed), then
 the whole thing is exercised by spawning ``python -m schemagate.mcp_server`` and
-talking to it over stdio with ``mcp``'s own client -- the same path Claude
+talking to it over stdio with ``mcp``'s own client -- the same path a desktop
 Desktop and Cursor use, and one that works on both SDK 1.x and 2.x.
 """
 import json
@@ -110,7 +110,7 @@ def test_config_file_applies_restrictions_and_hints(tmp_path, monkeypatch):
 
 
 # --- through a real MCP client, over stdio, in a subprocess --------------
-# This is the path Claude Desktop and Cursor use. It is also the only test
+# This is the path desktop MCP clients and Cursor use. It is also the only test
 # surface that is identical across MCP SDK 1.x and 2.x -- the in-memory test
 # helpers were removed in 2.0, and coupling to them is how a clean install
 # broke the first time.
