@@ -16,26 +16,32 @@ against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
 up for other people.
 
-> **The endpoint has answered.** On 9 September 2026, on a live tenancy, the
-> stack applied all ten resources and the MCP server came up against the
-> Autonomous Database it had just created:
+> **Certified on a live tenancy, 9 September 2026.** `verify.sh` ran to
+> `6/6 CERTIFIED`: plan, apply, the MCP endpoint answering, the instance
+> reaching the database, and keyless cataloguing through OCI Generative AI —
+> all checked against the running machine rather than the plan.
 >
 > ```
 > schemagate 0.1.7 serving 16 objects over streamable-http
-> Uvicorn running on http://0.0.0.0:8765
+> described 16 object(s); saved to /etc/schemagate/catalog.json
+> descriptions written by OCI Generative AI: 16
+>   admin.hr_comp: This holds employee base pay and bonus details, answering
+>                  how much staff are paid. | salary, wages,
 > ```
 >
-> Sixteen objects reflected out of the stack's own database, over one-way TLS,
-> with the connection descriptor resolved at boot by the instance principal.
+> Sixteen objects reflected out of the stack's own Autonomous Database over
+> one-way TLS, with the connection descriptor resolved at boot by the instance
+> principal, and every description written by Oracle's model with no API key
+> and nothing leaving the tenancy.
 >
-> **One caveat, stated plainly: a stuck unit was cleared by hand on that run.**
-> `resolve-db` had resolved the descriptor and then deadlocked on a blocking
+> **One caveat, stated plainly: the server was started by hand on that run.**
+> `resolve-db` had written the descriptor and then deadlocked on a blocking
 > `systemctl restart schemagate` — the server is ordered after it, so each
-> waited for the other. `systemctl kill` on the stuck unit and the server
-> started immediately and served. Both in-unit restarts are `--no-block` now,
-> which removes the deadlock, but that fix has not yet completed an unattended
-> run end to end. If you certify it before we do, please open an issue either
-> way.
+> waited for the other. `systemctl kill` on the stuck unit and the server came
+> up and served; that is the 510s in the log above. Both in-unit restarts are
+> `--no-block` now, which removes the deadlock, but **that fix has not yet
+> completed an unattended run**. Everything downstream of it is certified. If
+> you certify the unattended path before we do, please open an issue.
 >
 > Nine applies got here, and every one of them found something a `terraform
 > plan` cannot: an Autonomous Database that refuses one-way TLS without an
