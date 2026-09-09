@@ -231,3 +231,27 @@ def test_the_boot_has_swap_because_the_free_shape_has_a_gigabyte():
         "refreshing every repository's metadata is the most memory-hungry step "
         "on this boot, and nothing needs it"
     )
+
+
+def test_a_failed_database_lookup_does_not_kill_the_endpoint_for_ever():
+    """An instance ran for twelve hours with its database present and the MCP
+    port dead. resolve-db races an IAM policy created alongside the database,
+    and losing that race once was terminal: the oneshot failed, Requires= made
+    that fatal for schemagate.service, and nothing retried either one."""
+    ci = _cloud_init()
+    resolve = ci[ci.index("schemagate-resolve-db.service") :]
+    unit = resolve[: resolve.index("- path: /etc/systemd/system/schemagate.service")]
+    assert "Restart=on-failure" in unit, "the lookup must keep trying"
+    server = ci[ci.index("- path: /etc/systemd/system/schemagate.service") :]
+    assert "Wants=schemagate-resolve-db.service" in server
+    assert "Requires=schemagate-resolve-db.service" not in server, (
+        "one failed lookup must not permanently block the server"
+    )
+
+
+def test_the_verify_key_outlives_a_cloud_shell_disconnect():
+    """Cloud Shell hands you a new machine after an idle disconnect and /tmp
+    goes with it. Twice that left an instance standing with no way back in."""
+    v = (STACK / "verify.sh").read_text()
+    assert 'KEY="$HOME/.schemagate-verify-key"' in v
+    assert 'KEY="$WORK' not in v

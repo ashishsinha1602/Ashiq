@@ -62,7 +62,19 @@ finding something no `terraform plan` can catch.
   no longer refreshes every repository's metadata to install one package that is
   in the base repository. Every earlier fix on this boot path had never once
   executed.
-- `tests/test_oci_stack.py` pins each of these. Seventeen invariants now, and
+- **Fixed: one failed database lookup killed the endpoint permanently.** An
+  instance ran for twelve hours with its database present and the MCP port
+  dead. `/opt/resolve-db.sh` races an IAM policy that is created alongside the
+  database and then has to propagate, and losing that race once was terminal:
+  the oneshot failed, `Requires=` made that fatal for `schemagate.service`, and
+  nothing retried either. The lookup now has `Restart=on-failure` and keeps
+  trying, the server only `Wants=` it so a failure cannot block it for ever,
+  and a successful lookup restarts the server rather than waiting for one.
+- **`verify.sh` keeps its SSH key in `$HOME`.** It was in the work directory
+  under `/tmp`, which Cloud Shell discards when it hands you a new machine
+  after an idle disconnect. Twice that left an instance standing with no way
+  back into it and no diagnosis. The apply now also prints the `ssh` line.
+- `tests/test_oci_stack.py` pins each of these. Nineteen invariants now, and
   every one of them came from a failure a live apply produced.
 
 ## 0.1.7

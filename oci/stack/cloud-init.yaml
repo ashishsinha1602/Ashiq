@@ -216,6 +216,8 @@ write_files:
       # Replace the placeholder line rather than appending a second one.
       sed -i "s|^SCHEMAGATE_CONNECT_ARGS=.*|SCHEMAGATE_CONNECT_ARGS='$args'|" /etc/schemagate.env
       echo "resolved a descriptor ($(date -Is))" >> "$log"
+      # The server read the env file at start-up, so it needs to read it again.
+      systemctl restart schemagate || true
   - path: /etc/systemd/system/schemagate-catalog.service
     content: |
       [Unit]
@@ -233,16 +235,26 @@ write_files:
       Type=oneshot
       ExecStart=/opt/resolve-db.sh
       RemainAfterExit=yes
+      # Keep trying. This waits on an IAM policy that is created alongside the
+      # database and then has to propagate, so the first attempt can lose that
+      # race by minutes. One instance sat for twelve hours with the database
+      # present and the endpoint dead because this gave up once and nothing
+      # ever ran it again.
+      Restart=on-failure
+      RestartSec=60
   - path: /etc/systemd/system/schemagate.service
     content: |
       [Unit]
       Description=schemagate MCP server
       After=network-online.target schemagate-resolve-db.service
       Wants=network-online.target
-      # The server reads the connection descriptor at start-up, and when this
-      # stack creates the database that descriptor is only known once
-      # resolve-db has looked it up. It is a no-op for a supplied database_url.
-      Requires=schemagate-resolve-db.service
+      # Wants, not Requires. The server does need the descriptor resolve-db
+      # writes, and After= still holds it back until the first attempt is done
+      # -- but Requires= made a single failed lookup fatal for the whole unit,
+      # with nothing to retry it. Wants= lets systemd start the server anyway;
+      # its own Restart=always then reconnects the moment resolve-db, which now
+      # retries for ever, fills the descriptor in.
+      Wants=schemagate-resolve-db.service
       [Service]
       EnvironmentFile=/etc/schemagate.env
       ExecStart=/opt/schemagate/bin/python -m schemagate.mcp_server
