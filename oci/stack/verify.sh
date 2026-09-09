@@ -92,8 +92,13 @@ say "1/6  Preparing inputs"
 # Hex gives upper, lower and digits with no quote characters and no way to
 # accidentally spell "admin", which Oracle rejects.
 ADB_PW="Sg$(openssl rand -hex 6 | tr 'a-f' 'A-F')x$(openssl rand -hex 6)9"
-KEY="$WORK/id_verify"
-ssh-keygen -t rsa -b 2048 -N "" -f "$KEY" -q || die "ssh-keygen"
+# In $HOME, not the work directory. Cloud Shell hands you a new machine after
+# an idle disconnect and /tmp goes with it -- twice that left an instance
+# standing with no way back into it, and the diagnosis died with the key.
+# $HOME survives. The key is regenerated only if it is missing.
+KEY="$HOME/.schemagate-verify-key"
+[ -f "$KEY" ] || ssh-keygen -t rsa -b 2048 -N "" -f "$KEY" -q || die "ssh-keygen"
+chmod 600 "$KEY"
 PUBKEY="$(cat "$KEY.pub")"
 
 MYIP="$(curl -fsS --max-time 20 https://ifconfig.me)"
@@ -176,6 +181,7 @@ oci resource-manager job get-job-tf-state --job-id "$APPLY_JOB" --file "$WORK/st
 MCP_URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["outputs"]["mcp_url"]["value"])' "$WORK/state.json")"
 IP="$(printf '%s' "$MCP_URL" | sed -E 's#http://([^:]+):.*#\1#')"
 echo "mcp_url: $MCP_URL"
+echo "ssh    : ssh -i $KEY opc@$IP"
 
 say "5/6  Verifying the machine, not the plan"
 echo "-- waiting for the MCP port (cloud-init installs Python first)"
