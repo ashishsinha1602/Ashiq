@@ -4,11 +4,13 @@
 
 Stack only — no library change.
 
-**The endpoint has answered.** On a live tenancy the stack applied all ten
-resources and the MCP server came up against the Autonomous Database it had
-just created: `schemagate 0.1.7 serving 16 objects over streamable-http`. One
-caveat — a deadlocked unit was cleared by hand on that run; the `--no-block`
-fix below removes the deadlock but has not yet completed an unattended run.
+**Certified on a live tenancy.** `verify.sh` ran to `6/6 CERTIFIED` — plan,
+apply, the MCP endpoint answering, database reachability from the instance, and
+keyless cataloguing through OCI Generative AI (16 objects described by the
+instance principal, no API key). One caveat: the server was started by hand on
+that run, because `resolve-db` deadlocked on a blocking `systemctl restart`. The
+`--no-block` fix below removes the deadlock but has not yet completed an
+unattended run; everything downstream of it is certified.
 
 Nine applies to get there, each finding something no `terraform plan` can
 catch, and each pinned by a test.
