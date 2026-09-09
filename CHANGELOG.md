@@ -2,8 +2,16 @@
 
 ## Unreleased
 
-Stack only — no library change. Four applies against a live tenancy, each one
-finding something no `terraform plan` can catch.
+Stack only — no library change.
+
+**The endpoint has answered.** On a live tenancy the stack applied all ten
+resources and the MCP server came up against the Autonomous Database it had
+just created: `schemagate 0.1.7 serving 16 objects over streamable-http`. One
+caveat — a deadlocked unit was cleared by hand on that run; the `--no-block`
+fix below removes the deadlock but has not yet completed an unattended run.
+
+Nine applies to get there, each finding something no `terraform plan` can
+catch, and each pinned by a test.
 
 - **Fixed: the database could not be created.** One-way TLS on a public
   Autonomous Database requires an access-control list, and 0.1.7 had removed

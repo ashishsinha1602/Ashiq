@@ -16,30 +16,40 @@ against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
 up for other people.
 
-> **The apply now succeeds; the endpoint has not yet answered.** Three live
-> runs in a real tenancy each found a different bug, and each is fixed and
-> pinned by a test: the database rejected one-way TLS with no access-control
-> list (the instance's public IP is now reserved up front, and cloud-init
-> resolves the connection descriptor at boot through the instance principal);
-> `LaunchInstance` returned 404 because the first availability domain does not
-> necessarily offer the shape (the stack now asks each one); and `verify.sh`
-> tore down a good plan because its progress output leaked into the job state
-> it returned.
+> **The endpoint has answered.** On 9 September 2026, on a live tenancy, the
+> stack applied all ten resources and the MCP server came up against the
+> Autonomous Database it had just created:
 >
-> The fourth run applied all ten resources. It then failed the endpoint check:
-> the MCP port had not answered within ten minutes. Two causes, both fixed
-> here — the database lookup ran *after* the pip install rather than
-> alongside it, so the two waits were added together instead of overlapped,
-> and the check itself gave up too early. **That fix has not been applied
-> against a live tenancy yet** — run the certification below and please open
-> an issue if it fails.
+> ```
+> schemagate 0.1.7 serving 16 objects over streamable-http
+> Uvicorn running on http://0.0.0.0:8765
+> ```
 >
-> Expect the first boot to take about as long as Oracle takes to provision the
-> Autonomous Database, which is most of ten minutes. The instance installs
-> Python and schemagate underneath that wait, not after it.
+> Sixteen objects reflected out of the stack's own database, over one-way TLS,
+> with the connection descriptor resolved at boot by the instance principal.
 >
-> The Cloud Shell route in [`../README.md`](../README.md) *is* exercised,
-> needs no VM, and is the supported way to run schemagate on OCI today.
+> **One caveat, stated plainly: a stuck unit was cleared by hand on that run.**
+> `resolve-db` had resolved the descriptor and then deadlocked on a blocking
+> `systemctl restart schemagate` — the server is ordered after it, so each
+> waited for the other. `systemctl kill` on the stuck unit and the server
+> started immediately and served. Both in-unit restarts are `--no-block` now,
+> which removes the deadlock, but that fix has not yet completed an unattended
+> run end to end. If you certify it before we do, please open an issue either
+> way.
+>
+> Nine applies got here, and every one of them found something a `terraform
+> plan` cannot: an Autonomous Database that refuses one-way TLS without an
+> access-control list; a `LaunchInstance` 404 that really means "this
+> availability domain does not offer that shape"; tenancy-scoped names built
+> from the compartment, so a second run collided with the first; a verify
+> script whose progress output leaked into the job state it returned; and the
+> one that hid all the rest — `owner: "root:opc"` on the first `write_files`
+> entry, which runs before cloud-init creates users, aborting the module and
+> silently discarding every file after it. No units, nothing to serve, on every
+> run until it was found.
+>
+> The Cloud Shell route in [`../README.md`](../README.md) needs no VM and
+> remains the fastest way to try schemagate on OCI.
 
 ## Cleaning up after a run that did not finish
 
