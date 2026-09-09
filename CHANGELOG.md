@@ -84,7 +84,16 @@ finding something no `terraform plan` can catch.
   run, on either shape, from the first apply to the eighth: nothing that would
   have served it was ever on disk. Ownership is set in runcmd now, where opc
   exists. Every other fix in this entry was to code that had never executed.
-- `tests/test_oci_stack.py` pins each of these. Twenty invariants now, and
+- **Fixed: the two units deadlocked each other.** With the files finally on
+  disk, a live boot got further than ever and then stopped: `resolve-db`
+  resolved the connection descriptor in 29 seconds and hung on the
+  `systemctl restart schemagate` that followed it. `schemagate.service` is
+  `After=` that unit, so systemd would not start the server until resolve-db
+  finished -- and resolve-db could not finish until the restart returned.
+  resolve-db sat in `activating (start)`, the server sat `inactive (dead)`, and
+  the port never opened. Both in-unit restarts are `--no-block` now, which
+  queues the job and returns.
+- `tests/test_oci_stack.py` pins each of these. Twenty-one invariants now, and
   every one of them came from a failure a live apply produced.
 
 ## 0.1.7

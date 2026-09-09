@@ -115,8 +115,9 @@ write_files:
              --config /etc/schemagate/catalog.json >> "$log" 2>&1; then
           echo "cataloguing succeeded on attempt $attempt" >> "$log"
           chown opc:opc /etc/schemagate/catalog.json || true
-          # The server read the catalog at start-up, so it needs to read it again.
-          systemctl restart schemagate || true
+          # --no-block: schemagate-catalog is After=schemagate.service, so a
+          # blocking restart from inside it can deadlock the same way.
+          systemctl restart --no-block schemagate || true
           exit 0
         fi
         sleep 60
@@ -223,8 +224,15 @@ write_files:
       # Replace the placeholder line rather than appending a second one.
       sed -i "s|^SCHEMAGATE_CONNECT_ARGS=.*|SCHEMAGATE_CONNECT_ARGS='$args'|" /etc/schemagate.env
       echo "resolved a descriptor ($(date -Is))" >> "$log"
-      # The server read the env file at start-up, so it needs to read it again.
-      systemctl restart schemagate || true
+      # --no-block, and the reason is a deadlock a live boot walked straight
+      # into. schemagate.service is After= this unit, so systemd will not start
+      # it until this one finishes -- and a blocking `systemctl restart` here
+      # waits for that start. Each waits for the other: resolve-db stuck in
+      # "activating (start)", the server "inactive (dead)", for ever.
+      # --no-block queues the job and returns. The server reads the env file at
+      # start-up, so it does need to read it again -- on a later run of this
+      # unit, when the server is already up.
+      systemctl restart --no-block schemagate || true
   - path: /etc/systemd/system/schemagate-catalog.service
     content: |
       [Unit]
