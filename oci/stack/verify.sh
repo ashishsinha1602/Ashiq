@@ -122,9 +122,13 @@ if [ "${LEFT_DG:-0}" != "0" ] || [ "${LEFT_DB:-0}" != "0" ]; then
 fi
 
 curl -fsSL "$ZIP_URL" -o "$WORK/stack.zip" || die "could not download $ZIP_URL"
-unzip -l "$WORK/stack.zip" | grep -q ' main.tf$' \
-  || die "main.tf is not at the root of the zip -- Resource Manager will not read it"
-echo "stack zip    : $(stat -c%s "$WORK/stack.zip") bytes, main.tf at root"
+# Resource Manager reads .tf files at the ZIP ROOT. It does not care what they
+# are called -- the stack is split by concern (network.tf, compute.tf, ...) --
+# but a nested folder makes the whole thing invisible to it.
+tf_at_root="$(unzip -l "$WORK/stack.zip" | grep -cE ' [A-Za-z0-9_-]+\.tf$' || true)"
+[ "${tf_at_root:-0}" -gt 0 ] \
+  || die "no .tf at the root of the zip -- Resource Manager will not read it"
+echo "stack zip    : $(stat -c%s "$WORK/stack.zip") bytes, $tf_at_root .tf files at root"
 
 cat > "$WORK/vars.json" <<JSON
 {

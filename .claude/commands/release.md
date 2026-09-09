@@ -48,5 +48,5 @@ publish nothing anyway.
 
 - both workflow jobs (`pypi`, `oci-stack`) green
 - PyPI shows the new version (its JSON API is CDN-cached; re-check if stale)
-- the release has a `schemagate-oci-stack.zip` asset with `main.tf` at the
-  **zip root** — Resource Manager will not read it otherwise
+- the release has a `schemagate-oci-stack.zip` asset with the `.tf` files at
+  the **zip root** — Resource Manager will not read them from a nested folder

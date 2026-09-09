@@ -17,10 +17,18 @@ def _cloud_init() -> str:
     return (STACK / "cloud-init.yaml").read_text()
 
 
+def _terraform() -> str:
+    """Every .tf concatenated. The stack is split by concern the way
+    oci-quickstart-template splits its examples, so no single file holds it
+    all -- and which file a resource lives in is not what these tests are
+    about."""
+    return "\n".join(sorted(p.read_text() for p in STACK.glob("*.tf")))
+
+
 def test_every_template_placeholder_is_a_variable_main_tf_passes():
     """`templatefile()` fails the whole plan on an unknown `${...}`, and a
     shell variable written `${VAR}` inside cloud-init looks exactly like one."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     block = main[main.index("templatefile(") : main.index("templatefile(") + 800]
     passed = set(re.findall(r"^\s+(\w+)\s+=", block, re.M))
     used = set(re.findall(r"\$\{(\w+)\}", _cloud_init()))
@@ -53,7 +61,7 @@ def test_one_route_table_never_mixes_an_internet_and_a_service_gateway():
     the same routing table". The instance needs the internet gateway to
     install anything, so the service gateway is the one that cannot be there.
     The plan does not catch this -- only the API does."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     rt = main[main.index('resource "oci_core_route_table"') :]
     rt = rt[: rt.index("\nresource ")]
     assert "internet_gateway" in rt
@@ -88,7 +96,7 @@ def test_one_way_tls_database_always_has_an_access_control_list():
     a public IP with an ACL". mTLS off and no list is not a legal combination,
     so the list must never be conditional on a variable the user can leave
     empty."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     adb = main[main.index('resource "oci_database_autonomous_database"') :]
     adb = adb[: adb.index("\n}")]
     assert "is_mtls_connection_required = false" in adb
@@ -107,7 +115,7 @@ def test_the_database_does_not_feed_cloud_init():
     """The ACL names the instance's IP, so the database is created after the
     instance. Referencing the database from cloud-init would be a dependency
     cycle Terraform refuses to plan; the descriptor is resolved at boot."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     block = main[main.index("locals {") : main.index("templatefile(")]
     assert "oci_database_autonomous_database" not in block
     ci = _cloud_init()
@@ -121,7 +129,7 @@ def test_the_availability_domain_is_one_that_offers_the_shape():
     """A live Phoenix tenancy had VM.Standard.E2.1.Micro in AD-3 only. Taking
     availability_domains[0] asked AD-1 for a shape it does not have, and
     LaunchInstance returned 404-NotAuthorizedOrNotFound one second in."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     vm = main[main.index('resource "oci_core_instance"') :]
     vm = vm[: vm.index("\n}")]
     ad = [ln for ln in vm.splitlines() if ln.strip().startswith("availability_domain")]
@@ -199,7 +207,7 @@ def test_tenancy_unique_names_are_unique_per_apply_not_per_compartment():
     md5(compartment_ocid) made them identical on every run, so one leftover --
     a destroy that did not finish -- failed every later apply with
     "DynamicResourceGroup with the same displayName already exists"."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     assert "md5(var.compartment_ocid)" not in main, (
         "a name keyed on the compartment is the same on every run in it"
     )
@@ -213,7 +221,7 @@ def test_tenancy_unique_names_are_unique_per_apply_not_per_compartment():
 def test_the_boot_lookup_and_the_database_agree_on_the_display_name():
     """resolve-db finds the database by display name. A name shared with a
     leftover from an earlier run would resolve the wrong database."""
-    main = (STACK / "main.tf").read_text()
+    main = _terraform()
     # Matched loosely on whitespace: `terraform fmt` realigns `=` when a block
     # gains or loses an attribute, and an assertion pinned to one column breaks
     # on formatting rather than on meaning.
