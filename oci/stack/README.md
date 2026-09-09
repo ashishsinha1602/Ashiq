@@ -124,11 +124,11 @@ left open.
 - **Home region only.** Always Free Autonomous Database and the
   `VM.Standard.E2.1.Micro` shape exist only in your tenancy's home region, and
   the free ADB is limited to two per tenancy.
-- **`adb_version` defaults to 19c**, because that is the version this stack has
-  actually applied with, repeatedly. `26ai` is selectable and is offered in every
-  commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) —
-  but an apply with it set did not complete here, so it is not the default.
-  `23ai` is no longer accepted at all: it stops being valid in December 2026.
+- **`adb_version` defaults to 26ai.** Always Free 26ai is available in every
+  commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP);
+  set `19c` if your home region is one of those. `23ai` is no longer accepted —
+  it stops being valid in December 2026, so the stack does not offer a version
+  that would start failing.
 - **Cataloguing needs tenancy-admin.** `catalog_provider = "oci"` creates a
   dynamic group and a policy at the tenancy root, which only a tenancy
   administrator can do. Set it to `none` if you are not one — selection still
