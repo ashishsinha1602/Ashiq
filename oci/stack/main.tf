@@ -166,7 +166,7 @@ resource "oci_identity_policy" "genai" {
 
 # ---------------- database (optional) ----------------
 resource "oci_database_autonomous_database" "adb" {
-  count                       = var.create_adb ? 1 : 0
+  count = var.create_adb ? 1 : 0
 
   lifecycle {
     precondition {
@@ -242,22 +242,22 @@ locals {
   connect_args = var.create_adb ? "{}" : "{}"
 
   cloud_init = templatefile("${path.module}/cloud-init.yaml", {
-    database_url      = local.database_url
-    connect_args      = local.connect_args
-    mcp_port          = var.mcp_port
-    catalog_provider  = var.catalog_provider
-    catalog_model     = var.catalog_model
-    compartment_ocid  = var.compartment_ocid
-    region            = var.region
-    create_adb        = var.create_adb ? "true" : "false"
-    adb_display_name  = local.adb_display_name
+    database_url       = local.database_url
+    connect_args       = local.connect_args
+    mcp_port           = var.mcp_port
+    catalog_provider   = var.catalog_provider
+    catalog_model      = var.catalog_model
+    compartment_ocid   = var.compartment_ocid
+    region             = var.region
+    create_adb         = var.create_adb ? "true" : "false"
+    adb_display_name   = local.adb_display_name
     adb_admin_password = var.adb_admin_password
   })
 }
 
 # ---------------- instance ----------------
 resource "oci_core_instance" "vm" {
-  compartment_id      = var.compartment_ocid
+  compartment_id = var.compartment_ocid
 
   lifecycle {
     precondition {
@@ -304,6 +304,9 @@ output "mcp_url" {
 }
 output "ssh" {
   value = "ssh opc@${oci_core_public_ip.mcp.ip_address}"
+}
+output "next_step" {
+  value = "pip install schemagate  •  https://pypi.org/project/schemagate/"
 }
 output "catalogued_with" {
   value = var.catalog_provider == "oci" ? "OCI Generative AI (${var.catalog_model}), keyless via instance principal" : "identifiers only"

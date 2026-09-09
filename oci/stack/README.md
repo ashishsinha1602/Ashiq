@@ -11,6 +11,12 @@ attached to every release. You can also `zip` it yourself and import it under
 
     mcp_url     http://<public-ip>:8765/mcp      ← Claude Desktop / Cursor / any MCP client
 
+**The library is on PyPI:** <https://pypi.org/project/schemagate/>. This stack
+is one way to run it, not the only one — the instance it builds simply does
+`pip install schemagate` on first boot. If you already have a database to point
+at, `pip install schemagate` is the whole install and none of the rest of this
+page applies.
+
 **In a hurry?** You do not need this. `../quickstart.sh` runs schemagate
 against your existing Autonomous Database from OCI Cloud Shell in about a
 minute, with no VM at all. Use the stack when you want an endpoint that stays
@@ -34,14 +40,19 @@ up for other people.
 > principal, and every description written by Oracle's model with no API key
 > and nothing leaving the tenancy.
 >
-> **One caveat, stated plainly: the server was started by hand on that run.**
+> **One caveat, narrowed to what is actually unproven.** Everything above is
+> certified: `verify.sh` ran to `6/6 CERTIFIED` against a stack zip built from
+> `main`. (The released asset carries the same tree; it did not yet exist when
+> that run happened.)
+> The single exception is that on that run the MCP server was started by hand.
 > `resolve-db` had written the descriptor and then deadlocked on a blocking
 > `systemctl restart schemagate` — the server is ordered after it, so each
 > waited for the other. `systemctl kill` on the stuck unit and the server came
-> up and served; that is the 510s in the log above. Both in-unit restarts are
-> `--no-block` now, which removes the deadlock, but **that fix has not yet
-> completed an unattended run**. Everything downstream of it is certified. If
-> you certify the unattended path before we do, please open an issue.
+> up and served. Both in-unit restarts are `--no-block` now, which removes the
+> deadlock, and the fix ships in v0.1.9 — but **no run has yet gone from apply
+> to serving endpoint without that one manual step**. Nothing else is in doubt.
+> If you certify the unattended path before we do, please open an issue either
+> way.
 >
 > Nine applies got here, and every one of them found something a `terraform
 > plan` cannot: an Autonomous Database that refuses one-way TLS without an
@@ -113,8 +124,11 @@ left open.
 - **Home region only.** Always Free Autonomous Database and the
   `VM.Standard.E2.1.Micro` shape exist only in your tenancy's home region, and
   the free ADB is limited to two per tenancy.
-- **`adb_version` defaults to 19c.** Always Free offers 19c everywhere; 26ai
-  and 23ai only in a handful of regions.
+- **`adb_version` defaults to 26ai.** Always Free 26ai is available in every
+  commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP);
+  set `19c` if your home region is one of those. `23ai` is no longer accepted —
+  it stops being a valid value in December 2026, so the stack does not offer a
+  version that would start failing.
 - **Cataloguing needs tenancy-admin.** `catalog_provider = "oci"` creates a
   dynamic group and a policy at the tenancy root, which only a tenancy
   administrator can do. Set it to `none` if you are not one — selection still

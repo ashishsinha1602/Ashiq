@@ -36,12 +36,14 @@ variable "adb_admin_password" {
 
 variable "adb_version" {
   type        = string
-  default     = "19c"
-  description = "Autonomous Database version. Always Free offers 19c in every home region; 26ai/23ai only in a few, so 19c is the safe default."
+  default     = "26ai"
+  description = "Autonomous Database version. Always Free 26ai is available in every commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) - set 19c if your home region is one of those."
 
+  # 23ai is gone from this list on purpose: it stops being a valid value in
+  # December 2026, and a stack that still offers it would start failing then.
   validation {
-    condition     = contains(["19c", "23ai", "26ai"], var.adb_version)
-    error_message = "adb_version must be 19c, 23ai or 26ai."
+    condition     = contains(["19c", "26ai"], var.adb_version)
+    error_message = "adb_version must be 19c or 26ai."
   }
 }
 variable "database_url" {
@@ -52,8 +54,8 @@ variable "database_url" {
 }
 
 variable "catalog_provider" {
-  type        = string
-  default     = "oci"
+  type    = string
+  default = "oci"
 
   validation {
     condition     = contains(["oci", "none"], var.catalog_provider)
