@@ -36,17 +36,12 @@ variable "adb_admin_password" {
 
 variable "adb_version" {
   type        = string
-  default     = "19c"
-  description = "Autonomous Database version. 19c is the default because it is the one this stack has actually applied with, repeatedly. Always Free 26ai is offered in every commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) - set it if you want it."
+  default     = "26ai"
+  description = "Autonomous Database version. Always Free 26ai is available in every commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) - set 19c if your home region is one of those."
 
   # 23ai is gone from this list on purpose: it stops being a valid value in
   # December 2026, and a stack that still offers it would start failing then.
-  #
-  # 26ai stays selectable but is not the default. An apply with it set did not
-  # complete in a tenancy where 19c had applied cleanly four times that night,
-  # and a default that has never finished an apply is not a default. Oracle's
-  # own release note is ambiguous about whether 26ai is an accepted API input
-  # or only a console display name for 23ai.
+  # 19c stays selectable for the three regions without 26ai.
   validation {
     condition     = contains(["19c", "26ai"], var.adb_version)
     error_message = "adb_version must be 19c or 26ai."
