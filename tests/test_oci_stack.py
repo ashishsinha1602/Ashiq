@@ -214,9 +214,15 @@ def test_the_boot_lookup_and_the_database_agree_on_the_display_name():
     """resolve-db finds the database by display name. A name shared with a
     leftover from an earlier run would resolve the wrong database."""
     main = (STACK / "main.tf").read_text()
-    assert main.count("adb_display_name = \"schemagate-demo-${local.suffix}\"") == 1
-    assert "display_name                = local.adb_display_name" in main
-    assert "adb_display_name  = local.adb_display_name" in main
+    # Matched loosely on whitespace: `terraform fmt` realigns `=` when a block
+    # gains or loses an attribute, and an assertion pinned to one column breaks
+    # on formatting rather than on meaning.
+    def wired(lhs, rhs):
+        return re.search(rf"^\s*{re.escape(lhs)}\s*=\s*{re.escape(rhs)}\s*$",
+                         main, re.M)
+    assert wired("adb_display_name", '"schemagate-demo-${local.suffix}"')
+    assert wired("display_name", "local.adb_display_name")
+    assert wired("adb_display_name", "local.adb_display_name")
 
 
 def test_the_boot_has_swap_because_the_free_shape_has_a_gigabyte():

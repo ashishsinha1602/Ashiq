@@ -1,8 +1,8 @@
 # Resource Manager form definition (OCI Marketplace stack listing)
 title: schemagate MCP server
-description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key.
+description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key. The instance installs the library from PyPI (https://pypi.org/project/schemagate/); if you already have a database, `pip install schemagate` needs none of this.
 schemaVersion: 1.1.0
-version: "0.1.5"
+version: "0.1.9"
 locale: en
 variableGroups:
   - title: Where
@@ -20,9 +20,9 @@ variables:
   adb_version:
     type: enum
     title: Autonomous Database version
-    description: Always Free offers 19c in every home region; 26ai and 23ai only in a few.
-    enum: ["19c", "26ai", "23ai"]
-    default: "19c"
+    description: Autonomous Database version. Always Free 26ai is available in every commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) - set 19c if your home region is one of those.
+    enum: ["26ai", "19c"]
+    default: "26ai"
     visible: create_adb
   create_adb:
     type: boolean

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.9
+
+Stack only — no library change.
+
+- **`adb_version` now defaults to 26ai.** Always Free 26ai is available in every
+  commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP);
+  `19c` remains available for those. `23ai` is no longer an accepted value: it
+  stops being valid in December 2026, and a stack that still offered it would
+  begin failing then rather than at a time of the operator's choosing.
+- **PyPI is linked from the stack, which it never was.** The stack README and
+  the Resource Manager form both say the instance installs the library from
+  <https://pypi.org/project/schemagate/>, and that anyone with a database
+  already can skip all of this with `pip install schemagate`. A new `next_step`
+  output says the same thing at the end of an apply, where someone who just
+  deployed will actually read it.
+- `terraform fmt` applied — it had drifted on `main.tf` and `variables.tf` —
+  and `terraform validate` passes.
+- The README's caveat is narrowed rather than dropped: `verify.sh` reached
+  `6/6 CERTIFIED`, and the one remaining gap is that no run has yet gone from
+  apply to serving endpoint without the single manual `systemctl kill` that
+  cleared the deadlock. The `--no-block` fix for it ships here.
+
 ## 0.1.8
 
 Stack only — no library change.
