@@ -40,19 +40,15 @@ up for other people.
 > principal, and every description written by Oracle's model with no API key
 > and nothing leaving the tenancy.
 >
-> **One caveat, narrowed to what is actually unproven.** Everything above is
-> certified: `verify.sh` ran to `6/6 CERTIFIED` against a stack zip built from
-> `main`. (The released asset carries the same tree; it did not yet exist when
-> that run happened.)
-> The single exception is that on that run the MCP server was started by hand.
-> `resolve-db` had written the descriptor and then deadlocked on a blocking
-> `systemctl restart schemagate` — the server is ordered after it, so each
-> waited for the other. `systemctl kill` on the stuck unit and the server came
-> up and served. Both in-unit restarts are `--no-block` now, which removes the
-> deadlock, and the fix ships in v0.1.9 — but **no run has yet gone from apply
-> to serving endpoint without that one manual step**. Nothing else is in doubt.
-> If you certify the unattended path before we do, please open an issue either
-> way.
+> **No caveat left.** An unattended run went from apply to a serving endpoint
+> with nothing typed in between: the MCP port answered **150 seconds** after
+> the apply returned, cataloguing succeeded on its first attempt, and the run
+> reached `6/6 CERTIFIED` and tore everything down by itself.
+>
+> The last thing standing was a deadlock — `resolve-db` wrote the connection
+> descriptor and then blocked on a `systemctl restart` of a unit ordered after
+> it, so each waited for the other and the server never started. Both in-unit
+> restarts are `--no-block` now. That fix is what this run proves.
 >
 > Nine applies got here, and every one of them found something a `terraform
 > plan` cannot: an Autonomous Database that refuses one-way TLS without an
