@@ -133,7 +133,7 @@ cat > "$WORK/vars.json" <<JSON
   "region": "${REGION}",
   "create_adb": "true",
   "adb_admin_password": "${ADB_PW}",
-  "adb_version": "${ADB_VERSION:-26ai}",
+  "adb_version": "${ADB_VERSION:-19c}",
   "catalog_provider": "oci",
   "catalog_model": "google.gemini-2.5-pro",
   "instance_shape": "${SHAPE}",
