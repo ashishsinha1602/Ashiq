@@ -60,7 +60,7 @@ does — it just never sees `hr_compensation` unless the caller holds
 
 ## If you're using an agent framework
 
-Claude Desktop, Cursor, or any MCP client: run `python -m schemagate.mcp_server`
+Cursor, Windsurf, or any MCP client: run `python -m schemagate.mcp_server`
 and the agent calls `select_schema(question, principal, roles)` as a tool.
 LangChain: `SchemagateRetriever` is a `BaseRetriever`. Both are in the README.
 

@@ -23,7 +23,7 @@ Wallet users: unzip it and add `"config_dir"`, `"wallet_location"` and
 
 ## 2. One click — `stack/`, a Resource Manager stack
 
-For a shared, always-on **MCP endpoint** your team and Claude Desktop can point
+For a shared, always-on **MCP endpoint** your team and its MCP clients can point
 at: an Always-Free-eligible VM running `python -m schemagate.mcp_server` against
 an Autonomous Database it creates, or one you already have.
 

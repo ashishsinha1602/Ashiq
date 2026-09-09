@@ -251,7 +251,7 @@ from schemagate import Catalog, Principal
 cat = Catalog().bootstrap("postgresql://localhost/app")
 cat.select("revenue by month",
            principal=Principal("okta:jdoe", roles={"finance"}))</pre></div>
-      <div class="pane"><h4>Use it from Claude Desktop, Cursor, any MCP client</h4><pre>pip install 'schemagate[mcp]'
+      <div class="pane"><h4>Use it from Cursor, Windsurf, any MCP client</h4><pre>pip install 'schemagate[mcp]'
 SCHEMAGATE_DATABASE_URL=postgresql://localhost/app \
   python -m schemagate.mcp_server</pre></div>
       <div class="pane"><h4>Run this studio on your own database</h4><pre>pip install schemagate

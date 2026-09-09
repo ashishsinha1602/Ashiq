@@ -9,7 +9,7 @@ membership needed — the button hands Resource Manager a zip of this folder,
 attached to every release. You can also `zip` it yourself and import it under
 **Resource Manager → Stacks → Create Stack → My configuration**.
 
-    mcp_url     http://<public-ip>:8765/mcp      ← Claude Desktop / Cursor / any MCP client
+    mcp_url     http://<public-ip>:8765/mcp      ← Cursor / Windsurf / any MCP client
 
 **The library is on PyPI:** <https://pypi.org/project/schemagate/>. This stack
 is one way to run it, not the only one — the instance it builds simply does
@@ -175,7 +175,7 @@ Re-run it any time:
 
 ## Using it
 
-Claude Desktop config:
+MCP client config:
 
     {"mcpServers": {"schemagate": {"url": "http://<public-ip>:8765/mcp"}}}
 

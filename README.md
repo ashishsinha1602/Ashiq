@@ -346,7 +346,7 @@ pytest tests/test_dialects.py -v
 If you already have an agent that writes SQL, the fastest way in is to let it
 call schemagate as a tool rather than wiring the library into your code.
 
-**MCP.** Claude Desktop, Claude Code, Cursor, or anything else that speaks the
+**MCP.** Cursor, Windsurf, Zed, or anything else that speaks the
 Model Context Protocol:
 
 ```bash
@@ -354,7 +354,7 @@ pip install 'schemagate[mcp]'
 SCHEMAGATE_DATABASE_URL=postgresql://localhost/app python -m schemagate.mcp_server
 ```
 
-Claude Desktop config:
+MCP client config:
 
 ```json
 {"mcpServers": {"schemagate": {

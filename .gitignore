@@ -31,3 +31,4 @@ _cache_*.json
 complex_desc_*.json
 _kept_objects.json
 oracle_catalog*.json
+.claude/

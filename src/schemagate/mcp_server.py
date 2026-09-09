@@ -1,6 +1,6 @@
 """MCP server: let an agent ask schemagate which tables it needs.
 
-Any MCP-capable client -- Claude Desktop, Claude Code, Cursor, an agent you
+Any MCP-capable client -- Cursor, Windsurf, Zed, an agent you
 wrote -- can call ``select_schema`` and get back the compact DDL for exactly
 the objects a question needs, already filtered to what the caller may see.
 The agent then writes SQL against that, and never sees the rest.

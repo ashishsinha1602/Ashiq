@@ -61,7 +61,7 @@ Each of these was live in the code at the time and would have shipped.
    passed on the pinned 1.x while a fresh `pip install` got 2.x and crashed.
    Found by the clean-venv check. Fixed with a shim for both; the protocol
    tests now spawn a real subprocess over stdio, which is stable across
-   versions and is the path Claude Desktop uses.
+   versions and is the path desktop MCP clients use.
 8. **The stdlib HTTP server's listen backlog is 5.** A page firing a few
    requests at once got connection resets. Raised to 128; 400 requests at
    32-way concurrency now complete with zero transport failures.

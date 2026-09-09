@@ -1,7 +1,7 @@
 # schemagate MCP server on OCI. See README.md.
 output "mcp_url" {
   value       = "http://${oci_core_public_ip.mcp.ip_address}:${var.mcp_port}/mcp"
-  description = "Point Claude Desktop, Cursor or any MCP client here"
+  description = "Point Cursor, Windsurf or any MCP client here"
 }
 output "ssh" {
   value = "ssh opc@${oci_core_public_ip.mcp.ip_address}"
