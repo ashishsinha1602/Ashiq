@@ -4,6 +4,20 @@
 
 Stack only — no library change.
 
+**Certified unattended.** A run went from apply to a serving MCP endpoint with
+nothing typed in between — the port answered 150 seconds after the apply
+returned, cataloguing succeeded on its first attempt, and `verify.sh` reached
+`6/6 CERTIFIED` and destroyed everything by itself. 0.1.8 got to 6/6 but needed
+one manual `systemctl kill` to clear a deadlock; that is the caveat this
+release removes.
+
+- **Fixed: the two boot units deadlocked each other.** `resolve-db` wrote the
+  connection descriptor and then blocked on `systemctl restart schemagate`.
+  The server is ordered `After=` that unit, so systemd would not start it until
+  resolve-db finished — and resolve-db could not finish until the restart
+  returned. Each waited for the other and the port never opened. Both in-unit
+  restarts are `--no-block` now, which queues the job and returns. The endpoint
+  went from never answering to answering in 150 seconds.
 - **`23ai` is no longer an accepted `adb_version`.** It stops being valid in
   December 2026, and a stack that still offered it would begin failing then
   rather than at a time the operator chose. `19c` remains the default — it is
