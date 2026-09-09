@@ -6,12 +6,27 @@ argument-hint: "[medium|devto|linkedin] — omit to do all three in order"
 Publish the launch post. Everything you need is in this file; do not rewrite
 the copy unless the user asks.
 
-## Order matters
+## Order matters — dev.to FIRST
 
-Medium first, then dev.to, then LinkedIn. dev.to should carry a canonical link
-back to the Medium URL, and the LinkedIn post links to it — so publishing out
-of order means going back to edit. If the user asks for one specifically,
-do just that one.
+**Publish dev.to first, then import it into Medium.** This is the opposite of
+the obvious order and it is deliberate:
+
+Medium closed its API to new integrations in March 2023. No new tokens are
+issued, the docs repo is archived, and nothing can post there programmatically.
+Its editor also parses no markdown and renders no tables, so a manual paste
+means reformatting by hand every time.
+
+Medium's **Import a story** tool (medium.com/p/import) sidesteps all of it. Give
+it the published dev.to URL and it pulls the whole article across — headings,
+code blocks, the table — and sets the canonical URL back to dev.to on its own,
+which is the correct SEO direction anyway.
+
+So: **dev.to → Medium import → LinkedIn.** LinkedIn links to whichever of the
+two the user prefers as the public face; default to the Medium URL, since it
+reaches a wider non-developer audience and canonical already points home.
+
+If the user explicitly asks for Medium first, the manual paste route is in the
+Medium section below — but tell them the import route exists and is less work.
 
 ## Facts you must not overstate
 
@@ -27,21 +42,25 @@ illustrative. Never let it be quoted as "saves $7,000/month" without that.
 
 ---
 
-# 1. MEDIUM
+# 1. MEDIUM — via import (preferred)
+
+Once the dev.to post is live, go to **medium.com/p/import**, paste the dev.to
+URL, and let Medium pull it in. Check the result, then publish. Medium sets
+`canonical_url` back to dev.to automatically.
+
+Add before publishing:
+
+- Cover image, under the subtitle:
+  `https://raw.githubusercontent.com/ashishsinha1602/schemagate/main/docs/media/before-after.png`
+- Tags (5 max, first is weighted most): `SQL`, `Large Language Models`,
+  `Data Engineering`, `Oracle Cloud`, `Python`
+
+## Manual paste — only if the import is refused
 
 Medium does not parse pasted markdown and **cannot render tables at all**.
-Two ways to get it in, in order of preference:
 
-**Rich-text paste (preferred).** Open the artifact and click *Copy for Medium* —
-it copies formatted HTML, so headings, bold, links, quotes and code blocks all
-survive the paste. Then paste into the story body.
-
-**Plain markdown fallback.** Paste the body below into dillinger.io, copy the
-rendered output, paste that into Medium. Only code blocks then need fixing
-(Cmd/Ctrl+Alt+6).
-
-Type these two lines first — Medium styles line 1 as the title and line 2 as
-the subtitle automatically. Type them, do not paste them:
+Type these two lines first — Medium styles line 1 as the title and line 2 as the
+subtitle automatically. Type them, do not paste them:
 
 ```
 Six Tables Out of 260
@@ -51,20 +70,12 @@ Six Tables Out of 260
 Most text-to-SQL systems paste the whole schema into the prompt. Here is what it takes to send six tables instead — and to describe them without an API key.
 ```
 
-Then the body. **Convert the markdown table into a monospace code block** —
-Medium has no table support and a pasted pipe table renders as a wall of
-characters. Keep every code line under 55 characters or Medium adds a
-horizontal scrollbar and hides the rest.
+Then paste the body from the dev.to block below, with two changes:
+**convert the markdown table into a monospace code block**, and keep every code
+line under 55 characters or Medium adds a horizontal scrollbar and hides the
+rest.
 
-Cover image, added under the subtitle:
-`https://raw.githubusercontent.com/ashishsinha1602/schemagate/main/docs/media/before-after.png`
-
-Tags (5 max, first is weighted most):
-`SQL`, `Large Language Models`, `Data Engineering`, `Oracle Cloud`, `Python`
-
-Before publishing, check both links resolve and no code block scrolls sideways.
-
----
+Check both links resolve and no code block scrolls sideways before publishing.
 
 # 2. DEV.TO
 
@@ -74,12 +85,8 @@ tags and cover image — leave it in place.
 
 It is set `published: false`. Save draft, preview, then publish.
 
-**Once the Medium URL exists**, add this line to the front matter so dev.to
-does not compete with Medium in search:
-
-```
-canonical_url: <the Medium URL>
-```
+This is the canonical home, so it needs no `canonical_url` — Medium's importer
+will point back here by itself.
 
 dev.to allows a maximum of 4 tags, which is why its list is shorter than
 Medium's.
