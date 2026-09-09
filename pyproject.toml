@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "schemagate"
-version = "0.1.7"
+version = "0.1.8"
 description = "Identity-scoped schema selection for text-to-SQL: give the model only the tables this caller may read, and 75% fewer prompt tokens"
 readme = "README.md"
 license = "Apache-2.0"
@@ -58,6 +58,9 @@ mcp         = ["mcp>=1.2; python_version >= '3.10'"]
 langchain   = ["langchain-core>=0.3"]
 dev         = ["pytest>=8", "ruff", "mypy", "sqlglot>=25", "anyio>=4",
                "langchain-core>=0.3",
+               # tests/test_oci_stack.py parses cloud-init.yaml; it was relying
+               # on whatever the runner happened to have installed.
+               "pyyaml>=6",
                # these two need 3.10+; on 3.9 their tests skip
                "mcp>=1.2; python_version >= '3.10'",
                "hypothesis>=6; python_version >= '3.10'"]
