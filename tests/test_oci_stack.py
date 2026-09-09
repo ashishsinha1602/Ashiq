@@ -35,7 +35,7 @@ def test_cataloguing_retries_because_it_races_the_policy_that_authorises_it():
     cannot create it -- or the GenAI policy -- until the instance already
     exists and is running cloud-init. A single attempt loses that race."""
     ci = _cloud_init()
-    catalog = ci[ci.index("/opt/catalog-once.sh") : ci.index("schemagate.service")]
+    catalog = ci[ci.index("- path: /opt/catalog-once.sh") : ci.index("- path: /opt/resolve-db.py")]
     assert "for attempt in" in catalog, "cataloguing must retry"
     assert "sleep 60" in catalog, "retries must outlast IAM propagation"
 
@@ -278,3 +278,18 @@ def test_no_write_files_entry_names_a_user_that_does_not_exist_yet():
     assert "chgrp opc /etc/schemagate.env" in ci, (
         "the env file still has to end up group-readable by opc"
     )
+
+
+def test_no_unit_blocks_on_restarting_a_unit_ordered_after_it():
+    """A live boot deadlocked here. resolve-db.sh resolved the descriptor in 29
+    seconds and then ran a blocking `systemctl restart schemagate`.
+    schemagate.service is After= resolve-db, so systemd would not start it
+    until resolve-db finished -- and resolve-db could not finish until the
+    restart returned. resolve-db sat in "activating (start)", the server sat
+    "inactive (dead)", and the endpoint never opened. --no-block queues the job
+    and returns."""
+    ci = _cloud_init()
+    blocking = [ln for ln in ci.splitlines()
+                if "systemctl restart" in ln and "--no-block" not in ln
+                and not ln.lstrip().startswith("#")]
+    assert not blocking, f"blocking restart from inside a unit: {blocking}"
