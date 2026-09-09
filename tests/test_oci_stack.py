@@ -255,3 +255,26 @@ def test_the_verify_key_outlives_a_cloud_shell_disconnect():
     v = (STACK / "verify.sh").read_text()
     assert 'KEY="$HOME/.schemagate-verify-key"' in v
     assert 'KEY="$WORK' not in v
+
+
+def test_no_write_files_entry_names_a_user_that_does_not_exist_yet():
+    """The one that cost a whole day. write_files runs BEFORE users-groups in
+    cloud-init's init stage, so `owner: "root:opc"` raises
+
+        KeyError: getgrnam(): name not found: 'opc'
+
+    on the first file and aborts the module -- silently discarding every file
+    after it. No scripts, no systemd units, and then runcmd fails on files that
+    were never written. Set ownership in runcmd, where the user exists."""
+    import yaml
+    ci = _cloud_init()
+    rendered = re.sub(r"\$\{(\w+)\}", "x", ci)
+    doc = yaml.safe_load(rendered)
+    owned = [f["path"] for f in doc["write_files"] if "owner" in f]
+    assert not owned, (
+        f"{owned} declare an owner; cloud-init has not created any user yet "
+        "when write_files runs. chown in runcmd instead."
+    )
+    assert "chgrp opc /etc/schemagate.env" in ci, (
+        "the env file still has to end up group-readable by opc"
+    )

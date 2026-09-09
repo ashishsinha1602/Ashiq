@@ -74,7 +74,17 @@ finding something no `terraform plan` can catch.
   under `/tmp`, which Cloud Shell discards when it hands you a new machine
   after an idle disconnect. Twice that left an instance standing with no way
   back into it and no diagnosis. The apply now also prints the `ssh` line.
-- `tests/test_oci_stack.py` pins each of these. Nineteen invariants now, and
+- **Fixed: the root cause. `write_files` aborted on the first file, every
+  time.** `/etc/schemagate.env` was declared `owner: "root:opc"`. write_files
+  runs *before* users-groups in cloud-init's init stage, so the opc group does
+  not exist yet, and the module raised `getgrnam(): name not found: 'opc'` and
+  stopped -- silently discarding every file after it. No `pick-extras.sh`, no
+  `resolve-db.sh`, **no systemd units at all**, and then runcmd failed on files
+  that were never written. This is why the MCP endpoint never answered on any
+  run, on either shape, from the first apply to the eighth: nothing that would
+  have served it was ever on disk. Ownership is set in runcmd now, where opc
+  exists. Every other fix in this entry was to code that had never executed.
+- `tests/test_oci_stack.py` pins each of these. Twenty invariants now, and
   every one of them came from a failure a live apply produced.
 
 ## 0.1.7

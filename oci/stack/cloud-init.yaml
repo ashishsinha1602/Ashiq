@@ -21,10 +21,17 @@ swap:
 packages: [python3.11, python3.11-pip]
 write_files:
   - path: /etc/schemagate.env
-    # 0640 root:opc -- systemd reads it as root, and the documented re-run
-    # (`sudo -u opc /opt/catalog-once.sh`) needs opc to read it too.
+    # 0640, and the group is set in runcmd rather than here.
+    #
+    # `owner: "root:opc"` looks right and is fatal. write_files runs before
+    # users-groups in cloud-init's init stage, so the opc group does not exist
+    # yet: the module raises "getgrnam(): name not found: 'opc'" on this, the
+    # first file in the list, and aborts -- silently taking every file after it
+    # with it. No pick-extras.sh, no resolve-db.sh, no systemd units at all,
+    # and then runcmd fails on the files that were never written. A live
+    # instance showed exactly this, and it is the reason the MCP endpoint never
+    # answered on any run.
     permissions: "0640"
-    owner: "root:opc"
     content: |
       SCHEMAGATE_DATABASE_URL=${database_url}
       SCHEMAGATE_CONNECT_ARGS='${connect_args}'
@@ -274,6 +281,10 @@ runcmd:
   - systemctl start --no-block schemagate-resolve-db
   - python3.11 -m venv /opt/schemagate
   - /opt/pick-extras.sh
+  # Now that users-groups has run, opc exists. systemd reads the env file as
+  # root; the documented re-run (`sudo -u opc /opt/catalog-once.sh`) needs opc
+  # to read it too.
+  - chgrp opc /etc/schemagate.env
   - chown -R opc:opc /opt/schemagate /etc/schemagate
   - firewall-cmd --permanent --add-port=${mcp_port}/tcp || true
   - firewall-cmd --reload || true
