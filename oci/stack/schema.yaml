@@ -20,9 +20,9 @@ variables:
   adb_version:
     type: enum
     title: Autonomous Database version
-    description: Autonomous Database version. Always Free 26ai is available in every commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) - set 19c if your home region is one of those.
-    enum: ["26ai", "19c"]
-    default: "26ai"
+    description: Autonomous Database version. 19c is the default because it is the one this stack has applied with, repeatedly. Always Free 26ai is offered in every commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP) - set it if you want it.
+    enum: ["19c", "26ai"]
+    default: "19c"
     visible: create_adb
   create_adb:
     type: boolean

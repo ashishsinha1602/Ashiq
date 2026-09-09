@@ -4,11 +4,14 @@
 
 Stack only — no library change.
 
-- **`adb_version` now defaults to 26ai.** Always Free 26ai is available in every
-  commercial region except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP);
-  `19c` remains available for those. `23ai` is no longer an accepted value: it
-  stops being valid in December 2026, and a stack that still offered it would
-  begin failing then rather than at a time of the operator's choosing.
+- **`23ai` is no longer an accepted `adb_version`.** It stops being valid in
+  December 2026, and a stack that still offered it would begin failing then
+  rather than at a time the operator chose. `19c` remains the default — it is
+  the version this stack has actually applied with, four times — and `26ai` is
+  selectable for anyone who wants it, available in every commercial region
+  except Bogota (BOG), Riyadh (RUH) and Singapore West (XSP). Making 26ai the
+  default was tried and pulled: no apply with it set was seen through to
+  completion, and a default that has never finished an apply is not a default.
 - **PyPI is linked from the stack, which it never was.** The stack README and
   the Resource Manager form both say the instance installs the library from
   <https://pypi.org/project/schemagate/>, and that anyone with a database
