@@ -59,3 +59,4 @@ def fill_unknown_types(engine, schema: Optional[str], table: str, columns: List[
 
 
 from . import oracle as _oracle  # noqa: E402,F401  (registers its hooks)
+from . import postgresql as _postgresql  # noqa: E402,F401  (same)
