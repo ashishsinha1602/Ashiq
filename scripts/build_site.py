@@ -153,6 +153,8 @@ for(const i of ["tf","ts","q","p"])document.getElementById(i).oninput=r;r();
 def build_misc() -> None:
     shutil.copy(ROOT / "docs" / "media" / "social-preview.png", SITE / "social-preview.png")
     (SITE / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n")
+    (SITE / "google7c61fe50e3637040.html").write_text(
+        "google-site-verification: google7c61fe50e3637040.html\n")
     today = dt.date.today().isoformat()
     urls = "".join(f"<url><loc>{BASE}{p}</loc><lastmod>{today}</lastmod></url>"
                    for p in ["/", "/cost/", "/vanna-alternative/"])
