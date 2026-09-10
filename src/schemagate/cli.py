@@ -211,7 +211,10 @@ def cmd_describe(args) -> int:
         if not args.config:
             print("tip: add --config catalog.json to keep them for select/studio/MCP")
         return 0 if n or applied else 1
-    if args.provider:
+    # `--provider none` is spelled out in the docs as the no-key path, and it
+    # used to fail asking for a --model it would never use. Absent and "none"
+    # both mean the same thing: print the prompt, do not call anyone.
+    if args.provider and args.provider != "none":
         from .ai import SchemaDescriber
         from .ai import providers as _p
         if not args.model:

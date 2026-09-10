@@ -91,3 +91,23 @@ def test_rows_render_without_a_table_library():
 
 def test_no_rows_says_so_rather_than_printing_nothing():
     assert "(no rows)" in format_rows(["a"], [])
+
+
+def test_provider_none_is_the_no_key_path_not_an_error(tmp_path, capsys):
+    """The published docs tell people to run `--provider none` to get the
+    paste prompt without an API key. It used to exit asking for a `--model`
+    it would never use, so the documented no-key path was the one that did
+    not work."""
+    import sqlite3
+
+    from schemagate.cli import main
+
+    db = tmp_path / "t.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE customer (id INTEGER PRIMARY KEY, name TEXT)")
+    con.commit()
+    con.close()
+
+    rc = main(["describe", "--url", f"sqlite:///{db}", "--provider", "none"])
+    assert rc == 0
+    assert "customer" in capsys.readouterr().out
