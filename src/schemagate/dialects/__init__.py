@@ -17,6 +17,8 @@ MAINTAINED_SCHEMAS: Dict[str, Callable] = {}
 FILL_UNKNOWN_TYPES: Dict[str, Callable] = {}
 #: dialect name -> callable(schema name) -> bool
 INTERNAL_SCHEMA: Dict[str, Callable] = {}
+#: dialect name -> callable(engine) -> {(schema, object name)} to leave out
+MAINTAINED_OBJECTS: Dict[str, Callable] = {}
 
 
 def is_internal_schema(engine, schema: Optional[str]) -> bool:
@@ -45,6 +47,22 @@ def vendor_maintained(engine) -> Set[str]:
         return set(hook(engine))
     except Exception:
         # over-inclusive beats a silently missing table
+        return set()
+
+
+def vendor_maintained_objects(engine) -> Set[tuple]:
+    """Individual objects an extension owns, inside an otherwise user schema.
+
+    Excluding whole schemas is not enough: PostGIS puts `spatial_ref_sys` --
+    8,500 rows of map projections -- straight into `public`, next to the
+    user's own tables.
+    """
+    hook = MAINTAINED_OBJECTS.get(engine.dialect.name)
+    if hook is None:
+        return set()
+    try:
+        return set(hook(engine))
+    except Exception:
         return set()
 
 

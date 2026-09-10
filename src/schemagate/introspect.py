@@ -111,6 +111,17 @@ def reflect(engine_or_url, include=None, exclude=None,
         if default and default in schemas:
             schemas = [default] + [s for s in schemas if s != default]
 
+    from .dialects import vendor_maintained_objects
+    # Excluding whole schemas is not enough: an extension installed into a
+    # user schema leaves its own tables sitting there among the user's. PostGIS
+    # puts spatial_ref_sys -- 8,500 rows of map projections -- into public.
+    maintained_objects = vendor_maintained_objects(engine)
+    # The hook reports the schema the server records, which is never NULL, so
+    # a reflection that did not name a schema is matched against the default
+    # rather than a literal "public" -- that word means something else on
+    # Oracle, and hardcoding it here is what the per-dialect registry exists
+    # to avoid.
+    default_schema = insp.default_schema_name
     docs: List[ObjectDoc] = []
     seen = set()
     for schema in schemas:
@@ -121,6 +132,8 @@ def reflect(engine_or_url, include=None, exclude=None,
             if (schema, name) in seen:
                 continue
             seen.add((schema, name))
+            if (schema or default_schema, name) in maintained_objects:
+                continue
             if not _match(name, include) or (exclude and _match(name, exclude)):
                 continue
             try:

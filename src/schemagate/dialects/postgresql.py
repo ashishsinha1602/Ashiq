@@ -27,7 +27,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Set
 
-from . import FILL_UNKNOWN_TYPES, INTERNAL_SCHEMA, MAINTAINED_SCHEMAS
+from . import (FILL_UNKNOWN_TYPES, INTERNAL_SCHEMA, MAINTAINED_OBJECTS,
+               MAINTAINED_SCHEMAS)
 
 #: Schemas the server itself owns. Deliberately short: anything an extension
 #: brings is found through pg_depend below rather than pattern-matched, and
@@ -41,14 +42,21 @@ def looks_internal(schema: str) -> bool:
 
 
 def maintained_schemas(engine) -> Set[str]:
-    """Schemas owned by an installed extension.
+    """Schemas an extension owns.
 
-    ``pg_depend`` records the dependency an extension has on the schema it
-    installs, so this is exact rather than a guess at names. A database with
-    no extensions returns an empty set and nothing is excluded.
+    Two sources, and the first one alone is not enough -- found by installing
+    PostGIS. `pg_extension.extnamespace` is the schema an extension lives in,
+    which is how `postgis_topology` gets its `topology` schema; `pg_depend`
+    catches a schema an extension's script created without living in. A
+    database with no extensions returns an empty set.
     """
     with engine.connect() as conn:
         rows = conn.exec_driver_sql("""
+            SELECT n.nspname
+              FROM pg_extension e
+              JOIN pg_namespace n ON n.oid = e.extnamespace
+             WHERE n.nspname NOT IN ('pg_catalog', 'public')
+            UNION
             SELECT n.nspname
               FROM pg_depend d
               JOIN pg_extension e ON e.oid = d.refobjid
@@ -59,31 +67,27 @@ def maintained_schemas(engine) -> Set[str]:
     return {r[0] for r in rows}
 
 
-#: engine -> {(schema, table, column): rendered type}. One query per engine,
-#: not per table: a 400-table database would otherwise pay 400 round trips
-#: during reflection, and the answer is the same for all of them.
-_TYPE_CACHE: "Dict[int, Dict[tuple, str]]" = {}
+def maintained_objects(engine) -> Set[tuple]:
+    """Tables and views an extension owns inside a user schema.
 
-_TYPES_SQL = """
-SELECT n.nspname, c.relname, a.attname,
-       format_type(a.atttypid, a.atttypmod) AS declared,
-       t.typtype,
-       CASE t.typtype
-         WHEN 'e' THEN (SELECT string_agg(quote_literal(enumlabel), ', '
-                                          ORDER BY enumsortorder)
-                          FROM pg_enum WHERE enumtypid = t.oid)
-         WHEN 'd' THEN format_type(t.typbasetype, t.typtypmod)
-       END AS detail
-  FROM pg_attribute a
-  JOIN pg_class     c ON c.oid = a.attrelid
-  JOIN pg_namespace n ON n.oid = c.relnamespace
-  JOIN pg_type      t ON t.oid = a.atttypid
- WHERE a.attnum > 0
-   AND NOT a.attisdropped
-   AND c.relkind IN ('r', 'v', 'm', 'p', 'f')
-   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-   AND (t.typtype IN ('e', 'd') OR t.typtype = 'b')
-"""
+    An extension installed into `public` -- which is the default, and what
+    PostGIS does -- leaves its own tables among the user's. `spatial_ref_sys`
+    is 8,500 rows of map projections; `geometry_columns` and
+    `geography_columns` are catalog views. None of them are anybody's data,
+    and excluding the schema is not an option because the schema is `public`.
+    """
+    with engine.connect() as conn:
+        rows = conn.exec_driver_sql("""
+            SELECT n.nspname, c.relname
+              FROM pg_depend d
+              JOIN pg_extension e ON e.oid = d.refobjid
+              JOIN pg_class     c ON c.oid = d.objid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE d.refclassid = 'pg_extension'::regclass
+               AND d.classid    = 'pg_class'::regclass
+               AND c.relkind IN ('r', 'v', 'm', 'p', 'f')
+        """).fetchall()
+    return {(r[0], r[1]) for r in rows}
 
 
 def _render(declared: str, typtype: str, detail: Optional[str]) -> Optional[str]:
@@ -100,6 +104,48 @@ def _render(declared: str, typtype: str, detail: Optional[str]) -> Optional[str]
     if typtype == "d" and detail:
         return f"{declared} DOMAIN OVER {detail}"
     return None
+
+
+#: One catalog query per engine. Reflecting 404 tables must not mean 404
+#: round trips -- the whole point of the index is that it is built once.
+_TYPE_CACHE: "Dict[int, Dict[tuple, str]]" = {}
+
+#: ``format_type`` is what gives back the name the user would write:
+#: ``geometry(Point,4326)``, not the NULL SQLAlchemy reports for a type it
+#: has no class for. The CASE carries the one extra fact each awkward kind
+#: needs -- an enum's labels, a domain's base type -- so ``_render`` can put
+#: something useful in the prompt instead of ``VARCHAR(5)`` or ``DOMAIN``.
+#:
+#: The prefix tests use ``left()`` rather than the ``LIKE 'pg_toast%'`` they
+#: obviously want to be. This goes through ``exec_driver_sql``, which hands
+#: the string to the driver unchanged, and psycopg3 reads ``%`` as the start
+#: of a placeholder: the whole query fails with "only '%s', '%b', '%t' are
+#: allowed as placeholders". Escaping it as ``%%`` would work on psycopg and
+#: break on any driver that does not do that substitution, so the query
+#: simply contains no percent sign.
+_TYPES_SQL = """
+    SELECT n.nspname,
+           c.relname,
+           a.attname,
+           format_type(a.atttypid, a.atttypmod),
+           t.typtype,
+           CASE t.typtype
+             WHEN 'e' THEN (SELECT string_agg(quote_literal(e.enumlabel), ', '
+                                              ORDER BY e.enumsortorder)
+                              FROM pg_enum e WHERE e.enumtypid = t.oid)
+             WHEN 'd' THEN format_type(t.typbasetype, t.typtypmod)
+           END
+      FROM pg_attribute a
+      JOIN pg_class     c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_type      t ON t.oid = a.atttypid
+     WHERE a.attnum > 0
+       AND NOT a.attisdropped
+       AND c.relkind IN ('r', 'v', 'm', 'p', 'f')
+       AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+       AND left(n.nspname, 8) <> 'pg_toast'
+       AND left(n.nspname, 7) <> 'pg_temp'
+"""
 
 
 def _catalog_types(engine) -> "Dict[tuple, str]":
@@ -132,10 +178,7 @@ def unknown_types(engine, schema: Optional[str],
     """
     if not columns:
         return
-    try:
-        known = _catalog_types(engine)
-    except Exception:
-        return
+    known = _catalog_types(engine)
     nsp = schema or "public"
     for col in columns:
         rendered = known.get((nsp, table, col.get("name")))
@@ -148,5 +191,6 @@ def unknown_types(engine, schema: Optional[str],
 
 
 MAINTAINED_SCHEMAS["postgresql"] = maintained_schemas
+MAINTAINED_OBJECTS["postgresql"] = maintained_objects
 INTERNAL_SCHEMA["postgresql"] = looks_internal
 FILL_UNKNOWN_TYPES["postgresql"] = unknown_types

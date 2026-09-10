@@ -51,13 +51,27 @@ def test_all_three_hooks_are_registered():
         assert "postgresql" in table
 
 
-def test_columns_with_a_known_type_do_not_hit_the_database():
-    """The hook must be free when there is nothing to fill in -- it runs for
-    every table reflected."""
+def test_a_table_with_no_columns_does_not_hit_the_database():
+    """This used to assert something stronger -- that a column already
+    reading INTEGER meant the hook could skip the catalog entirely. That is
+    not true and cannot be: an enum reflects as ``VARCHAR(5)``, which looks
+    just as settled as INTEGER and is just as wrong. Deciding a column needs
+    no correction requires the catalog, so the only free case left is having
+    nothing to correct.
+
+    Worth recording how that assertion survived being false: a
+    ``try/except Exception`` inside ``unknown_types`` caught this test's own
+    AssertionError and returned, so the test passed against a module where
+    the whole feature raised NameError on every call. The except is gone --
+    ``fill_unknown_types`` already guards a database that will not answer,
+    and one layer of swallowing is enough.
+
+    Cost is bounded by the cache, not by skipping: see
+    ``test_the_catalog_is_queried_once_per_engine_not_once_per_table``."""
     class Boom:
         def connect(self):
             raise AssertionError("queried the database with nothing to fill")
-    unknown_types(Boom(), "public", "t", [{"name": "id", "type": "INTEGER"}])
+    unknown_types(Boom(), "public", "t", [])
 
 
 # --- what a live PostgreSQL 16 reflection actually returned -----------------
@@ -111,3 +125,13 @@ def test_the_catalog_is_queried_once_per_engine_not_once_per_table():
         pg.unknown_types(eng, "public", "t", [{"name": "c", "type": "VARCHAR(5)"}])
     assert len(calls) == 1, f"queried the catalog {len(calls)} times"
     pg._TYPE_CACHE.pop(id(eng), None)
+
+
+def test_the_catalog_query_contains_no_percent_sign():
+    """`exec_driver_sql` hands the statement to the driver verbatim, and
+    psycopg3 parses `%` as the start of a placeholder -- a `LIKE 'pg_toast%'`
+    fails the entire query with "only '%s', '%b', '%t' are allowed as
+    placeholders", which takes every type fill down with it. Cost a live
+    debugging round; the prefix tests use `left()` instead."""
+    from schemagate.dialects.postgresql import _TYPES_SQL
+    assert "%" not in _TYPES_SQL
