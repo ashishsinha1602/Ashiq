@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.1.11
+
+**Install this rather than 0.1.10 if you use Oracle.** 0.1.10 shipped a
+regression that makes reflection hang on a large Oracle database. It was
+found by a live apply against an Autonomous Database, where the endpoint
+never came up.
+
+- **Fixed: Oracle reflection scanned the whole data dictionary.** 0.1.10
+  replaced a per-table type lookup with a single per-database one and dropped
+  the `owner = :o` predicate in the process. That predicate is what makes it
+  an indexed lookup; without it `all_tab_columns` is a scan across every
+  schema the caller can see. Against a local Oracle with 219 objects the
+  difference is invisible, which is why it shipped. Against an Autonomous
+  Database exposing ~1,500 objects it is not, and it runs during reflection,
+  which on the OCI stack happens at boot -- so the MCP endpoint simply never
+  opened. It is now scoped per owner: bounded and indexed like the per-table
+  query, asked once per schema like the per-database one. One schema of 219
+  objects is still one query; ten schemas is ten, not two thousand.
+
+- **Added: `--values`.** A model was handed `status VARCHAR(30)` and wrote
+  `WHERE status = 'DENIED'`. The rows say `denied`. The SQL was correct in
+  every way a schema can express and returned nothing, which reads as "there
+  are no denied claims" rather than as a mistake -- the worst shape of wrong
+  answer available. Nothing the model was given could have told it the casing
+  of a value it had never seen. Reflection can now read the distinct values of
+  short string columns that hold only a handful, and render them as
+  `status VARCHAR(30)  -- one of: 'denied', 'paid'`.
+
+  Off by default. Everything else in this library reads metadata; this reads
+  rows, which is a different promise about someone's database. Candidates are
+  chosen by declared width rather than by names like "status" or "type",
+  because the interesting column on someone else's schema is called something
+  this code has never heard of. Wide columns are never queried, primary keys
+  are skipped, and a column with more distinct values than the cap costs one
+  small query and is then dropped.
+
+- **Changed: the stack pins the version it installs.** cloud-init installed
+  `schemagate` unpinned, so a release published after someone downloaded the
+  stack changed what booted on it. It now installs the version the zip was cut
+  with, settable in the console form, with `""` still meaning newest. If the
+  pin is not on PyPI yet it says so and installs the newest rather than
+  leaving a machine with no schemagate and nothing explaining why.
+
+- **Added:** `oci/stack/verify-release.sh`, one command that checks PyPI has
+  the release before applying anything, runs the stack's own 6/6, and then
+  checks what 6/6 does not -- the library that was installed on the instance.
+  And `examples/oracle_local.py`, which starts Oracle in Docker, builds a
+  219-object schema with rows in it, and answers questions, so trying this
+  against Oracle does not start with three setup problems.
+
+Verified on live Oracle 26ai and PostgreSQL 16 running the same 219-object
+schema: one indexed catalog query, the same four denied claims from both, the
+same table withheld from a caller without the role, and the same UPDATE
+refused. 562 tests pass.
+
 ## 0.1.10
 
 Mostly library. The reflection the server does once it is up changed on both

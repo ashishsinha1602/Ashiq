@@ -2,7 +2,7 @@
 title: schemagate MCP server
 description: Identity-scoped schema selection for text-to-SQL, served over MCP from an Always-Free-eligible VM against an Autonomous Database. Catalogued by OCI Generative AI with no API key. The instance installs the library from PyPI (https://pypi.org/project/schemagate/); if you already have a database, `pip install schemagate` needs none of this.
 schemaVersion: 1.1.0
-version: "0.1.10"
+version: "0.1.11"
 locale: en
 variableGroups:
   - title: Where
@@ -20,7 +20,7 @@ variables:
     type: string
     title: schemagate version
     description: Version the instance installs from PyPI. Pinned to the version this stack was tested against, so a stack that worked when you downloaded it still works later. Leave empty to take whatever is newest.
-    default: "0.1.10"
+    default: "0.1.11"
     required: false
   tenancy_ocid: { type: oci:identity:compartment:id, visible: false }
   region: { type: oci:identity:region:name, required: true, title: Region }
