@@ -109,3 +109,69 @@ def test_unknown_routes_are_404(api):
     with pytest.raises(urllib.error.HTTPError) as e:
         call("/api/anything", {})
     assert e.value.code == 404
+
+
+def test_cataloguing_without_a_key_hands_back_a_prompt(api):
+    """The step that raises accuracy most is the one people skip, because it
+    used to mean a command line and a JSON file. Without a key it must still
+    be reachable: a prompt to paste into any chat."""
+    call, _ = api
+    out = call("/api/describe", {})
+    assert out["paste_prompt"] and out["pending"] > 0
+    assert "JSON object" in out["paste_prompt"]
+
+
+def test_only_metadata_is_ever_sent_for_cataloguing(api):
+    """The prompt carries names, types, comments and foreign keys. Never
+    rows. That promise is older than this endpoint and must survive it."""
+    call, state = api
+    prompt = call("/api/describe", {})["paste_prompt"]
+    # a value that exists in the demo data, and must not be in the prompt
+    with state.engine.connect() as conn:
+        from sqlalchemy import text
+        name = conn.execute(text("SELECT display_name FROM core_party LIMIT 1")).scalar()
+    assert name and name not in prompt
+
+
+def test_a_pasted_reply_is_applied_and_changes_selection(api):
+    """The point of cataloguing, asserted rather than assumed: a question
+    phrased in business words finds the table whose name shares none of them.
+    This is the 50% row in the README."""
+    call, _ = api
+    # "get paid" shares no words with `hr_compensation` or its columns --
+    # `annual_amount`, `pay_grade`. That is exactly the gap identifier
+    # matching cannot close and a description can.
+    q = "what does each person get paid"
+    # hr_compensation is restricted in this fixture, so ask as someone who may
+    # see it -- otherwise this would be testing the role check, not the
+    # description.
+    who = {"principal": "demo:hr", "roles": ["payroll"]}
+    before = [o["name"] for o in
+              call("/api/select", dict(question=q, top_k=4, **who))["objects"]]
+    assert "main.hr_compensation" not in before
+
+    call("/api/apply-descriptions", {"descriptions": json.dumps(
+        {"main.hr_compensation":
+         "What each employee is paid. | salary, wages, earnings, take home"})})
+    after = [o["name"] for o in
+             call("/api/select", dict(question=q, top_k=4, **who))["objects"]]
+    assert after[0] == "main.hr_compensation", after
+
+
+def test_a_reply_wrapped_in_code_fences_still_applies(api):
+    """Every chat window wraps JSON in ```json. Making the user strip that by
+    hand is a step that fails silently when they forget."""
+    call, _ = api
+    out = call("/api/apply-descriptions",
+               {"descriptions": '```json\n{"main.crm_customer": "People who buy from us."}\n```'})
+    assert out["written"] == 1
+
+
+def test_a_reply_that_is_not_json_says_so(api):
+    call, _ = api
+    assert "error" in call("/api/apply-descriptions", {"descriptions": "sure, here you go"})
+
+
+def test_descriptions_must_be_an_object_not_a_list(api):
+    call, _ = api
+    assert "error" in call("/api/apply-descriptions", {"descriptions": "[1, 2, 3]"})

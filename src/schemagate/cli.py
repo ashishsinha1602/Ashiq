@@ -392,6 +392,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Bare `schemagate` opens the browser rather than printing usage. Someone
+    # who has just installed this has a database and a question, not a
+    # subcommand in mind, and an argparse usage dump is the least useful thing
+    # to hand them at that moment.
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if not argv:
+        argv = ["studio"]
     args = build_parser().parse_args(argv)
     return args.func(args)
 

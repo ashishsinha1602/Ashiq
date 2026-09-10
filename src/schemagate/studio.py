@@ -158,6 +158,62 @@ class StudioState:
         picked["rows"] = [[None if v is None else str(v) for v in r] for r in rows]
         return picked
 
+    def describe(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Catalogue the live database with the configured model.
+
+        This is the step that actually raises accuracy, and it is the one
+        people skip because it used to mean a command line and a JSON file.
+        Descriptions are what turn "how much do we pay people" into
+        `hr_compensation`: matching identifiers cannot do it, because the
+        question and the table share no words.
+
+        Written once and kept in memory for this session. Only metadata is
+        sent -- names, types, comments, foreign keys -- never rows, which is
+        the same promise `describe_prompt` has always made.
+
+        With no provider configured this returns the prompt to paste into any
+        chat instead, so the benefit does not require a key.
+        """
+        cat = self.catalog
+        only_missing = bool(body.get("only_missing", True))
+        provider = self._provider()
+        if provider is None:
+            prompt = cat.describe_prompt(only_missing=only_missing)
+            return {"paste_prompt": prompt,
+                    "pending": len([d for d in cat._docs.values()
+                                    if not (d.description or d.hint)]),
+                    "error": self.provider_error} if prompt else {
+                    "paste_prompt": "", "pending": 0, "error": self.provider_error}
+
+        from .ai import SchemaDescriber
+        try:
+            written = cat.describe(SchemaDescriber(provider),
+                                   only_missing=only_missing)
+        except Exception as e:                            # noqa: BLE001
+            return {"error": f"{type(e).__name__}: {e}"}
+        cat.index()
+        sample = [{"name": d.qname, "description": d.description}
+                  for d in list(cat._docs.values()) if d.description][:8]
+        return {"written": written, "objects": len(cat._docs), "sample": sample}
+
+    def apply_descriptions(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Take back a JSON reply pasted from a chat window."""
+        raw = body.get("descriptions")
+        if isinstance(raw, str):
+            raw = raw.strip()
+            if raw.startswith("```"):        # a reply wrapped in fences
+                raw = raw.strip("`")
+                raw = raw[raw.find("{"):raw.rfind("}") + 1]
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError as e:
+                return {"error": f"that is not JSON: {e}"}
+        if not isinstance(raw, dict):
+            return {"error": "expected a JSON object of name -> description"}
+        written = self.catalog.describe(raw, only_missing=False)
+        self.catalog.index()
+        return {"written": written, "objects": len(self.catalog._docs)}
+
     def select(self, body: Dict[str, Any]) -> Dict[str, Any]:
         cat = self.catalog
         question = str(body.get("question") or "").strip()[:2000]
@@ -225,7 +281,8 @@ def _handler(state: StudioState):
                 self._json(404, {"error": "not found"})
 
         def do_POST(self):
-            if self.path not in ("/api/select", "/api/answer", "/api/settings"):
+            if self.path not in ("/api/select", "/api/answer", "/api/settings",
+                                 "/api/describe", "/api/apply-descriptions"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -236,6 +293,10 @@ def _handler(state: StudioState):
                     return self._json(200, state.set_settings(payload))
                 if self.path == "/api/answer":
                     return self._json(200, state.answer(payload))
+                if self.path == "/api/describe":
+                    return self._json(200, state.describe(payload))
+                if self.path == "/api/apply-descriptions":
+                    return self._json(200, state.apply_descriptions(payload))
                 return self._json(200, state.select(payload))
             except IdentityError as e:
                 return self._json(400, {"error": str(e)})
