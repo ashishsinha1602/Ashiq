@@ -9,12 +9,56 @@
 Picks the handful of tables an NL2SQL model actually needs, and never shows it
 tables the person asking isn't allowed to read.
 
+```bash
+pip install schemagate
+schemagate demo "which customers owe us money" --answer --provider anthropic --model <model-id>
+```
+
+```
+main.crm_customer   main.crm_contact   main.v_customer_balance   (+5)
+8 of 42 objects  ·  ~383 prompt tokens instead of ~2,036
+
+-- SQL written by Anthropic / claude-sonnet-5, from 8 tables
+SELECT c.id, p.display_name, v.account_number, v.invoiced, v.paid,
+       (v.invoiced - v.paid) AS balance_due
+FROM v_customer_balance v
+JOIN crm_customer c ON c.id = v.id_customer
+JOIN core_party  p ON p.id = c.id_party
+WHERE v.invoiced > v.paid
+
+id  display_name       account_number  invoiced  paid     balance_due
+--  -----------------  --------------  --------  -------  -----------
+1   Northwind Trading  ACC-1001        33960.0   22080.0  11880.0
+2   Kellner GmbH       ACC-1002        8760.0    3000.0   5760.0
+```
+
+Rows, from a question, with no database to set up — that runs against a
+bundled 42-object schema. Point it at your own with `--url`:
+
+```bash
+schemagate select "which customers owe us money" \
+  --url "postgresql+psycopg://user:pw@host/db" --answer --provider anthropic --model <model-id>
+```
+
+No key? Drop `--provider` and it prints a prompt to paste into any chat, then
+run the SQL it gives you back with `--sql "SELECT ..."`.
+
+## The part that is not a search box
+
+Same question, two callers — two commands, still no database:
+
+```bash
+schemagate demo "salary by employee"                                     # hr_compensation absent
+schemagate demo "salary by employee" --principal okta:hr --role payroll  # now it is first
+```
+
+Absent, not ranked low. A table the caller may not read never enters the
+prompt, so no rewording of the question reaches it and there is nothing to
+filter out of the answer afterwards.
+
 ![Same question, two callers. Without the payroll role hr_compensation is absent from the prompt; with it, it is the first table.](docs/media/before-after.png)
 
-*Same question, same person. Left: no `payroll` role, `hr_compensation` is absent
-from the prompt — not ranked low, absent. Right: role added, it is the first
-table. That decision happens before any SQL is written.
-[Try it in the browser](https://ashishsinha1602.github.io/schemagate/) — no
+*[Try it in the browser](https://ashishsinha1602.github.io/schemagate/) — no
 install, no database, no model call.*
 
 ```bash
@@ -298,6 +342,70 @@ provider = OpenAIProvider(model="gpt-4.1-mini",
                           embed_model="text-embedding-3-small")
 cat = Catalog(embedder=APIEmbedder(provider, dim=1536))
 ```
+
+## Restricting one column, and reading the ACL you already have
+
+An object-level rule cannot express the common case: the table is the right
+answer and one column in it is not.
+
+```python
+from schemagate import Catalog, Principal
+
+cat = Catalog().bootstrap("postgresql+psycopg://user:pw@host/db")
+cat.restrict_column("employee", "salary", ["payroll"])
+cat.index()
+
+analyst = Principal("okta:jdoe")
+print(cat.select("who reports to whom", principal=analyst).prompt_fragment())
+```
+
+`salary` is **absent** from that fragment — not `REDACTED`, not renamed. The
+name is itself the disclosure: a model that knows the column exists can ask
+about it, join on it, or mention it in an explanation. Any `-- FK` line naming
+a withheld column is dropped too, since it would put the identifier straight
+back.
+
+### What was shown, and to whom
+
+```python
+sel = cat.select("who reports to whom", principal=analyst)
+sel.to_dict()
+# {'question': 'who reports to whom',
+#  'principal': 'okta:jdoe', 'roles': [], 'total_objects': 219,
+#  'hits': [{'object': 'hr.employee', 'kind': 'TABLE', 'score': 0.031,
+#            'reason': 'hybrid', 'columns_shown': 3, 'columns_withheld': 1}]}
+```
+
+The record an auditor asks for after the fact, and the one thing that cannot
+be reconstructed later — the catalog will have changed, roles will have
+changed, and the question is gone. It carries the **count** of withheld
+columns, never their names: a log that lists what it withheld has disclosed it
+to everyone who can read the log.
+
+### Deriving visibility from GRANTs
+
+At forty tables a hand-written `restrict` map is fine. At four hundred it is a
+second copy of an ACL that already exists in the database, and two copies
+drift.
+
+```bash
+schemagate select "what do we pay our doctors" \
+  --url "postgresql+psycopg://user:pw@host/db" --restrict-from-grants
+```
+
+```python
+from schemagate.grants import restrict_from_grants
+report = restrict_from_grants(cat, engine, report=True)
+print(report)
+# postgresql: 629 object(s) seen, 218 restricted, 1 public, 0 unmatched, 1 role(s) expanded
+```
+
+PostgreSQL and Oracle. Nested roles are flattened transitively, so a user
+whose group maps to a role that inherits the granted one still reaches the
+object. An object with no grant row is **left untouched** and named in
+`report.objects_unmatched` — silence is not a denial, and restricting on
+absence would break a working catalog the first time a connection could not
+see everything.
 
 ## Databases
 

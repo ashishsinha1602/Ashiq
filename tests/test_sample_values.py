@@ -107,3 +107,50 @@ def test_values_render_alongside_a_comment_not_instead_of_it():
                values=["denied", "paid"])
     out = c.render()
     assert "one of: 'denied', 'paid'" in out and "claim state" in out
+
+
+# --- the TEXT bug ----------------------------------------------------------
+# `_candidates` used to skip unbounded TEXT as "assume prose". That silently
+# disabled --values for every string column in SQLite, where type affinity
+# declares almost everything TEXT, and for the many PostgreSQL schemas that
+# use `text` by convention rather than `varchar(n)`. Those users got nothing
+# and no indication why.
+
+@pytest.fixture
+def mixed(tmp_path):
+    path = tmp_path / "m.db"
+    con = sqlite3.connect(path)
+    con.executescript("""
+      CREATE TABLE claim_vc   (id INTEGER PRIMARY KEY, status VARCHAR(30));
+      CREATE TABLE claim_text (id INTEGER PRIMARY KEY, status TEXT, note TEXT);
+      INSERT INTO claim_vc   VALUES (1,'denied'),(2,'paid'),(3,'denied');
+      INSERT INTO claim_text VALUES
+        (1,'denied','the claim was rejected because prior authorisation was never obtained'),
+        (2,'paid','settled in full by bacs on the third of the month without adjustment'),
+        (3,'denied','coding does not match the recorded diagnosis for this encounter');
+    """)
+    con.commit(); con.close()
+    return f"sqlite:///{path}"
+
+
+def _col(docs, table, name):
+    return next(c for d in docs if d.name == table
+                for c in d.columns if c.name == name)
+
+
+def test_an_unbounded_text_column_yields_values_too(mixed):
+    docs = reflect(mixed, sample_values=True)
+    assert _col(docs, "claim_text", "status").values == ["denied", "paid"]
+
+
+def test_a_declared_varchar_still_yields_values(mixed):
+    docs = reflect(mixed, sample_values=True)
+    assert _col(docs, "claim_vc", "status").values == ["denied", "paid"]
+
+
+def test_long_prose_in_a_text_column_is_still_dropped(mixed):
+    """Judged on what came back rather than what was declared: an unbounded
+    column holding four short codes is a category, one holding a paragraph is
+    prose, and the paragraph is what says so."""
+    docs = reflect(mixed, sample_values=True)
+    assert _col(docs, "claim_text", "note").values is None

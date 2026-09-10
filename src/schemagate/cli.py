@@ -177,6 +177,14 @@ def _open(args) -> Catalog:
     if getattr(args, "config", None):
         from . import config as _config
         _config.apply(cat, _config.load(args.config))
+    # After --config on purpose: the database's own grants are the source of
+    # truth for who may see an object, and a hand-written file should not be
+    # able to quietly re-open something the server has revoked.
+    if getattr(args, "restrict_from_grants", False):
+        from .grants import restrict_from_grants
+        from sqlalchemy import create_engine
+        rep = restrict_from_grants(cat, create_engine(args.url), report=True)
+        print(rep, file=sys.stderr)
     return cat
 
 
@@ -319,6 +327,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="model id for --provider")
         p.add_argument("--limit", type=int, default=50, metavar="N",
                        help="rows to show from --answer (default 50)")
+        p.add_argument("--restrict-from-grants", action="store_true",
+                       help="set object visibility from the database's own "
+                            "GRANTs instead of a hand-written map")
         p.add_argument("--rerank", action="store_true",
                        help="let the model order the shortlist. The maths "
                             "still narrows hundreds of objects to ~20 for "

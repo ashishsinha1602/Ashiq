@@ -60,17 +60,40 @@ def test_settings_only_accept_known_keys(api):
     assert "catalog" not in state.settings and "engine" not in state.settings
 
 
-def test_a_provider_that_cannot_be_built_does_not_break_the_page(api):
-    """Wrong key, missing SDK, typo in the model -- selection must still work
-    and the answer must fall back to a prompt you can paste."""
+def test_a_provider_that_cannot_be_built_falls_back_to_the_paste_prompt(api):
+    """An unknown name, or an SDK that is not installed: nothing can be
+    constructed, so there is no model and the paste path is the answer.
+
+    This used to name a real provider with a wrong key, which made the test
+    depend on whether that optional SDK happened to be installed -- it passed
+    by hitting ImportError and started failing the moment the package was
+    present. An unknown name fails to build on every machine."""
     call, _ = api
-    call("/api/settings", {"provider": "anthropic", "model": "nope",
+    call("/api/settings", {"provider": "no-such-provider", "model": "nope",
                            "api_key": "wrong", "rerank": True})
     out = call("/api/answer", {"question": "which customers owe us money",
                                "top_k": 4})
     assert out["objects"], "selection stopped working because a provider failed"
     assert "paste_prompt" in out
     assert out.get("answer_error")          # says what went wrong
+
+
+def test_a_provider_that_builds_but_cannot_answer_reports_the_error(api):
+    """The other half: the provider constructs, the call fails -- a wrong key,
+    a rate limit, an outage. There is a model, so the paste path is not the
+    answer; the reason is."""
+    call, state = api
+    call("/api/settings", {"provider": "x", "model": "m"})
+
+    class Broken:
+        def complete(self, *a, **k):
+            raise RuntimeError("401 invalid x-api-key")
+
+    state._provider = lambda: Broken()
+    out = call("/api/answer", {"question": "which customers owe us money"})
+    assert out["objects"], "selection stopped working because a provider failed"
+    assert "paste_prompt" not in out
+    assert "401" in out["answer_error"]
 
 
 def test_with_no_provider_the_answer_is_a_prompt_to_paste(api):

@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.1.13
+
+Two things promised in public and not shipped for twelve releases, a live bug,
+and the objection that ends evaluations.
+
+- **Added: column-level restriction.** `Catalog.restrict_column(table, column,
+  roles)`. The object-level rule could not express the common case -- the table
+  is the right answer and one column in it is not. A restricted column is
+  **absent** from the DDL, not masked: `ssn REDACTED` tells a model the table
+  holds one, and a model that knows a column exists can ask about it, join on
+  it, or mention it in an explanation. Any `-- FK` line naming a withheld
+  column is dropped too, since it would put the identifier straight back.
+
+  Object and column visibility now go through one function, `models.allowed`.
+  Two copies of a visibility rule drift, and a drifted ACL is the failure this
+  library exists to prevent.
+
+- **Added: `Selection.to_dict()`.** The record an auditor asks for afterwards
+  and the one thing that cannot be reconstructed later -- the catalog will
+  have changed, the roles will have changed, and the question is gone. It
+  carries the count of withheld columns, never their names: a log that lists
+  what it withheld has disclosed it to everyone who can read the log.
+
+- **Fixed: `--values` did nothing for TEXT columns.** `_candidates` skipped
+  unbounded TEXT as "assume prose", which silently disabled the feature for
+  every string column in SQLite, where type affinity declares almost
+  everything TEXT, and for the many PostgreSQL schemas that use `text` by
+  convention rather than `varchar(n)`. Those users got nothing and no
+  indication why. Unbounded columns are now sampled and judged on the data
+  that comes back rather than the width that was declared.
+
+- **Added: `--restrict-from-grants`** and `schemagate.grants`. At forty tables
+  a hand-written restrict map is fine; at four hundred it is a second copy of
+  an ACL that already exists in the database, and two copies drift. Reads
+  PostgreSQL and Oracle, flattens nested roles transitively, and leaves an
+  object with no grant row untouched -- silence is not a denial, and
+  restricting on absence would break a working catalog the first time a
+  connection could not see everything.
+
+  Two bugs in that SQL were found only by running it against live servers,
+  which is why it was not shipped until they had. `pg_get_userbyid(0)` renders
+  PUBLIC as `unknown (OID=0)`, so the PUBLIC rule never fired and every
+  world-readable table came back restricted to a role nobody holds. And the
+  role graph was inverted: it expanded upward to parent roles instead of
+  downward to the roles that inherit the granted one, handing an object
+  granted to a narrow role to every broader role above it. An over-grant is
+  the direction that leaks rather than annoys.
+
+- **Fixed:** `Scored.reason` documented `vector | lexical | fk | pinned` while
+  `hybrid` was also emitted -- a value the type said could not occur.
+
+- **Docs:** the README now opens with a command that returns rows rather than
+  a list of table names, and the identity claim is two commands with no
+  database. `CONTRIBUTING.md` records the rules the tests enforce, including
+  that vendor SQL is not tested until an instance has run it.
+
+657 tests, no warnings, ruff and mypy clean across 30 source files. Grant
+readers verified against live PostgreSQL 16 and Oracle 26ai.
+
 ## 0.1.12
 
 The version that stops needing a terminal, and the one where a model can help

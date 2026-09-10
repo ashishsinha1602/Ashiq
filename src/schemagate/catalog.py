@@ -14,7 +14,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 from .embedder import Embedder, HashingEmbedder, tokenize
 from .identity import Principal
-from .models import ObjectDoc, Scored, Selection
+from .models import ObjectDoc, Scored, Selection, allowed
 from .stores.memory import MemoryStore
 
 _RRF_K = 60
@@ -205,6 +205,29 @@ class Catalog:
             parts.append("")
         return "\n".join(parts).rstrip() + "\n"
 
+    def restrict_column(self, table: str, column: str,
+                        roles: Sequence[str]) -> None:
+        """Make one column visible only to principals holding one of ``roles``.
+
+        For the case the object-level rule cannot express: the table is the
+        right answer and one column in it is not -- salary on an employee
+        table, a national insurance number on a patient. Restricting the whole
+        object would make the question unanswerable; leaving it open puts the
+        column in the prompt.
+
+        Raises ``KeyError`` for an unknown table or column rather than
+        succeeding quietly. A typo in an ACL that reports success is a
+        restriction that silently is not there.
+        """
+        for qname, doc in self._docs.items():
+            if qname == table or doc.name == table:
+                for col in doc.columns:
+                    if col.name == column:
+                        col.roles = list(roles)
+                        return
+                raise KeyError(f"{table!r} has no column {column!r}")
+        raise KeyError(f"{table!r} not in catalog")
+
     def restrict(self, table: str, roles: Sequence[str]) -> None:
         """Make an object visible only to principals holding one of ``roles``.
 
@@ -327,11 +350,7 @@ class Catalog:
     # ---------------- select ----------------
 
     def _visible(self, doc: ObjectDoc, principal: Optional[Principal]) -> bool:
-        if not doc.roles:
-            return True
-        if principal is None:
-            return False
-        return principal.has_any_role(frozenset(doc.roles))
+        return allowed(doc.roles, principal)
 
     def select(self, question: str, top_k: int = 6,
                principal: Optional[Principal] = None,
@@ -433,4 +452,5 @@ class Catalog:
                             chosen.append(Scored(d, 0.0, "fk"))
                             taken.add(q)
 
-        return Selection(question=question, hits=chosen, total_objects=len(self._order))
+        return Selection(question=question, hits=chosen,
+                         total_objects=len(self._order), principal=principal)

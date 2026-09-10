@@ -96,6 +96,20 @@ _MAX_WIDTH = 40
 
 
 def _candidates(raw_cols, pk_names) -> "List[str]":
+    """Columns worth one small query each.
+
+    Declared width used to decide this on its own, and unbounded TEXT was
+    skipped as "assume prose". That silently disabled the whole feature for
+    SQLite, where type affinity declares almost everything TEXT, and for the
+    many PostgreSQL schemas that use `text` by convention instead of
+    `varchar(n)`. Those users got nothing, with nothing to say why.
+
+    So a declared width still rules a column out when it is wide -- a
+    VARCHAR(4000) really is prose and there is no reason to ask -- but no
+    declared width no longer rules one out. An unbounded column is asked, and
+    then judged on what actually came back, in `_sample_values`. The cost is
+    the same one bounded query either way.
+    """
     out = []
     for c in raw_cols:
         if c["name"] in pk_names:          # a key is not a category
@@ -106,8 +120,6 @@ def _candidates(raw_cols, pk_names) -> "List[str]":
         width = m.group(3)
         if width is not None and int(width) > _MAX_WIDTH:
             continue
-        if width is None and m.group(1).upper() == "TEXT":
-            continue                       # unbounded: assume prose
         out.append(c["name"])
     return out
 
@@ -150,7 +162,13 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
                 continue
             if not rows or len(rows) > max_distinct:
                 continue
-            found[n] = sorted(str(r[0]) for r in rows)
+            vals = sorted(str(r[0]) for r in rows)
+            # Judged on what came back, not on what was declared. An unbounded
+            # TEXT column holding four short codes is a category; one holding a
+            # paragraph is prose, and the paragraph is what says so.
+            if any(len(v) > _MAX_WIDTH for v in vals):
+                continue
+            found[n] = vals
     return found or None
 
 

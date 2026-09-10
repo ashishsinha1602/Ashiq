@@ -4,6 +4,25 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
+def allowed(roles: Optional[List[str]], principal: Any) -> bool:
+    """Whether ``principal`` may see something guarded by ``roles``.
+
+    One function for objects and for columns, deliberately. Two copies of a
+    visibility rule drift, and a drifted ACL is the failure this library
+    exists to prevent -- so there is one rule and both callers use it.
+
+    No roles means everyone: absence of a restriction is not a restriction.
+    Roles with no principal means nobody, which is the important half. An
+    anonymous caller failing open would hand every restricted column to the
+    first request that forgot to say who it was for.
+    """
+    if not roles:
+        return True
+    if principal is None:
+        return False
+    return principal.has_any_role(frozenset(roles))
+
+
 def _identifiers(sql: str, limit: int = 1200) -> str:
     """Distinct identifiers from view SQL, keywords stripped."""
     import re
@@ -61,6 +80,11 @@ class Column:
     nullable: bool = True
     comment: Optional[str] = None
     pk: bool = False
+    #: Roles that may see this column. None means everyone, the same as on
+    #: ObjectDoc. A column-level restriction is for the case where the table
+    #: is the answer and one column in it is not: salary on an employee table,
+    #: a national insurance number on a patient.
+    roles: Optional[List[str]] = None
     #: The distinct values this column actually holds, when there are few
     #: enough to be worth saying. Empty unless reflection was asked to look:
     #: it is the one thing here that reads data rather than the catalog.
@@ -132,19 +156,36 @@ class ObjectDoc:
             parts.append(_identifiers(self.definition))
         return " \n".join(p for p in parts if p)
 
-    def render_ddl(self, max_columns: int = 40) -> str:
+    def visible_columns(self, principal: Any = None) -> List[Column]:
+        """The columns this caller may see, in declaration order."""
+        return [c for c in self.columns if allowed(c.roles, principal)]
+
+    def render_ddl(self, max_columns: int = 40, principal: Any = None) -> str:
+        """The DDL for this object as one caller may see it.
+
+        A restricted column is absent -- not masked, not renamed, no REDACTED
+        placeholder. The name is itself the disclosure: `ssn REDACTED` tells a
+        model the table holds one, and a model that knows a column exists can
+        ask about it, join on it, or mention it in an explanation. A name that
+        was never in the prompt cannot be referenced.
+        """
         head = f"{self.kind} {self.qname}"
         note = _one_line(self.hint or _sentence(self.description))
         lines = [f"-- {note}" if note else "", head + " ("]
-        cols = self.columns[:max_columns]
+        visible = self.visible_columns(principal)
+        cols = visible[:max_columns]
         lines += [f"  {c.render()}," for c in cols]
-        if len(self.columns) > max_columns:
-            lines.append(f"  -- ...{len(self.columns) - max_columns} more columns")
+        if len(visible) > max_columns:
+            lines.append(f"  -- ...{len(visible) - max_columns} more columns")
         if lines[-1].endswith(","):
             lines[-1] = lines[-1][:-1]
         lines.append(")")
+        # A foreign-key line names its columns, so it puts back the exact
+        # identifier the loop above just withheld. Drop any line that does.
+        shown = {c.name for c in visible}
         for fk in self.foreign_keys:
-            lines.append(f"-- FK {self.name}({','.join(fk.columns)}) -> {fk.ref_table}")
+            if all(c in shown for c in fk.columns):
+                lines.append(f"-- FK {self.name}({','.join(fk.columns)}) -> {fk.ref_table}")
         return "\n".join(l for l in lines if l)
 
 
@@ -152,7 +193,11 @@ class ObjectDoc:
 class Scored:
     doc: ObjectDoc
     score: float
-    reason: str = "vector"     # vector | lexical | fk | pinned
+    #: Why this object was selected. `hybrid` means both the vector and the
+    #: lexical index ranked it, which is the strongest signal available and
+    #: was missing from this list for long enough that `Selection.explain()`
+    #: printed a value the type said could not occur.
+    reason: str = "vector"     # hybrid | vector | lexical | fk | pinned
 
 
 @dataclass
@@ -161,6 +206,11 @@ class Selection:
     question: str
     hits: List[Scored]
     total_objects: int = 0
+    #: Who this selection was made for. Carried on the result rather than
+    #: passed to `prompt_fragment` by the caller, because the fragment and the
+    #: audit record must describe the same caller -- a selection rendered for
+    #: someone other than the principal it was scored for is a hole.
+    principal: Any = None
 
     @property
     def objects(self) -> List[ObjectDoc]:
@@ -182,7 +232,33 @@ class Selection:
         return [d.qname for d in self.objects]
 
     def prompt_fragment(self, max_columns: int = 40) -> str:
-        return "\n\n".join(d.render_ddl(max_columns) for d in self.objects)
+        return "\n\n".join(d.render_ddl(max_columns, principal=self.principal)
+                            for d in self.objects)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """A record of what was shown to whom, and what was held back.
+
+        The thing an auditor asks for after the fact, and the thing that is
+        impossible to reconstruct later: the catalog changes, roles change,
+        and the question is gone. `columns_withheld` is the count, never the
+        names -- a log that lists the columns it withheld has disclosed them
+        to everyone who can read the log.
+        """
+        who = self.principal
+        return {
+            "question": self.question,
+            "principal": getattr(who, "subject", None),
+            "roles": sorted(getattr(who, "roles", None) or []),
+            "total_objects": self.total_objects,
+            "hits": [{
+                "object": h.doc.qname,
+                "kind": h.doc.kind,
+                "score": h.score,
+                "reason": h.reason,
+                "columns_shown": len(h.doc.visible_columns(who)),
+                "columns_withheld": len(h.doc.columns) - len(h.doc.visible_columns(who)),
+            } for h in self.hits],
+        }
 
     def explain(self) -> str:
         return "\n".join(
