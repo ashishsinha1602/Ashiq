@@ -43,6 +43,38 @@ def _print_selection(sel, show_prompt: bool, show_explain: bool) -> None:
             print(f"  {name}")
 
 
+def _provider(args):
+    """Build the provider the user asked for. Never picks one on its own.
+
+    There is no default model id here and there will not be: they change
+    often enough that a stale default fails with a confusing error months
+    after it was written. `--provider auto` still needs `--model`; it only
+    chooses which service by whichever API key is in the environment.
+    """
+    if not args.model:
+        sys.exit("schemagate: --model is required with --provider "
+                 "(model ids change too often to have a default)")
+    from .ai import providers as _p
+    classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
+               "gemini": _p.GeminiProvider, "oci": _p.OCIGenAIProvider,
+               "local": _p.LocalProvider}
+    if args.provider == "auto":
+        return _p.auto_provider(args.model)
+    if args.provider in classes:
+        return classes[args.provider](model=args.model)
+    sys.exit(f"schemagate: unknown provider {args.provider!r}; use "
+             "anthropic, openai, gemini, oci, local or auto")
+
+
+def _reranker(args):
+    """A model to order the shortlist, when asked for and only then."""
+    if not getattr(args, "rerank", False):
+        return None
+    if not getattr(args, "provider", None) or args.provider == "none":
+        sys.exit("schemagate: --rerank needs --provider and --model")
+    return _provider(args)
+
+
 def _answer(cat, sel, question, args, url) -> None:
     """Selection is the library's job; this is the step after it.
 
@@ -69,22 +101,8 @@ def _answer(cat, sel, question, args, url) -> None:
         print(sql_prompt(question, fragment, dialect))
         return
 
-    if not args.model:
-        sys.exit("schemagate: --model is required with --provider "
-                 "(model ids change too often to have a default)")
-
-    from .ai import providers as _p
-    classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
-               "gemini": _p.GeminiProvider, "oci": _p.OCIGenAIProvider,
-               "local": _p.LocalProvider}
     try:
-        if args.provider == "auto":
-            provider = _p.auto_provider(args.model)
-        elif args.provider in classes:
-            provider = classes[args.provider](model=args.model)
-        else:
-            sys.exit(f"schemagate: unknown provider {args.provider!r}; use "
-                     "anthropic, openai, gemini, oci, local or auto")
+        provider = _provider(args)
         sql = generate_sql(provider, question, fragment, dialect)
     except UnsafeSQL as e:
         sys.exit(f"schemagate: refused the generated SQL -- {e}")
@@ -138,7 +156,8 @@ def cmd_demo(args) -> int:
     print("hr_compensation is restricted to the 'payroll' role.\n")
     for question in questions:
         print(f"> {question}")
-        sel = cat.select(question, top_k=args.top_k, principal=principal)
+        sel = cat.select(question, top_k=args.top_k, principal=principal,
+                         reranker=_reranker(args))
         _print_selection(sel, args.prompt, args.explain)
         if args.answer:
             _answer(cat, sel, question, args, url)
@@ -166,7 +185,7 @@ def cmd_select(args) -> int:
         return _run_sql_only(args, args.url)
     cat = _open(args)
     sel = cat.select(args.question, top_k=args.top_k, principal=_principal(args),
-                     expand_fks=not args.no_fk)
+                     expand_fks=not args.no_fk, reranker=_reranker(args))
     _print_selection(sel, args.prompt, args.explain)
     if args.answer:
         _answer(cat, sel, args.question, args, args.url)
@@ -301,6 +320,11 @@ def build_parser() -> argparse.ArgumentParser:
                        help="model id for --provider")
         p.add_argument("--limit", type=int, default=50, metavar="N",
                        help="rows to show from --answer (default 50)")
+        p.add_argument("--rerank", action="store_true",
+                       help="let the model order the shortlist. The maths "
+                            "still narrows hundreds of objects to ~20 for "
+                            "free; this fixes the ordering, which is where "
+                            "matching on names is weakest")
         p.add_argument("--values", action="store_true",
                        help="also read the distinct values of short string "
                             "columns, so the model does not have to guess "

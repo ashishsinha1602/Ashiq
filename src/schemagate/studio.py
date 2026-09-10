@@ -41,12 +41,18 @@ class StudioState:
     """One catalog, one optional described twin, served by the handlers."""
 
     def __init__(self, catalog: Catalog, title: str, blurb: str,
-                 questions: Optional[List[str]] = None):
+                 questions: Optional[List[str]] = None, engine=None):
         self.catalog = catalog
         self.title = title
         self.blurb = blurb
         self.questions = questions or []
         self.described: Optional[Catalog] = None
+        #: Needed to run the SQL a model writes. Without it the page can still
+        #: select and still hand you a prompt to paste -- it just cannot show
+        #: you rows.
+        self.engine = engine
+        self.settings: Dict[str, Any] = {}
+        self.provider_error: Optional[str] = None
 
     def schemas_json(self) -> Dict[str, Any]:
         """The shape the page expects: docs are not needed server-side, but
@@ -60,6 +66,98 @@ class StudioState:
             "questions": self.questions, "golden": {},
         }}
 
+    #: Set from the page rather than the command line. A key typed into a
+    #: form does not end up in shell history, in a screen share of a terminal,
+    #: or in a screenshot of a command -- which is where the last three keys
+    #: in this project's history leaked from. It is held in memory for the
+    #: life of the process and never written to disk.
+    def set_settings(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        allowed = {"provider", "model", "api_key", "rerank", "answer"}
+        self.settings.update({k: v for k, v in body.items() if k in allowed})
+        return self.describe_settings()
+
+    def describe_settings(self) -> Dict[str, Any]:
+        """Never returns the key itself -- only whether one is set."""
+        st = self.settings
+        return {"provider": st.get("provider") or "", "model": st.get("model") or "",
+                "has_key": bool(st.get("api_key")), "rerank": bool(st.get("rerank")),
+                "answer": bool(st.get("answer"))}
+
+    def _provider(self):
+        """The configured provider, or None -- never an exception.
+
+        A key typed into a form is wrong more often than one exported in a
+        shell, and the page must survive that. A provider that cannot be
+        built degrades to "no provider": selection still works offline,
+        reranking is skipped, and answering falls back to a prompt you can
+        paste. The reason is kept so the page can say what went wrong instead
+        of failing silently.
+        """
+        st = self.settings
+        name, model, key = st.get("provider"), st.get("model"), st.get("api_key")
+        self.provider_error = None
+        if not name or name == "none" or not model:
+            return None
+        try:
+            from .ai import providers as _p
+            classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
+                       "gemini": _p.GeminiProvider, "oci": _p.OCIGenAIProvider,
+                       "local": _p.LocalProvider}
+            cls = classes.get(name)
+            if cls is None:
+                self.provider_error = f"unknown provider {name!r}"
+                return None
+            if cls is _p.LocalProvider:
+                return cls(model=model)
+            if cls is _p.OCIGenAIProvider:
+                return cls(model=model, compartment_id=key) if key else cls(model=model)
+            return cls(model=model, api_key=key) if key else cls(model=model)
+        except Exception as e:                            # noqa: BLE001
+            self.provider_error = f"{type(e).__name__}: {e}"
+            return None
+
+    def answer(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Question in, rows out -- the step after selection.
+
+        The SQL only ever sees the objects select() returned, so a table this
+        principal cannot see is not in the prompt and cannot be queried.
+        """
+        from .answer import (UnsafeSQL, generate_sql, run_sql, sql_prompt)
+
+        picked = self.select(body)
+        if "error" in picked:
+            return picked
+        question = str(body.get("question") or "").strip()[:2000]
+        fragment = picked["ddl"]
+        engine = getattr(self, "engine", None)
+        dialect = engine.dialect.name if engine is not None else ""
+
+        provider = self._provider()
+        if provider is None:
+            picked["paste_prompt"] = sql_prompt(question, fragment, dialect)
+            if self.provider_error:
+                picked["answer_error"] = self.provider_error
+            return picked
+        try:
+            picked["sql"] = generate_sql(provider, question, fragment, dialect)
+        except UnsafeSQL as e:
+            picked["answer_error"] = f"refused the generated SQL: {e}"
+            return picked
+        except Exception as e:                            # noqa: BLE001
+            picked["answer_error"] = f"{type(e).__name__}: {e}"
+            return picked
+        if engine is None:
+            picked["answer_error"] = "no engine to run against"
+            return picked
+        try:
+            cols, rows = run_sql(engine, picked["sql"], limit=50)
+        except Exception as e:                            # noqa: BLE001
+            picked["answer_error"] = f"{type(e).__name__}: {e}"
+            return picked
+        picked["columns"] = list(cols)
+        picked["rows"] = [[None if v is None else str(v) for v in r] for r in rows]
+        return picked
+
     def select(self, body: Dict[str, Any]) -> Dict[str, Any]:
         cat = self.catalog
         question = str(body.get("question") or "").strip()[:2000]
@@ -69,7 +167,8 @@ class StudioState:
         who = None
         if body.get("principal"):
             who = Principal(str(body["principal"]), roles={str(r) for r in body.get("roles") or []})
-        sel = cat.select(question, top_k=top_k, principal=who)
+        reranker = self._provider() if self.settings.get("rerank") else None
+        sel = cat.select(question, top_k=top_k, principal=who, reranker=reranker)
         visible = [d for d in cat._docs.values() if cat._visible(d, who)]
         hidden = [d.qname for d in cat._docs.values() if not cat._visible(d, who)]
         full = "\n\n".join(d.render_ddl() for d in visible)
@@ -120,17 +219,23 @@ def _handler(state: StudioState):
                 self.wfile.write(body)
             elif self.path == "/api/health":
                 self._json(200, {"status": "ok", "objects": len(state.catalog._docs)})
+            elif self.path == "/api/settings":
+                self._json(200, state.describe_settings())
             else:
                 self._json(404, {"error": "not found"})
 
         def do_POST(self):
-            if self.path != "/api/select":
+            if self.path not in ("/api/select", "/api/answer", "/api/settings"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 if not isinstance(payload, dict):
                     return self._json(400, {"error": "body must be a JSON object"})
+                if self.path == "/api/settings":
+                    return self._json(200, state.set_settings(payload))
+                if self.path == "/api/answer":
+                    return self._json(200, state.answer(payload))
                 return self._json(200, state.select(payload))
             except IdentityError as e:
                 return self._json(400, {"error": str(e)})
@@ -168,8 +273,11 @@ def serve(state: StudioState, host: str = "127.0.0.1", port: int = 8770,
 def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
          open_browser: bool = True, include=None, exclude=None,
          config: Optional[str] = None) -> int:
+    engine = None
     if url:
-        cat = Catalog(name="studio").bootstrap(url, include=include, exclude=exclude)
+        from sqlalchemy import create_engine
+        engine = create_engine(url)
+        cat = Catalog(name="studio").bootstrap(engine, include=include, exclude=exclude)
         if config:
             from . import config as _config
             _config.apply(cat, _config.load(config))
@@ -177,14 +285,17 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         blurb = f"{len(cat._docs)} objects reflected. Hints, restrictions and descriptions come from --config."
         questions: List[str] = []
     else:
+        from sqlalchemy import create_engine
         from .demo_schema import GOLDEN, HINTS, create_demo_db
-        cat = Catalog(name="studio").bootstrap(create_demo_db())
+        demo_url = create_demo_db()
+        engine = create_engine(demo_url)
+        cat = Catalog(name="studio").bootstrap(engine)
         for table, text in HINTS.items():
             cat.hint(table, text)
         cat.restrict("hr_compensation", ["payroll"])
         title, blurb = "Demo schema", "42 objects. Pass --url to run this against your own database."
         questions = [q for q, _ in GOLDEN]
-    state = StudioState(cat, title, blurb, questions)
+    state = StudioState(cat, title, blurb, questions, engine=engine)
     server = serve(state, host, port, open_browser)
     try:
         while True:
