@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.1.12
+
+The version that stops needing a terminal, and the one where a model can help
+pick the tables rather than only write the SQL.
+
+- **Added: Studio does the whole job now.** It used to take a question and
+  show you tables. It now has a model panel (provider, model, key, and
+  switches for ranking and answering), an AI catalog panel, and an answer
+  panel that shows the SQL and the rows. `schemagate` with no arguments opens
+  it. The key is a password field, held in memory for the life of the
+  process, never written to disk, and never returned by the API -- so a
+  screenshot of Studio does not leak it. A blank key field means "keep the
+  one you have", because making someone retype a key to flip a checkbox is
+  the friction that ends with keys in shell history.
+
+- **Added: `--rerank`, and the same switch in Studio.** Matching identifiers
+  has a ceiling this project has always published: recall@6 is 100% across
+  five test schemas and 50% on the one where questions use business words
+  rather than table words. Nothing fixes that row by weighting, because
+  "doctors" and `provider` share no characters. So the maths narrows hundreds
+  of objects to twenty for free, and a model orders those twenty. One small
+  call over one-line summaries -- no DDL in the prompt.
+
+  It cannot widen access: the model is handed the list `select()` already
+  filtered by principal, so a restricted table is not in the prompt to
+  promote. And it cannot make things worse: a provider that raises, times out
+  or answers with prose leaves the maths order untouched.
+
+- **Added: cataloguing from the browser, with or without a key.** With a
+  model it catalogues in place; without one it hands over the prompt and
+  takes the JSON reply back, code fences and all. This is the step that
+  raises accuracy most and the one people skip, and until now skipping it was
+  the only option in the UI.
+
+- **Fixed: `hidden` did not hide.** It loses to any element carrying an
+  explicit display, and both `.pane` and `section` set one, so the answer
+  panel sat on the page, empty, whether or not answering was switched on.
+  Found by driving the real page in a browser rather than trusting the
+  markup.
+
+- **Fixed: parsing a model's reply mistook table names for choices.** A plain
+  `\d+` reads `main.t3` as the number 3 and `tbl_183` as 183. The schema this
+  was measured against has 180 tables named `stg_feed_007` and
+  `audit_event_042`, so every one of them was a live mis-parse. Caught by
+  writing the test from a real reply shape before it ever reached a paid
+  model.
+
+- **Cleaned:** fourteen unused imports, sixteen type errors, and a warning
+  the suite emitted at itself on every run. None broke anything, which is why
+  they survived -- but a run with a warning in it trains you to skip reading
+  the output, and that is how a real one gets missed.
+
+618 tests, no warnings, ruff and mypy clean across all 29 source files.
+Verified live on Oracle 26ai and PostgreSQL 16 running the same 219-object
+schema, and through the browser DOM: ask as an analyst, get `billing_payment`;
+add the payroll role and one pasted description, and the pay table is first.
+
 ## 0.1.11
 
 **Install this rather than 0.1.10 if you use Oracle.** 0.1.10 shipped a
