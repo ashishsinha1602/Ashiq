@@ -43,5 +43,6 @@ locals {
     create_adb         = var.create_adb ? "true" : "false"
     adb_display_name   = local.adb_display_name
     adb_admin_password = var.adb_admin_password
+    schemagate_version = var.schemagate_version
   })
 }

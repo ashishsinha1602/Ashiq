@@ -63,9 +63,38 @@ passed throughout; none of these were visible without one.
   already uses, so it reads no catalog view this module was not already
   reading.
 
+- **Added: `--answer`.** Selecting six tables and stopping there is half a
+  pipeline. `--answer` writes the SQL from those six and runs it. The model
+  stays yours: with no `--provider` it prints a prompt to paste into any chat
+  and calls nobody, `--sql` runs what you paste back, and a provider is used
+  only when you name one, with your own key. There is no default model id.
+  Every run says which provider and model wrote the SQL, which matters under
+  `--provider auto` -- that picks by whichever key is in the environment, and
+  you should not have to guess which service received your schema.
+  Generated SQL is refused unless it is a single SELECT or WITH, including
+  when a second statement is hidden after a `--` or `/* */` comment.
+
+- **Fixed: `describe --provider none` exited asking for a `--model`** it would
+  never use -- so the one documented path for people without an API key was
+  the one that did not work.
+
+- **Changed: the stack pins the version it installs.** cloud-init installed
+  `schemagate` unpinned, so a release published after someone downloaded the
+  stack changed what booted on it -- a stack that worked last month failing
+  with nothing in the zip to explain why. It now installs the version the zip
+  was cut with, settable in the console form, and `""` still means newest. If
+  the pin is not on PyPI yet it says so and installs the newest rather than
+  leaving a machine with no schemagate and no explanation.
+
 Measured on PostgreSQL 16 with PostGIS, 405 objects across 10 schemas: one
 catalog query for the whole reflection (not 405), 2.8 s to bootstrap, 16 ms
 median selection, and a 1,037-character prompt covering 6 of 405 objects.
+
+Then verified again on the same 219-object hospital schema built twice, once
+on Oracle 26ai and once on PostgreSQL 16, with the same commands against
+both: the same four denied claims came back, the same table was withheld from
+a caller without the role, and the same UPDATE was refused. The two engines
+share nothing but SQLAlchemy and did not diverge.
 
 ## 0.1.9
 

@@ -45,6 +45,7 @@ write_files:
       SCHEMAGATE_CREATE_ADB=${create_adb}
       SCHEMAGATE_ADB_DISPLAY_NAME=${adb_display_name}
       SCHEMAGATE_ADB_PASSWORD='${adb_admin_password}'
+      SCHEMAGATE_VERSION=${schemagate_version}
   - path: /etc/schemagate/catalog.json
     content: |
       {"restrict": {}, "hint": {}, "describe": {}}
@@ -73,7 +74,20 @@ write_files:
       else
         extras="$extras,mcp"
       fi
-      echo "database URL scheme -> installing schemagate[$extras]"
+      # Pinned by default. An unpinned install means a release published
+      # after this stack was downloaded changes what boots, which is how a
+      # stack that worked last month starts failing for no visible reason.
+      # SCHEMAGATE_VERSION="" opts back into "whatever is newest".
+      # Written as an `if` and not `[ -n "$V" ] && spec=...` on purpose: that
+      # form is the last command in the script when the version is empty, so
+      # under `set -e` -- or as the exit status of the unit that runs this --
+      # an empty version would read as failure.
+      if [ -n "$SCHEMAGATE_VERSION" ]; then
+        spec="schemagate[$extras]==$SCHEMAGATE_VERSION"
+      else
+        spec="schemagate[$extras]"
+      fi
+      echo "database URL scheme -> installing $spec"
       # --no-compile is the difference between a usable first boot and an
       # unusable one on a 1-OCPU Always Free shape. Byte-compiling the OCI SDK
       # there costs minutes of pure CPU, and it buys nothing: Python compiles
@@ -81,7 +95,14 @@ write_files:
       # --prefer-binary so no driver is built from source; --no-cache-dir
       # because nothing here is installed twice.
       /opt/schemagate/bin/pip install --prefer-binary --no-compile --no-cache-dir \
-        --disable-pip-version-check "schemagate[$extras]"
+        --disable-pip-version-check "$spec" || {
+        # A pin that PyPI does not have yet would otherwise leave the machine
+        # with no schemagate at all and nothing saying why. Say so, then
+        # install the newest rather than booting into a dead endpoint.
+        echo "WARNING: $spec is not installable; falling back to the newest release" >&2
+        /opt/schemagate/bin/pip install --prefer-binary --no-compile --no-cache-dir \
+          --disable-pip-version-check "schemagate[$extras]"
+      }
       # resolve-db.sh waits on this rather than on `import oci`, which would
       # start succeeding part-way through the install above.
       touch /opt/schemagate/.ready

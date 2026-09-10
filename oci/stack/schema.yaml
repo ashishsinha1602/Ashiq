@@ -13,7 +13,15 @@ variableGroups:
     variables: [catalog_provider, catalog_model]
   - title: Instance
     variables: [ssh_public_key, instance_shape, instance_ocpus, instance_memory_gbs, availability_domain, allowed_cidr, ssh_cidr, mcp_port]
+  - title: Advanced
+    variables: [schemagate_version]
 variables:
+  schemagate_version:
+    type: string
+    title: schemagate version
+    description: Version the instance installs from PyPI. Pinned to the version this stack was tested against, so a stack that worked when you downloaded it still works later. Leave empty to take whatever is newest.
+    default: "0.1.10"
+    required: false
   tenancy_ocid: { type: oci:identity:compartment:id, visible: false }
   region: { type: oci:identity:region:name, required: true, title: Region }
   compartment_ocid: { type: oci:identity:compartment:id, required: true, title: Compartment }

@@ -127,3 +127,14 @@ variable "adb_allowed_cidrs" {
   default     = []
   description = "Optional access-control list for the database this stack creates: public CIDRs allowed to connect. Empty means reachable from the internet with TLS and the ADMIN password only -- fine for the throwaway demo database, not for your own data. If you set it, include the instance's own public IP or the MCP server will not be able to connect."
 }
+
+variable "schemagate_version" {
+  type        = string
+  default     = "0.1.10"
+  description = "schemagate version the instance installs. Pinned so a stack that worked when you downloaded it still works later: the zip and the PyPI release are cut together, so this is the version this stack was actually tested against. Set it to \"\" to take whatever is newest on PyPI instead."
+
+  validation {
+    condition     = var.schemagate_version == "" || can(regex("^[0-9]+\\.[0-9]+(\\.[0-9]+)?([a-z0-9.]*)$", var.schemagate_version))
+    error_message = "Give a version like 0.1.10, or \"\" for the newest on PyPI."
+  }
+}

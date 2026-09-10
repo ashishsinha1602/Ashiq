@@ -307,3 +307,37 @@ def test_no_unit_blocks_on_restarting_a_unit_ordered_after_it():
                 if "systemctl restart" in ln and "--no-block" not in ln
                 and not ln.lstrip().startswith("#")]
     assert not blocking, f"blocking restart from inside a unit: {blocking}"
+
+
+def test_the_installed_version_is_pinned_and_overridable():
+    """An unpinned install means a release published after someone downloaded
+    the stack changes what boots on it -- a stack that worked last month
+    failing for no visible reason, with nothing in the zip to explain it. The
+    zip and the PyPI release are cut by the same workflow, so the default is
+    the version this stack was actually tested against."""
+    ci = _cloud_init()
+    assert "SCHEMAGATE_VERSION=${schemagate_version}" in ci
+    assert '==$SCHEMAGATE_VERSION' in ci
+
+    tf = _terraform()
+    assert 'variable "schemagate_version"' in tf
+    # and it must be handed to the template, or the env line renders empty
+    assert re.search(r"schemagate_version\s*=\s*var\.schemagate_version", tf)
+
+
+def test_a_version_pypi_does_not_have_yet_does_not_leave_a_dead_machine():
+    """The failure this pin introduces: the stack zip is attached to a release
+    by one job while a second job publishes to PyPI, and they do not wait for
+    each other. If the pin is not installable the instance would otherwise
+    come up with no schemagate at all and nothing saying why."""
+    ci = _cloud_init()
+    assert "falling back to the newest release" in ci
+
+
+def test_the_version_pin_is_not_a_bare_and_shortcut():
+    """`[ -n "$V" ] && spec=...` is the last command in the script when the
+    version is empty, so its non-zero status becomes the script's -- and the
+    unit's -- exit status. Use an if."""
+    ci = _cloud_init()
+    assert '[ -n "$SCHEMAGATE_VERSION" ] &&' not in ci
+    assert 'if [ -n "$SCHEMAGATE_VERSION" ]; then' in ci
