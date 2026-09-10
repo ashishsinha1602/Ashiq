@@ -20,10 +20,17 @@ import tempfile
 
 
 def create_demo_db() -> str:
-    """Materialise the schema in a temporary SQLite file; returns its URL."""
+    """Materialise the schema in a temporary SQLite file; returns its URL.
+
+    Carries a handful of rows as well as the tables. Selection never reads
+    them -- it works from names, types and foreign keys -- but ``--answer``
+    runs the SQL a model writes, and a correct query against an empty
+    database returns nothing, which looks exactly like a wrong one.
+    """
     path = tempfile.mktemp(suffix=".db")
     conn = sqlite3.connect(path)
     conn.executescript(DDL)
+    conn.executescript(SEED)
     conn.commit()
     conn.close()
     return f"sqlite:///{path}"
@@ -258,3 +265,60 @@ GOLDEN_PARAPHRASE = [
     ("parcels that arrived late",         {"ship_shipment"}),
     ("what we spend with vendors",        {"v_supplier_spend"}),
 ]
+
+
+#: Enough rows to make an answer legible and checkable by eye, and no more.
+#: Deliberately small numbers: a reader can verify "three customers owe us
+#: money" by looking, which is the point of a demo.
+SEED = """
+INSERT INTO core_country (id, iso2, name, region) VALUES
+  (1,'GB','United Kingdom','EMEA'), (2,'DE','Germany','EMEA'),
+  (3,'US','United States','AMER');
+
+INSERT INTO core_address (id, line1, city, postcode, id_country, kind) VALUES
+  (1,'12 Fleet Street','London','EC4Y 1AA',1,'billing'),
+  (2,'44 Hauptstrasse','Berlin','10115',2,'billing'),
+  (3,'900 Market St','San Francisco','94102',3,'shipping');
+
+INSERT INTO core_party (id, display_name, party_type, id_primary_address, status, created_at) VALUES
+  (1,'Northwind Trading','organisation',1,'active','2023-01-10'),
+  (2,'Kellner GmbH','organisation',2,'active','2023-04-02'),
+  (3,'Pacific Foods','organisation',3,'active','2024-02-20'),
+  (4,'Ada Okafor','person',1,'active','2022-06-01'),
+  (5,'Ben Sharma','person',2,'active','2021-09-14'),
+  (6,'Rosa Marquez','person',3,'active','2020-03-30');
+
+INSERT INTO crm_customer (id, id_party, account_number, segment, credit_limit, status, id_owner_rep, onboarded_on) VALUES
+  (1,1,'ACC-1001','enterprise',250000,'active',1,'2023-01-15'),
+  (2,2,'ACC-1002','mid-market',80000,'active',1,'2023-04-10'),
+  (3,3,'ACC-1003','smb',25000,'active',2,'2024-03-01');
+
+INSERT INTO hr_employee (id, id_party, employee_number, hired_on, id_manager, id_department, status) VALUES
+  (1,4,'E-001','2022-06-01',NULL,1,'active'),
+  (2,5,'E-002','2021-09-14',1,1,'active'),
+  (3,6,'E-003','2020-03-30',1,2,'active');
+
+INSERT INTO hr_compensation (id, id_employee, effective_from, annual_amount, currency, pay_grade) VALUES
+  (1,1,'2026-01-01',96000,'GBP','G6'),
+  (2,2,'2026-01-01',72500,'GBP','G4'),
+  (3,3,'2026-01-01',118000,'GBP','G8');
+
+INSERT INTO sales_order_status (id, code, label, is_terminal) VALUES
+  (1,'OPEN','Open',0), (2,'SHIPPED','Shipped',0), (3,'CLOSED','Closed',1);
+
+INSERT INTO sales_order (id, order_number, id_customer, id_ship_address, ordered_at, id_status, currency, total_net) VALUES
+  (1,'SO-5001',1,3,'2026-07-02',3,'GBP',18400),
+  (2,'SO-5002',2,2,'2026-07-19',2,'GBP',7300),
+  (3,'SO-5003',3,3,'2026-08-05',1,'GBP',2650),
+  (4,'SO-5004',1,1,'2026-08-21',1,'GBP',9900);
+
+INSERT INTO billing_invoice (id, invoice_number, id_customer, id_order, issued_on, due_on, total_net, total_tax, total_gross, currency, status) VALUES
+  (1,'INV-9001',1,1,'2026-07-05','2026-08-04',18400,3680,22080,'GBP','paid'),
+  (2,'INV-9002',2,2,'2026-07-22','2026-08-21',7300,1460,8760,'GBP','overdue'),
+  (3,'INV-9003',3,3,'2026-08-08','2026-09-07',2650,530,3180,'GBP','overdue'),
+  (4,'INV-9004',1,4,'2026-08-25','2026-09-24',9900,1980,11880,'GBP','open');
+
+INSERT INTO billing_payment (id, id_invoice, paid_on, amount, method, reference, status) VALUES
+  (1,1,'2026-07-30',22080,'bacs','PAY-1','settled'),
+  (2,2,'2026-08-25',3000,'card','PAY-2','settled');
+"""

@@ -43,10 +43,86 @@ def _print_selection(sel, show_prompt: bool, show_explain: bool) -> None:
             print(f"  {name}")
 
 
+def _answer(cat, sel, question, args, url) -> None:
+    """Selection is the library's job; this is the step after it.
+
+    The SQL only ever sees the objects `select()` returned, which is what
+    makes the identity boundary real: a table the caller may not see is not
+    in the prompt, so the model cannot write SQL against it.
+
+    With no API key this prints the prompt to paste into any chat window and
+    stops -- the same escape hatch `describe --provider none` offers, because
+    the benefit should not require a key.
+    """
+    from sqlalchemy import create_engine
+
+    from .answer import (UnsafeSQL, format_rows, generate_sql, run_sql,
+                         sql_prompt)
+
+    engine = create_engine(url) if isinstance(url, str) else url
+    fragment = sel.prompt_fragment()
+    dialect = engine.dialect.name
+
+    if args.provider in (None, "none"):
+        print("\n-- no --provider given; paste this into any chat, then run the")
+        print("-- SQL it gives you with:  schemagate ... --sql \"SELECT ...\"\n")
+        print(sql_prompt(question, fragment, dialect))
+        return
+
+    if not args.model:
+        sys.exit("schemagate: --model is required with --provider "
+                 "(model ids change too often to have a default)")
+
+    from .ai import providers as _p
+    classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
+               "gemini": _p.GeminiProvider, "oci": _p.OCIGenAIProvider,
+               "local": _p.LocalProvider}
+    try:
+        if args.provider == "auto":
+            provider = _p.auto_provider(args.model)
+        elif args.provider in classes:
+            provider = classes[args.provider](model=args.model)
+        else:
+            sys.exit(f"schemagate: unknown provider {args.provider!r}; use "
+                     "anthropic, openai, gemini, oci, local or auto")
+        sql = generate_sql(provider, question, fragment, dialect)
+    except UnsafeSQL as e:
+        sys.exit(f"schemagate: refused the generated SQL -- {e}")
+    except Exception as e:
+        sys.exit(f"schemagate: {type(e).__name__}: {e}")
+
+    # Say who wrote the SQL. `--provider auto` picks by whichever API key is
+    # in the environment, so without this the user cannot tell which service
+    # just received their schema -- which is exactly the thing to be clear
+    # about.
+    print(f"\n-- SQL written by {type(provider).__name__.replace('Provider', '')}"
+          f" / {args.model}, from {len(sel.objects)} tables")
+    print(f"{sql}\n")
+    try:
+        cols, rows = run_sql(engine, sql, limit=args.limit)
+    except UnsafeSQL as e:
+        sys.exit(f"schemagate: refused the generated SQL -- {e}")
+    print(format_rows(cols, rows))
+
+
+def _run_sql_only(args, url) -> int:
+    """`--sql` runs a query you supply, through the same read-only guard."""
+    from sqlalchemy import create_engine
+
+    from .answer import UnsafeSQL, format_rows, run_sql
+    try:
+        cols, rows = run_sql(create_engine(url), args.sql, limit=args.limit)
+    except UnsafeSQL as e:
+        sys.exit(f"schemagate: refused that SQL -- {e}")
+    print(format_rows(cols, rows))
+    return 0
+
+
 def cmd_demo(args) -> int:
     from .demo_schema import GOLDEN_PARAPHRASE, HINTS, create_demo_db
 
-    cat = Catalog().bootstrap(create_demo_db())
+    url = create_demo_db()
+    cat = Catalog().bootstrap(url)
     for table, text in HINTS.items():
         cat.hint(table, text)
     cat.restrict("hr_compensation", ["payroll"])
@@ -64,6 +140,8 @@ def cmd_demo(args) -> int:
         print(f"> {question}")
         sel = cat.select(question, top_k=args.top_k, principal=principal)
         _print_selection(sel, args.prompt, args.explain)
+        if args.answer:
+            _answer(cat, sel, question, args, url)
         print()
     if not args.question:
         print("Try:  schemagate demo \"things we're running out of\"")
@@ -83,10 +161,14 @@ def _open(args) -> Catalog:
 
 
 def cmd_select(args) -> int:
+    if getattr(args, "sql", None):
+        return _run_sql_only(args, args.url)
     cat = _open(args)
     sel = cat.select(args.question, top_k=args.top_k, principal=_principal(args),
                      expand_fks=not args.no_fk)
     _print_selection(sel, args.prompt, args.explain)
+    if args.answer:
+        _answer(cat, sel, args.question, args, args.url)
     return 0
 
 
@@ -206,6 +288,15 @@ def build_parser() -> argparse.ArgumentParser:
                        help="print the DDL fragment instead of names")
         p.add_argument("--explain", action="store_true",
                        help="show score and reason per object")
+        p.add_argument("--answer", action="store_true",
+                       help="write the SQL and run it, not just pick tables")
+        p.add_argument("--provider", metavar="NAME",
+                       help="anthropic, openai, gemini, oci, local or auto. "
+                            "Omit with --answer to print a prompt to paste")
+        p.add_argument("--model", metavar="ID",
+                       help="model id for --provider")
+        p.add_argument("--limit", type=int, default=50, metavar="N",
+                       help="rows to show from --answer (default 50)")
 
     demo = sub.add_parser("demo", help="run against the bundled schema")
     demo.add_argument("question", nargs="?")
@@ -213,8 +304,11 @@ def build_parser() -> argparse.ArgumentParser:
     demo.set_defaults(func=cmd_demo)
 
     select = sub.add_parser("select", help="select against your database")
-    select.add_argument("question")
+    select.add_argument("question", nargs="?")
     select.add_argument("--url", required=True, help="SQLAlchemy URL")
+    select.add_argument("--sql", metavar="SELECT",
+                        help="run this read-only SQL instead of selecting; "
+                             "for pasting back what a chat window wrote")
     select.add_argument("--include", action="append", metavar="PATTERN")
     select.add_argument("--exclude", action="append", metavar="PATTERN")
     select.add_argument("--schema", action="append", metavar="NAME")
