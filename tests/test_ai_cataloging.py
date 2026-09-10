@@ -198,7 +198,12 @@ def test_describe_marks_the_index_stale():
 def test_human_hint_outranks_an_ai_description():
     cat = Catalog()
     cat.add(doc("t"))
-    cat.describe(SchemaDescriber(FakeProvider(reply="AI text"), workers=1))
+    # "AI text" has no ' | ' synonym section, which is what a provider hitting
+    # its output token limit looks like -- so describing it warns. That is the
+    # right behaviour and worth asserting here rather than letting it leak
+    # into every run of the suite as an unexplained warning.
+    with pytest.warns(RuntimeWarning, match="truncated description"):
+        cat.describe(SchemaDescriber(FakeProvider(reply="AI text"), workers=1))
     cat.hint("t", "human text")
     assert cat._docs["t"].render_ddl().startswith("-- human text")
 

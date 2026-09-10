@@ -9,7 +9,6 @@ names -- the single biggest cause of unrunnable generated SQL.
 from __future__ import annotations
 
 import math
-import re
 from collections import Counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 

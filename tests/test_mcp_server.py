@@ -9,7 +9,6 @@ import json
 
 import pytest
 
-from schemagate import Catalog, Column, ObjectDoc
 from schemagate import mcp_server
 
 

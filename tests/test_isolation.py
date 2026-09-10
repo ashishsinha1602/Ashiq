@@ -1,5 +1,4 @@
 """The core thesis: an object the caller may not read must never reach the prompt."""
-import pytest
 from schemagate import Principal
 
 HR = Principal("okta:analyst")

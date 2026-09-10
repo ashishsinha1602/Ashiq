@@ -176,7 +176,6 @@ def test_reflect_uses_only_universal_inspector_methods():
 def test_reflect_contains_no_vendor_sql():
     """No hand-written SQL means nothing to port between dialects."""
     import inspect as pyinspect
-    import re
 
     from schemagate import introspect
 

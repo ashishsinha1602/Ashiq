@@ -25,7 +25,7 @@ def _principal(args) -> Optional[Principal]:
     if not args.principal:
         return None
     try:
-        return Principal(args.principal, roles=set(args.role or []))
+        return Principal(args.principal, roles=frozenset(args.role or []))
     except IdentityError as e:
         sys.exit(f"schemagate: {e}")
 
@@ -137,7 +137,7 @@ def _run_sql_only(args, url) -> int:
 
 
 def cmd_demo(args) -> int:
-    from .demo_schema import GOLDEN_PARAPHRASE, HINTS, create_demo_db
+    from .demo_schema import HINTS, create_demo_db
 
     url = create_demo_db()
     cat = Catalog().bootstrap(url)
@@ -280,7 +280,6 @@ def cmd_describe(args) -> int:
 
 
 def cmd_certify(args) -> int:
-    import importlib.util
     import pathlib
     import subprocess
 

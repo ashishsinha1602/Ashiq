@@ -1,7 +1,7 @@
 """Core data types."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 
 def _identifiers(sql: str, limit: int = 1200) -> str:

@@ -12,7 +12,6 @@ import json
 import os
 import pathlib
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile

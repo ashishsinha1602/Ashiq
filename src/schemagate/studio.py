@@ -222,7 +222,8 @@ class StudioState:
         top_k = max(1, min(int(body.get("top_k") or 6), 50))
         who = None
         if body.get("principal"):
-            who = Principal(str(body["principal"]), roles={str(r) for r in body.get("roles") or []})
+            who = Principal(str(body["principal"]),
+                            roles=frozenset(str(r) for r in body.get("roles") or []))
         reranker = self._provider() if self.settings.get("rerank") else None
         sel = cat.select(question, top_k=top_k, principal=who, reranker=reranker)
         visible = [d for d in cat._docs.values() if cat._visible(d, who)]

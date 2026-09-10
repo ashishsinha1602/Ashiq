@@ -43,7 +43,6 @@ or a person what state the server is in.
 from __future__ import annotations
 
 import functools
-import json
 import logging
 import os
 import threading

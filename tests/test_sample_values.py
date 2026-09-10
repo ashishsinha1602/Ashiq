@@ -10,7 +10,6 @@ shape of wrong answer available.
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine
 
 from schemagate import Catalog
 from schemagate.introspect import reflect

@@ -285,7 +285,7 @@ def test_cli_passes_instance_principal_auth_for_oci(monkeypatch):
     """On an OCI VM there is no ~/.oci/config -- the machine authenticates as
     itself. Without this the stack's first-boot cataloguing failed silently
     with ConfigFileNotFound and every table went undescribed."""
-    import sys, types
+    import types
     from schemagate import cli
     seen = {}
 
