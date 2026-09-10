@@ -61,6 +61,17 @@ class Column:
     nullable: bool = True
     comment: Optional[str] = None
     pk: bool = False
+    #: The distinct values this column actually holds, when there are few
+    #: enough to be worth saying. Empty unless reflection was asked to look:
+    #: it is the one thing here that reads data rather than the catalog.
+    #:
+    #: This exists because of a specific wrong answer. A model was given
+    #: `status VARCHAR(30)` and wrote `WHERE status = 'DENIED'`. The rows say
+    #: `denied`. The query was correct in every way a schema can express and
+    #: returned nothing, which is the worst kind of wrong -- it looks like an
+    #: empty result, not a mistake. No model can guess the casing of a value
+    #: it has never seen, so the fix is to stop asking it to.
+    values: Optional[List[str]] = None
 
     def render(self) -> str:
         bits = [self.name, self.type]
@@ -69,8 +80,13 @@ class Column:
         if not self.nullable:
             bits.append("NOT NULL")
         s = " ".join(bits)
+        notes = []
+        if self.values:
+            notes.append("one of: " + ", ".join(repr(v) for v in self.values))
         comment = _one_line(self.comment)
-        return f"{s}  -- {comment}" if comment else s
+        if comment:
+            notes.append(comment)
+        return f"{s}  -- {'; '.join(notes)}" if notes else s
 
 
 @dataclass

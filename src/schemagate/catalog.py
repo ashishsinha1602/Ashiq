@@ -219,11 +219,17 @@ class Catalog:
         raise KeyError(f"{table!r} not in catalog")
 
     def bootstrap(self, engine_or_url=None, include=None, exclude=None,
-                  schemas=None, include_views=True) -> "Catalog":
+                  schemas=None, include_views=True,
+                  sample_values: bool = False) -> "Catalog":
+        """``sample_values`` reads a little data as well as the catalog: for
+        short string columns holding only a handful of distinct values, it
+        puts those values in the prompt. Off by default -- everything else
+        here reads metadata only."""
         if engine_or_url is not None:
             from .introspect import reflect
             self.add_all(reflect(engine_or_url, include=include, exclude=exclude,
-                                 schemas=schemas, include_views=include_views))
+                                 schemas=schemas, include_views=include_views,
+                                 sample_values=sample_values))
         self.index()
         return self
 

@@ -153,7 +153,8 @@ def cmd_demo(args) -> int:
 def _open(args) -> Catalog:
     cat = Catalog().bootstrap(args.url, include=args.include or None,
                               exclude=args.exclude or None,
-                              schemas=getattr(args, "schema", None) or None)
+                              schemas=getattr(args, "schema", None) or None,
+                              sample_values=getattr(args, "values", False))
     if getattr(args, "config", None):
         from . import config as _config
         _config.apply(cat, _config.load(args.config))
@@ -300,6 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="model id for --provider")
         p.add_argument("--limit", type=int, default=50, metavar="N",
                        help="rows to show from --answer (default 50)")
+        p.add_argument("--values", action="store_true",
+                       help="also read the distinct values of short string "
+                            "columns, so the model does not have to guess "
+                            "whether a status reads 'denied' or 'DENIED'")
 
     demo = sub.add_parser("demo", help="run against the bundled schema")
     demo.add_argument("question", nargs="?")

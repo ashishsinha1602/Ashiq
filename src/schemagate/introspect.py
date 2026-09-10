@@ -5,6 +5,8 @@ sqlite, duckdb, snowflake, mssql. No vendor SQL, no assumptions.
 """
 from __future__ import annotations
 
+import re
+
 from typing import Iterable, List, Optional
 
 from .models import Column, ForeignKey, ObjectDoc
@@ -82,11 +84,90 @@ def engine_from_url(url: str, **kwargs):
     return create_engine(url, **kwargs)
 
 
+#: Only short string columns are candidates. A `VARCHAR(30)` that holds four
+#: values is a category; a `VARCHAR(4000)` is prose and asking for its
+#: distinct values is a table scan that returns nothing useful. The bound is
+#: structural rather than a list of names like "status" or "type", because
+#: the interesting column on someone else's schema is called something this
+#: file has never heard of.
+_SAMPLEABLE = re.compile(r"^(VARCHAR|VARCHAR2|NVARCHAR|NVARCHAR2|CHAR|NCHAR|TEXT)"
+                         r"(\((\d+)[^)]*\))?$", re.I)
+_MAX_WIDTH = 40
+
+
+def _candidates(raw_cols, pk_names) -> "List[str]":
+    out = []
+    for c in raw_cols:
+        if c["name"] in pk_names:          # a key is not a category
+            continue
+        m = _SAMPLEABLE.match(str(c["type"]).strip())
+        if not m:
+            continue
+        width = m.group(3)
+        if width is not None and int(width) > _MAX_WIDTH:
+            continue
+        if width is None and m.group(1).upper() == "TEXT":
+            continue                       # unbounded: assume prose
+        out.append(c["name"])
+    return out
+
+
+def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
+    """The distinct values of short string columns, when there are few.
+
+    This exists because of a specific wrong answer, and it is worth stating
+    plainly: a model was handed `status VARCHAR(30)` and wrote
+    `WHERE status = 'DENIED'`. The rows say `denied`. The query was correct
+    in every way a schema can express, and returned nothing -- which reads as
+    "there are no denied claims", not as a mistake. Nothing in a catalog can
+    tell a model the casing of a value it has never seen.
+
+    Bounded on purpose, because this is the only place the library reads
+    rows: short string columns only, one query each, `LIMIT max_distinct + 1`
+    so a high-cardinality column costs one small query and is then dropped
+    rather than pulled into memory. A column that fails -- no privilege, a
+    view that cannot be scanned -- is skipped, not fatal: this is an
+    enrichment, and reflection must still finish without it.
+    """
+    from sqlalchemy import Column as SAColumn, MetaData, Table, select
+
+    pk_names = {c["name"] for c in raw_cols if c.get("primary_key")}
+    names = _candidates(raw_cols, pk_names)
+    if not names:
+        return None
+
+    md = MetaData()
+    tbl = Table(table, md, *[SAColumn(n, None) for n in names], schema=schema)
+    found = {}
+    with engine.connect() as conn:
+        for n in names:
+            col = tbl.c[n]
+            try:
+                rows = conn.execute(
+                    select(col).where(col.is_not(None))
+                               .distinct().limit(max_distinct + 1)).fetchall()
+            except Exception:
+                continue
+            if not rows or len(rows) > max_distinct:
+                continue
+            found[n] = sorted(str(r[0]) for r in rows)
+    return found or None
+
+
 def reflect(engine_or_url, include=None, exclude=None,
             schemas: Optional[List[str]] = None,
-            include_views: bool = True) -> List[ObjectDoc]:
+            include_views: bool = True,
+            sample_values: bool = False,
+            max_distinct: int = 25) -> List[ObjectDoc]:
     """Return an ObjectDoc per table/view. ``include``/``exclude`` accept glob
-    or SQL-LIKE style patterns ('sales_%', 'v_*')."""
+    or SQL-LIKE style patterns ('sales_%', 'v_*').
+
+    ``sample_values`` is the one option here that reads rows rather than the
+    catalog, which is why it is off by default. It fills in ``Column.values``
+    for short string columns that turn out to hold only a handful of distinct
+    values -- a status, a code, a category. See ``_sample_values`` for why
+    that is worth a query.
+    """
     from sqlalchemy import inspect
 
     engine = (engine_from_url(engine_or_url)
@@ -168,6 +249,9 @@ def reflect(engine_or_url, include=None, exclude=None,
                 except Exception:
                     definition = None
 
+            values = (_sample_values(engine, schema, name, raw_cols, kind,
+                                     max_distinct)
+                      if sample_values else None)
             docs.append(ObjectDoc(
                 name=name,
                 schema=schema,
@@ -176,7 +260,8 @@ def reflect(engine_or_url, include=None, exclude=None,
                 definition=definition,
                 columns=[Column(name=c["name"], type=str(c["type"]),
                                 nullable=bool(c.get("nullable", True)),
-                                comment=c.get("comment"), pk=c["name"] in pk)
+                                comment=c.get("comment"), pk=c["name"] in pk,
+                                values=(values or {}).get(c["name"]))
                          for c in raw_cols],
                 foreign_keys=[ForeignKey(columns=list(f.get("constrained_columns") or []),
                                          ref_table=f.get("referred_table") or "",
