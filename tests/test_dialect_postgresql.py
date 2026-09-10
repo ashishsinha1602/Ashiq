@@ -58,3 +58,56 @@ def test_columns_with_a_known_type_do_not_hit_the_database():
         def connect(self):
             raise AssertionError("queried the database with nothing to fill")
     unknown_types(Boom(), "public", "t", [{"name": "id", "type": "INTEGER"}])
+
+
+# --- what a live PostgreSQL 16 reflection actually returned -----------------
+# The unit tests above pass on a version of this module that leaves enums and
+# domains broken. These pin what reflecting a real server showed.
+
+from schemagate.dialects.postgresql import _render  # noqa: E402
+
+
+def test_an_enum_carries_its_allowed_values_into_the_prompt():
+    """SQLAlchemy maps a PostgreSQL enum to VARCHAR(n) -- plausible, and
+    worse than NULL because nothing flags it. The model never learns the
+    column only holds three values, which is exactly what it needs to write
+    a correct WHERE clause."""
+    assert _render("mood", "e", "'sad', 'ok', 'happy'") == \
+        "mood ENUM('sad', 'ok', 'happy')"
+
+
+def test_a_domain_says_what_it_is_a_domain_over():
+    """Reported as the bare word DOMAIN, which does not even say integer."""
+    assert _render("positive_int", "d", "integer") == \
+        "positive_int DOMAIN OVER integer"
+
+
+def test_ordinary_types_are_left_alone():
+    """hstore, int4range and inet resolve on their own; rewriting them would
+    be churn. Only improve what can be improved."""
+    for declared in ("hstore", "int4range", "inet", "numeric(12,2)"):
+        assert _render(declared, "b", None) is None
+
+
+def test_the_catalog_is_queried_once_per_engine_not_once_per_table():
+    """A 400-table database would otherwise pay 400 round trips during
+    reflection. Measured on a live server: 1 query for 404 tables."""
+    import schemagate.dialects.postgresql as pg
+    calls = []
+
+    class FakeConn:
+        def exec_driver_sql(self, sql):
+            calls.append(sql)
+            return [("public", "t", "c", "mood", "e", "'a', 'b'")]
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    class FakeEngine:
+        def connect(self): return FakeConn()
+
+    eng = FakeEngine()
+    pg._TYPE_CACHE.pop(id(eng), None)
+    for _ in range(50):
+        pg.unknown_types(eng, "public", "t", [{"name": "c", "type": "VARCHAR(5)"}])
+    assert len(calls) == 1, f"queried the catalog {len(calls)} times"
+    pg._TYPE_CACHE.pop(id(eng), None)
