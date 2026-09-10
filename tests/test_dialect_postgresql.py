@@ -120,11 +120,11 @@ def test_the_catalog_is_queried_once_per_engine_not_once_per_table():
         def connect(self): return FakeConn()
 
     eng = FakeEngine()
-    pg._TYPE_CACHE.pop(id(eng), None)
+    pg._TYPE_CACHE.pop(eng, None)
     for _ in range(50):
         pg.unknown_types(eng, "public", "t", [{"name": "c", "type": "VARCHAR(5)"}])
     assert len(calls) == 1, f"queried the catalog {len(calls)} times"
-    pg._TYPE_CACHE.pop(id(eng), None)
+    pg._TYPE_CACHE.pop(eng, None)
 
 
 def test_the_catalog_query_contains_no_percent_sign():
@@ -135,3 +135,39 @@ def test_the_catalog_query_contains_no_percent_sign():
     debugging round; the prefix tests use `left()` instead."""
     from schemagate.dialects.postgresql import _TYPES_SQL
     assert "%" not in _TYPES_SQL
+
+
+def test_a_cache_entry_does_not_outlive_the_engine_it_describes():
+    """The cache used to be keyed on `id(engine)`. CPython reuses the id of a
+    collected object, so a later engine -- pointing at an entirely different
+    database -- could match that key and be handed the previous database's
+    column types without issuing a query. Reproduced before the fix: a fresh
+    engine whose column was `integer` came back `geometry(Point,4326)`.
+
+    Testing that by racing for an id collision is possible but not
+    deterministic; it took ~180 attempts and would pass vacuously on a run
+    where no id was reused, which is the kind of silent hole this module has
+    already had two of. So this asserts the property that makes a collision
+    impossible in the first place: an entry cannot outlive its engine. That
+    also bounds the cache in a process that opens engines over time."""
+    import gc
+    import schemagate.dialects.postgresql as pg
+
+    class Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def exec_driver_sql(self, sql, params=None):
+            return [("public", "t", "c", "integer", "b", None)]
+
+    class E:
+        class dialect: name = "postgresql"
+        def connect(self): return Conn()
+
+    eng = E()
+    pg.unknown_types(eng, "public", "t", [{"name": "c", "type": "NULL"}])
+    assert eng in pg._TYPE_CACHE, "nothing was cached, so this proves nothing"
+
+    before = len(pg._TYPE_CACHE)
+    del eng
+    gc.collect()
+    assert len(pg._TYPE_CACHE) == before - 1, "entry outlived its engine"

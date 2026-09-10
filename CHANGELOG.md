@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.1.10
+
+Mostly library. The reflection the server does once it is up changed on both
+engines; the stack's behaviour did not, but its files did, and that is worth
+stating precisely rather than waving at.
+
+After 0.1.9 was tagged, `main.tf` was split into per-concern files
+(`network.tf`, `database.tf`, `compute.tf`, ...) to match the layout Oracle's
+quickstart templates use. Comparing the 0.1.9 tag against this release block
+by block: 37 blocks then, 37 now, none added, none dropped, and every body
+identical once comments and whitespace are normalised — except one `output`
+description, reworded. So it is a pure reorganisation, and `terraform
+validate` passes, `fmt` is clean, the zip still has its `.tf` at the root, and
+`adb_version` still accepts 19c and 26ai while rejecting 23ai and 21c.
+
+What that does *not* prove: the split has never been through a live apply.
+0.1.9's `6/6 CERTIFIED` run was against the single-file version. The
+reorganisation is as safe as static checking can make it, and it is still
+untested against a running Autonomous Database.
+
+Everything below was found by running against a real database. The unit tests
+passed throughout; none of these were visible without one.
+
+- **Fixed: a cached engine could hand a later engine the wrong database's
+  column types.** The per-engine type cache was keyed on `id(engine)`, and
+  CPython reuses the id of a collected object — so an engine opened after an
+  earlier one was garbage collected could match that key and be served the
+  previous database's types without issuing a query. Reproduced: a fresh
+  engine whose column was `integer` came back `geometry(Point,4326)`. The
+  cache is now keyed weakly on the engine itself, which also stops it growing
+  without bound in a long-lived process.
+
+- **Fixed: PostgreSQL extension tables inside `public` were catalogued as
+  user data.** Excluding whole schemas is not enough when the extension is
+  installed into `public`, which is the default. `spatial_ref_sys` alone is
+  8,500 rows of map projections. A dialect can now name individual objects,
+  not just schemas; PostGIS noise drops to zero.
+
+- **Fixed: PostGIS's `topology` schema was missed.** An extension's schema is
+  recorded on `pg_extension.extnamespace`; `pg_depend` alone only finds a
+  schema the extension's script created separately. Both are read now.
+
+- **Fixed: PostgreSQL enums, domains, geometry and geography reached the
+  prompt as `NULL` or `VARCHAR(n)`.** The catalog query contained
+  `LIKE 'pg_toast%'`, and psycopg3 reads `%` as a placeholder — the query
+  raised and every type fill silently reverted. The query now contains no
+  percent sign. `feeling` reads `mood ENUM('sad', 'ok', 'happy')` and `qty`
+  reads `positive_int DOMAIN OVER integer`, which is what a model needs to
+  write a correct `WHERE`.
+
+- **Fixed: silent failure.** `unknown_types` wrapped its own work in
+  `try/except Exception`, so the bug above looked like "no types to fill"
+  rather than an error. The registry already guards a database that will not
+  answer; the inner catch only hid programming errors, and had been hiding a
+  `NameError` on every call. Removed.
+
+- **Changed: Oracle asks for column types once per engine, not once per
+  table.** Previously every table with an unrecognised column cost its own
+  round trip to the Autonomous Database for an answer that is identical every
+  time. Scoped by the same `ORACLE_MAINTAINED` signal the schema filter
+  already uses, so it reads no catalog view this module was not already
+  reading.
+
+Measured on PostgreSQL 16 with PostGIS, 405 objects across 10 schemas: one
+catalog query for the whole reflection (not 405), 2.8 s to bootstrap, 16 ms
+median selection, and a 1,037-character prompt covering 6 of 405 objects.
+
 ## 0.1.9
 
 Stack only — no library change.

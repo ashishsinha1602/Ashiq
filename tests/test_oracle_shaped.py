@@ -436,11 +436,11 @@ def test_unknown_oracle_types_get_their_real_name():
     NULL. The prompt must show VECTOR(512, FLOAT32), not NULL."""
     from schemagate.dialects import fill_unknown_types
     eng = _fake_engine({"all_tab_columns": [
-        ("EMBEDDING", "VECTOR(512, FLOAT32)", None, None, None),
-        ("DOC", "XMLTYPE", None, None, None),
-        ("PAYLOAD", "JSON", None, None, None),
-        ("NAME", "VARCHAR2", 200, None, None),
-        ("AMT", "NUMBER", 22, 12, 2),
+        ("ADMIN", "T", "EMBEDDING", "VECTOR(512, FLOAT32)", None, None, None),
+        ("ADMIN", "T", "DOC", "XMLTYPE", None, None, None),
+        ("ADMIN", "T", "PAYLOAD", "JSON", None, None, None),
+        ("ADMIN", "T", "NAME", "VARCHAR2", 200, None, None),
+        ("ADMIN", "T", "AMT", "NUMBER", 22, 12, 2),
     ]})
     cols = [{"name": "embedding", "type": "NULL"}, {"name": "doc", "type": "NULL"},
             {"name": "payload", "type": "NULL"}, {"name": "name", "type": "VARCHAR2(200 CHAR)"},
@@ -513,3 +513,50 @@ def test_no_shared_internal_schema_list_outside_the_oracle_dialect():
     src = pyinspect.getsource(introspect)
     assert "_INTERNAL_PREFIXES" not in src
     assert "_looks_internal" not in src
+
+
+def test_the_oracle_catalog_is_queried_once_per_engine_not_once_per_table():
+    """This used to be one round trip per table with an unrecognised column.
+    On an Autonomous Database that is a network hop each time, so a schema
+    with SDO_GEOMETRY or JSON on many tables paid it repeatedly for an answer
+    that is the same every time. The PostgreSQL module already worked this
+    way; Oracle is where it actually costs.
+
+    A miss must not re-query either: a table whose column is genuinely absent
+    from the catalog would otherwise ask again on every reflection."""
+    import schemagate.dialects.oracle as ora
+    calls = []
+
+    class CountingConn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def exec_driver_sql(self, sql, params=None):
+            calls.append(sql)
+            class R:
+                def fetchall(self):
+                    return [("ADMIN", "T1", "DOC", "XMLTYPE", None, None, None)]
+            return R()
+
+    class Eng:
+        class dialect: name = "oracle"; default_schema_name = "ADMIN"
+        def connect(self): return CountingConn()
+
+    eng = Eng()
+    ora._TYPE_CACHE.pop(eng, None)
+    try:
+        for i in range(50):
+            cols = [{"name": "doc", "type": "NULL"}]
+            ora.unknown_types(eng, "ADMIN", f"T{i}", cols)
+        assert len(calls) == 1, f"queried the catalog {len(calls)} times"
+    finally:
+        ora._TYPE_CACHE.pop(eng, None)
+
+
+def test_the_oracle_type_query_asks_only_for_the_users_own_schemas():
+    """ADMIN on an ADB can see every column of ~1,500 Oracle-owned objects.
+    Pulling all of them into memory to answer questions about a few dozen
+    user tables is the cost this scoping avoids -- and it is the same
+    ORACLE_MAINTAINED signal the schema filter already trusts."""
+    from schemagate.dialects.oracle import _TYPES_SQL
+    assert "oracle_maintained = 'Y'" in _TYPES_SQL
+    assert "all_tab_columns" in _TYPES_SQL

@@ -25,7 +25,8 @@ the Inspector cannot help with any of them.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, MutableMapping, Optional, Set
+from weakref import WeakKeyDictionary
 
 from . import (FILL_UNKNOWN_TYPES, INTERNAL_SCHEMA, MAINTAINED_OBJECTS,
                MAINTAINED_SCHEMAS)
@@ -108,7 +109,16 @@ def _render(declared: str, typtype: str, detail: Optional[str]) -> Optional[str]
 
 #: One catalog query per engine. Reflecting 404 tables must not mean 404
 #: round trips -- the whole point of the index is that it is built once.
-_TYPE_CACHE: "Dict[int, Dict[tuple, str]]" = {}
+#:
+#: Keyed on the engine object, weakly. The obvious `id(engine)` is wrong in a
+#: way that is quiet and awful: CPython reuses the id of a collected object,
+#: so an engine opened after an earlier one was garbage collected can land on
+#: the same key and be handed the *previous database's* column types without
+#: issuing a single query. Reproduced in a loop -- a fresh engine got
+#: `geometry(Point,4326)` for a column that was `integer`. A weak key cannot
+#: collide, because the entry cannot outlive the engine it describes, and it
+#: also stops the cache growing forever in a process that opens engines.
+_TYPE_CACHE: "MutableMapping[Any, Dict[tuple, str]]" = WeakKeyDictionary()
 
 #: ``format_type`` is what gives back the name the user would write:
 #: ``geometry(Point,4326)``, not the NULL SQLAlchemy reports for a type it
@@ -149,15 +159,15 @@ _TYPES_SQL = """
 
 
 def _catalog_types(engine) -> "Dict[tuple, str]":
-    key = id(engine)
-    if key in _TYPE_CACHE:
-        return _TYPE_CACHE[key]
+    cached = _TYPE_CACHE.get(engine)
+    if cached is not None:
+        return cached
     out: "Dict[tuple, str]" = {}
     with engine.connect() as conn:
         for nsp, rel, col, declared, typtype, detail in conn.exec_driver_sql(_TYPES_SQL):
             better = _render(declared, typtype, detail)
             out[(nsp, rel, col)] = better or declared
-    _TYPE_CACHE[key] = out
+    _TYPE_CACHE[engine] = out
     return out
 
 

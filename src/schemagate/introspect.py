@@ -120,8 +120,10 @@ def reflect(engine_or_url, include=None, exclude=None,
     # a reflection that did not name a schema is matched against the default
     # rather than a literal "public" -- that word means something else on
     # Oracle, and hardcoding it here is what the per-dialect registry exists
-    # to avoid.
-    default_schema = insp.default_schema_name
+    # to avoid. Only asked for when there is something to match: a dialect
+    # with no hook returns an empty set without connecting, and this keeps
+    # the reflection path for those engines exactly as it was.
+    default_schema = insp.default_schema_name if maintained_objects else None
     docs: List[ObjectDoc] = []
     seen = set()
     for schema in schemas:
