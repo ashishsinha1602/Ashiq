@@ -22,10 +22,22 @@ def maintained_schemas(engine) -> Set[str]:
     return {r[0] for r in rows}
 
 
-#: engine -> {(owner, table, column): rendered type}. One query per engine,
-#: not one per table. The PostgreSQL module pays this cost against a socket
-#: on the same machine; here it is a round trip to a cloud database, so the
-#: per-table version was the more expensive of the two by a wide margin.
+#: engine -> owner -> {(table, column): rendered type}. One query per SCHEMA,
+#: not per table and not per database.
+#:
+#: The middle option is the point, and getting it wrong cost a boot. Per table
+#: is a round trip each time to a cloud database for an answer that does not
+#: change. But the whole-database version that replaced it dropped the
+#: `owner = :o` predicate, and that predicate is the one the data dictionary
+#: can actually use: without it `all_tab_columns` is a scan across every
+#: schema the caller can see. On a local Oracle with 219 objects that is
+#: invisible. On an Autonomous Database exposing ~1,500 objects it is not, and
+#: it runs during reflection at boot, so the endpoint simply never opens.
+#:
+#: Per owner keeps both properties: bounded and indexed like the per-table
+#: query, and asked once for a whole schema like the per-database one. A
+#: reflection over 219 objects in one schema issues one query, the same as
+#: before; a reflection over ten schemas issues ten, not two thousand.
 #:
 #: Keyed on the engine object, weakly. The obvious `id(engine)` is wrong in a
 #: way that is quiet and awful: CPython reuses the id of a collected object,
@@ -35,19 +47,15 @@ def maintained_schemas(engine) -> Set[str]:
 #: `geometry(Point,4326)` for a column that was `integer`. A weak key cannot
 #: collide, because the entry cannot outlive the engine it describes, and it
 #: also stops the cache growing forever in a process that opens engines.
-_TYPE_CACHE: "MutableMapping[Any, Dict[tuple, str]]" = WeakKeyDictionary()
+_TYPE_CACHE: "MutableMapping[Any, Dict[str, Dict[tuple, str]]]" = WeakKeyDictionary()
 
-#: Scoped to the user's own schemas by the same signal `maintained_schemas`
-#: uses, which is what keeps this to a few thousand rows on an ADB that
-#: exposes ~1,500 objects to ADMIN. Both views are already proven on 26ai --
-#: this module has queried them since it was written -- so the one query
-#: introduces no catalog access that was not already working.
+#: `owner = :o` is not a detail. It is what makes this an indexed lookup
+#: rather than a dictionary-wide scan.
 _TYPES_SQL = """
-    SELECT owner, table_name, column_name,
+    SELECT table_name, column_name,
            data_type, data_length, data_precision, data_scale
       FROM all_tab_columns
-     WHERE owner NOT IN (SELECT username FROM all_users
-                          WHERE oracle_maintained = 'Y')
+     WHERE owner = :o
 """
 
 
@@ -61,17 +69,18 @@ def _render(dtype, length, prec, scale) -> str:
     return t                       # VECTOR(512, FLOAT32) comes back whole
 
 
-def _catalog_types(engine) -> "Dict[tuple, str]":
-    cached = _TYPE_CACHE.get(engine)
+def _catalog_types(engine, owner: str) -> "Dict[tuple, str]":
+    by_owner = _TYPE_CACHE.setdefault(engine, {})
+    cached = by_owner.get(owner)
     if cached is not None:
         return cached
     out: "Dict[tuple, str]" = {}
     with engine.connect() as conn:
-        for owner, table, col, dtype, length, prec, scale in conn.exec_driver_sql(
-                _TYPES_SQL).fetchall():
-            out[(str(owner).upper(), str(table).upper(), str(col).lower())] = \
-                _render(dtype, length, prec, scale)
-    _TYPE_CACHE[engine] = out
+        for table, col, dtype, length, prec, scale in conn.exec_driver_sql(
+                _TYPES_SQL, {"o": owner}).fetchall():
+            out[(str(table).upper(), str(col).lower())] = _render(
+                dtype, length, prec, scale)
+    by_owner[owner] = out
     return out
 
 
@@ -88,10 +97,10 @@ def unknown_types(engine, schema: Optional[str], table: str, columns: List[dict]
     unknown = [c for c in columns if str(c.get("type")).upper() in ("NULL", "NULLTYPE")]
     if not unknown:
         return
-    known = _catalog_types(engine)
     owner = (schema or engine.dialect.default_schema_name or "").upper()
+    known = _catalog_types(engine, owner)
     for c in unknown:
-        real = known.get((owner, table.upper(), str(c["name"]).lower()))
+        real = known.get((table.upper(), str(c["name"]).lower()))
         if real:
             c["type"] = real
 
