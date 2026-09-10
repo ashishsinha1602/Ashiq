@@ -27,7 +27,7 @@ use ``CallableProvider`` and keep control of the call yourself::
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, List, Optional, Protocol, Sequence, runtime_checkable
+from typing import Mapping, Any, Callable, List, Optional, Protocol, Sequence, runtime_checkable
 
 
 @runtime_checkable
@@ -435,29 +435,30 @@ _AUTO_ORDER = [
 ]
 
 
-def available_providers(env: Optional[dict] = None) -> List[str]:
+def available_providers(env: Optional[Mapping[str, str]] = None) -> List[str]:
     """Names of providers whose API key is present. Never returns a key."""
-    env = os.environ if env is None else env
+    src: Mapping[str, str] = os.environ if env is None else env
     seen, out = set(), []
     for var, cls in _AUTO_ORDER:
-        if env.get(var) and cls.__name__ not in seen:
+        if src.get(var) and cls.__name__ not in seen:
             seen.add(cls.__name__)
             out.append(cls.__name__)
     return out
 
 
-def auto_provider(model: str, env: Optional[dict] = None, **kwargs):
+def auto_provider(model: str, env: Optional[Mapping[str, str]] = None,
+                  **kwargs):
     """Build a provider from whichever API key is in the environment.
 
     Convenience only. Construct the provider directly when you care which
     one you get -- this picks by key presence, not by capability.
     """
-    env = os.environ if env is None else env
+    src: Mapping[str, str] = os.environ if env is None else env
     for var, cls in _AUTO_ORDER:
-        if env.get(var):
+        if src.get(var):
             if cls is OCIGenAIProvider:
-                return cls(model=model, compartment_id=env[var], **kwargs)
-            return cls(model=model, api_key=env[var], **kwargs)
+                return cls(model=model, compartment_id=src[var], **kwargs)
+            return cls(model=model, api_key=src[var], **kwargs)
     raise ValueError(
         "no provider API key found; set one of "
         + ", ".join(v for v, _ in _AUTO_ORDER)

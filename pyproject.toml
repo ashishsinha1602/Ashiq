@@ -87,3 +87,16 @@ exclude = ["docs/media", "shim", "studio/node_modules", ".github"]
 markers = [
     "live: needs real credentials and network (provider keys, OCI config, a database); skipped otherwise",
 ]
+
+[tool.mypy]
+# Not a CI gate; run it locally with `mypy src/schemagate`.
+
+[[tool.mypy.overrides]]
+# The OCI SDK is an optional extra and resolves here as an empty namespace
+# package, so every `oci.generative_ai_inference...` reads as an attribute
+# error on a module that has no attributes. Skipping it is honest -- there is
+# nothing to check against -- and beats scattering `type: ignore` through code
+# that a live Autonomous Database has already proven works.
+module = ["oci", "oci.*"]
+ignore_missing_imports = true
+follow_imports = "skip"

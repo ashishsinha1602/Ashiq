@@ -155,7 +155,7 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
 
 
 def reflect(engine_or_url, include=None, exclude=None,
-            schemas: Optional[List[str]] = None,
+            schemas: Optional[List[Optional[str]]] = None,
             include_views: bool = True,
             sample_values: bool = False,
             max_distinct: int = 25) -> List[ObjectDoc]:
@@ -175,11 +175,16 @@ def reflect(engine_or_url, include=None, exclude=None,
     insp = inspect(engine)
 
     if schemas is None:
+        # `None` is a real value here, not a missing one: a dialect with no
+        # schema concept reflects everything under it, and the reflection loop
+        # passes it straight to get_table_names(schema=None).
+        found: List[Optional[str]]
         try:
-            schemas = [s for s in insp.get_schema_names()
-                       if s.lower() not in _SYSTEM_SCHEMAS]
+            found = [s for s in insp.get_schema_names()
+                     if s.lower() not in _SYSTEM_SCHEMAS]
         except NotImplementedError:
-            schemas = [None]
+            found = [None]
+        schemas = found
         # Anything beyond that is vendor-specific, and has to be: "PUBLIC" is a
         # pseudo-schema on Oracle and the user's entire database on PostgreSQL,
         # so one shared list of "internal-looking" names empties one engine's

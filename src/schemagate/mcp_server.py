@@ -147,7 +147,8 @@ def _principal(subject: Optional[str], roles: Optional[List[str]]) -> Optional[P
         return None
     if roles is not None and len(roles) > MAX_ROLES:
         raise IdentityError(f"too many roles ({len(roles)}); max {MAX_ROLES}")
-    return Principal(str(subject), roles={str(r) for r in (roles or [])})
+    return Principal(str(subject),
+                     roles=frozenset(str(r) for r in (roles or [])))
 
 
 def _guard(fn):
