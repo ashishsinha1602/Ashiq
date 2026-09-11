@@ -159,7 +159,7 @@ def _candidates(raw_cols, pk_names, deny=_PII_NAMES) -> "List[str]":
 
 
 def _sample_values(engine, schema, table, raw_cols, kind, max_distinct,
-                   deny=_PII_NAMES):
+                   deny=_PII_NAMES, conn=None, deadline=None):
     """The distinct values of short string columns, when there are few.
 
     This exists because of a specific wrong answer, and it is worth stating
@@ -175,7 +175,25 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct,
     rather than pulled into memory. A column that fails -- no privilege, a
     view that cannot be scanned -- is skipped, not fatal: this is an
     enrichment, and reflection must still finish without it.
+
+    `deadline` is the bound that matters off the developer's laptop. The cost
+    here is round trips -- one count per table plus one query per candidate
+    column -- and the number of them is set by the schema while their price is
+    set by the network. A few hundred columns at laptop latency is nothing; the
+    same schema behind an Autonomous Database wallet is minutes, spent behind a
+    "Connecting..." with no way to tell a slow link from a hang. Past the
+    deadline this returns what it has and reflection continues: values are an
+    enrichment, and a catalog missing some of them beats a connect that never
+    finishes.
+
+    `conn` is reused across tables, which is tidier but is not that fix --
+    SQLAlchemy pools connections, so the per-table `engine.connect()` this
+    replaced was already checking the same DBAPI connection back out of the
+    pool rather than opening a new one.
     """
+    import time as _time
+    from contextlib import nullcontext
+
     from sqlalchemy import Column as SAColumn, MetaData, Table, func, select
 
     pk_names = {c["name"] for c in raw_cols if c.get("primary_key")}
@@ -183,21 +201,29 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct,
     if not names:
         return None
 
+    if deadline is not None and _time.monotonic() > deadline:
+        return None
+
     md = MetaData()
     tbl = Table(table, md, *[SAColumn(n, None) for n in names], schema=schema)
     found = {}
-    with engine.connect() as conn:
+    # A borrowed connection is the caller's to close. An owned one goes
+    # through the same `with` it always did -- closing it by hand assumes a
+    # .close() that a connection-like object need not have.
+    with (nullcontext(conn) if conn is not None else engine.connect()) as cn:
         # One count, reused for every column: a distinct count only means
         # "category" relative to how many rows there are.
         try:
-            rows_total = conn.execute(
+            rows_total = cn.execute(
                 select(func.count()).select_from(tbl)).scalar() or 0
         except Exception:
             rows_total = 0
         for n in names:
+            if deadline is not None and _time.monotonic() > deadline:
+                break
             col = tbl.c[n]
             try:
-                rows = conn.execute(
+                rows = cn.execute(
                     select(col).where(col.is_not(None))
                                .distinct().limit(max_distinct + 1)).fetchall()
             except Exception:
@@ -224,7 +250,8 @@ def reflect(engine_or_url, include=None, exclude=None,
             include_views: bool = True,
             sample_values: bool = False,
             max_distinct: int = 25,
-            deny_columns: Optional[Sequence[str]] = None) -> List[ObjectDoc]:
+            deny_columns: Optional[Sequence[str]] = None,
+            sample_budget: float = 30.0) -> List[ObjectDoc]:
     """Return an ObjectDoc per table/view. ``include``/``exclude`` accept glob
     or SQL-LIKE style patterns ('sales_%', 'v_*').
 
@@ -233,7 +260,14 @@ def reflect(engine_or_url, include=None, exclude=None,
     for short string columns that turn out to hold only a handful of distinct
     values -- a status, a code, a category. See ``_sample_values`` for why
     that is worth a query.
+
+    ``sample_budget`` caps that work in seconds of wall clock, because its
+    cost is proportional to columns and to round-trip time -- neither of which
+    is visible from here. Reflection keeps whatever was sampled before the
+    budget ran out and finishes normally; set it to ``0`` for no limit.
     """
+    import time as _time
+
     from sqlalchemy import inspect
 
     engine = (engine_from_url(engine_or_url)
@@ -262,6 +296,26 @@ def reflect(engine_or_url, include=None, exclude=None,
         default = insp.default_schema_name
         if default and default in schemas:
             schemas = [default] + [s for s in schemas if s != default]
+
+    # One connection and one clock for every value sample in this run, set up
+    # only if the option is on. The clock is the point: sampling costs a round
+    # trip per column, and nothing visible from here says what a round trip
+    # costs.
+    from contextlib import ExitStack as _ExitStack
+    _sample_conn = None
+    _sample_stack = None
+    _deadline = None
+    if sample_values:
+        if sample_budget and sample_budget > 0:
+            _deadline = _time.monotonic() + sample_budget
+        try:
+            _sample_stack = _ExitStack()
+            _sample_conn = _sample_stack.enter_context(engine.connect())
+        except Exception:                                 # noqa: BLE001
+            # Sampling is an enrichment. If a second connection cannot be had,
+            # fall back to per-table connections rather than failing the whole
+            # reflection here.
+            _sample_conn = None
 
     from .dialects import vendor_maintained_objects
     # Excluding whole schemas is not enough: an extension installed into a
@@ -323,7 +377,8 @@ def reflect(engine_or_url, include=None, exclude=None,
             values = (_sample_values(engine, schema, name, raw_cols, kind,
                                      max_distinct,
                                      _PII_NAMES if deny_columns is None
-                                     else tuple(deny_columns))
+                                     else tuple(deny_columns),
+                                     conn=_sample_conn, deadline=_deadline)
                       if sample_values else None)
             docs.append(ObjectDoc(
                 name=name,
@@ -341,4 +396,6 @@ def reflect(engine_or_url, include=None, exclude=None,
                                          ref_columns=list(f.get("referred_columns") or []))
                               for f in raw_fks if f.get("referred_table")],
             ))
+    if _sample_stack is not None:
+        _sample_stack.close()
     return docs

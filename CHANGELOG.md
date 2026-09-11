@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.19
+
+- **Fixed: reading sample values no longer runs without a time limit.**
+  `--values`, and the "Read values of short, non-personal columns" box in the
+  Studio, cost one query per candidate column. On a local database that is
+  nothing. Against an Autonomous Database over a wallet it is a round trip
+  each, and a schema of ordinary width sat behind "Connecting..." for long
+  enough to look hung, with no way to tell a slow link from a hang.
+
+  Sampling now stops at a wall clock -- `sample_budget`, 30 seconds by default,
+  `0` for no limit. Past it, reflection keeps whatever was sampled and finishes
+  normally: values are an enrichment, and a catalog missing some of them beats
+  a connect that never returns.
+
+  Measured against a real PostgreSQL 16 rather than SQLite: five objects and
+  seven sampled columns in 0.07s normally, and with the budget exhausted, the
+  same five objects in 0.04s with sampling skipped.
+
+- **Fixed: a wrong TNS alias fails immediately instead of after a timeout.**
+  An alias that is not in the wallet's `tnsnames.ora` cannot resolve, but the
+  driver does not say so quickly -- it reports a connection failure after its
+  own timeout, which looks exactly like a slow network. The alias is now
+  checked against the wallet first, and the error lists the aliases the wallet
+  actually has. Asking for a wallet with no alias at all lists them too.
+
+767 tests.
+
 ## 0.1.18
 
 - **Fixed: `schemagate studio` no longer opens on someone else's tables.**

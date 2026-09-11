@@ -204,7 +204,19 @@ def oracle_wallet(wallet: str, alias: str, user: Optional[str] = None,
     if not os.path.isdir(path):
         raise ConnectError(f"wallet must be a directory or a zip: {wallet!r}")
     if not alias:
-        raise ConnectError("a wallet needs a TNS alias, e.g. mydb_high")
+        known = tns_aliases(path)
+        raise ConnectError("a wallet needs a TNS alias, e.g. mydb_high" +
+                           (f" -- this one has: {', '.join(known)}" if known else ""))
+
+    # Check the alias against the wallet before handing it to the driver. A
+    # name that is not in tnsnames.ora cannot resolve, but the driver does not
+    # say so quickly: it reports a connection failure after its own timeout,
+    # which is indistinguishable from a slow network and is how a typo in
+    # `_high` turns into minutes of watching "Connecting...".
+    known = tns_aliases(path)
+    if known and alias.lower() not in {k.lower() for k in known}:
+        raise ConnectError(f"no TNS alias {alias!r} in this wallet -- "
+                           f"it has: {', '.join(known)}")
 
     args: Dict[str, Any] = {"config_dir": path, "wallet_location": path,
                             "dsn": alias}
