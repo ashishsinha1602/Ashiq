@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.35
+
+- **Fixed: every row of the working view sat flush against the next.** `.main`
+  is a flex column with an 18px gap, and that gap is what spaces the page.
+  `#workView` was introduced later as a wrapper around the working rows, which
+  moved `.ask`, `.examples`, `.stats`, `.cost`, `.aiswitch` and `.results` one
+  level down -- and a plain block wrapper carries no gap, so all of them lost
+  their spacing at once. Measured before: the ask input ended at y=132 and the
+  stat cards began at y=132, so their top borders touched the input's bottom
+  border and read as part of its outline. The wrapper now carries the rhythm
+  it interrupted, and the four rows are 18px apart at both desktop and phone
+  width.
+
+  The previous attempt at this shipped a rule scoped to `.main > :empty`,
+  which matched nothing for the same reason: the rows it named are not
+  children of `.main` any more. It is now scoped to both containers, so an
+  empty row -- `#examples` is empty whenever a real database is connected,
+  since the example questions belong to the demo -- collapses instead of
+  taking a slot and doubling the gap above it to 36px.
+
 ## 0.1.34
 
 - **Fixed: the Studio looked like it had lost a connection it still had.** The

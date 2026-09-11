@@ -118,13 +118,22 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .ask input{flex:1;font-size:16px;padding:12px 14px;font-family:var(--sans)}
 .ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
 .examples{display:flex;flex-wrap:wrap;gap:6px}
-/* `.main` is a flex column with an 18px gap, so an EMPTY child is not free:
-   it still takes a slot and the gap lands on both sides of it. A connected
-   database has no example questions (those are the demo's), so this div
-   renders empty and the space under the ask box doubles to 36px, reading as
-   a hole in the layout rather than as spacing. Collapse it when there is
-   nothing in it. Same for any other row that can legitimately render empty. */
-.main > :empty{display:none}
+/* `.main` is a flex column with an 18px gap, and that gap is what spaces the
+   page. #workView was added later as a wrapper around the working rows, which
+   moved .ask/.examples/.stats/.cost/.aiswitch/.results one level down -- and a
+   plain block wrapper has no gap, so every one of those rows lost its spacing
+   and sits flush against the next. Measured: .ask ends at y=132 and .stats
+   begins at y=132, so the stat cards' top borders touch the input's bottom
+   border and read as part of its outline. The wrapper has to carry the same
+   rhythm it interrupted. */
+#workView{display:flex;flex-direction:column;gap:18px}
+/* With that gap restored, an EMPTY row is no longer free: it still takes a
+   slot and the gap lands on both sides of it, doubling to 36px and reading as
+   a hole. #examples is empty whenever a real database is connected, because
+   the example questions belong to the demo. Collapse any row with nothing in
+   it -- scoped to both containers, since the rows now live in the wrapper and
+   a selector naming only .main matches none of them. */
+:where(.main, #workView) > :empty{display:none}
 .examples button{border-style:dashed;color:var(--muted);font-size:12.5px;padding:4px 10px}
 .examples button:hover{color:var(--ink)}
 
