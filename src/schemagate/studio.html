@@ -150,9 +150,21 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .stat.saved .v{color:var(--accent-ink)}
 .stat.hidden .v{color:var(--restrict)}
 
-.results{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;min-height:320px}
+/* Cap how tall the two result panes get. They size to their content, and the
+   content is a whole schema's DDL -- on a 43-object Oracle catalog each grew
+   to about 950px, which pushed the Answer pane to y=2315 on a 1000px viewport
+   and made a question that had already returned 50 rows look unanswered. They
+   scroll internally instead (pre.ddl is already overflow:auto), so the answer
+   stays within reach of the question that asked for it. */
+.results{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;min-height:320px;max-height:min(60vh,560px)}
 @media (max-width:1000px){.results{grid-template-columns:1fr}}
-.pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-width:0}
+/* `min-height:0` is what makes the max-height on `.results` mean anything. A
+   grid (and flex) item defaults to `min-height:auto`, i.e. never smaller than
+   its content, so the panes grew to the full height of the DDL -- 1836px --
+   and simply overflowed a container that had told them to stop at 560. With
+   the floor removed they take the row's height and `pre.ddl`, already
+   `overflow:auto`, scrolls inside them instead of the page. */
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-width:0;min-height:0}
 .pane header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
 .pane header h3{margin:0;font-size:13px;font-weight:600}
 .pane header .meta{color:var(--muted);font-size:12px}
@@ -1932,23 +1944,33 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       const pane = $("answerPane");
       if (!state.answerOn) { pane.hidden = true; return; }
       pane.hidden = false;
+      // Take the reader to the answer. It arrives seconds after the click, by
+      // which time the eye has settled on the panes above it, and it renders
+      // below them -- so without this a question that returned 50 rows reads
+      // as one that returned nothing. Called on every exit that produces
+      // something to read, including the no-columns and error paths, which an
+      // earlier version missed by scrolling only after the table was built.
+      const reveal = () => {
+        try { pane.scrollIntoView({behavior: "smooth", block: "nearest"}); }
+        catch (e) { pane.scrollIntoView(); }   // older browsers: no options arg
+      };
       $("answerMeta").textContent = "working...";
       $("answerSql").hidden = true; $("answerPaste").hidden = true;
       $("answerRows").innerHTML = "";
       let out;
       try { out = await post("/answer", {question, principal, roles:[...roles], top_k:6}); }
-      catch(e){ $("answerMeta").textContent = e.message; return; }
+      catch(e){ $("answerMeta").textContent = e.message; reveal(); return; }
       if (out.paste_prompt) {
         $("answerPaste").value = out.paste_prompt; $("answerPaste").hidden = false;
         $("answerMeta").textContent = out.answer_error ||
           "no model configured -- paste this into any chat";
-        return;
+        reveal(); return;
       }
-      if (out.answer_error) { $("answerMeta").textContent = out.answer_error; return; }
+      if (out.answer_error) { $("answerMeta").textContent = out.answer_error; reveal(); return; }
       $("answerSql").textContent = out.sql || ""; $("answerSql").hidden = !out.sql;
       const cols = out.columns || [], rows = out.rows || [];
       $("answerMeta").textContent = rows.length + " row" + (rows.length===1?"":"s");
-      if (!cols.length) return;
+      if (!cols.length) { reveal(); return; }
       const t = document.createElement("table");
       t.style.cssText = "border-collapse:collapse;font-size:12.5px;width:100%";
       const hd = t.insertRow();
@@ -1967,6 +1989,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
         }
       }
       $("answerRows").appendChild(t);
+      reveal();
     };
   }
 

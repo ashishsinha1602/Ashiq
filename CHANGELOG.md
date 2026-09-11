@@ -2,6 +2,20 @@
 
 ## 0.1.35
 
+- **Fixed: a question that returned rows looked unanswered.** The Answer pane
+  renders below the two result panes, and those panes size to their content --
+  a 43-object Oracle catalog made each about 950px tall, so on a 1000px
+  viewport the answer began at y=2315, over two screens down, with nothing to
+  say it had arrived. The result panes are now capped and scroll internally,
+  and the page brings the answer into view when it lands.
+
+  The cap needed `min-height:0` on the panes to work at all: a grid item
+  defaults to `min-height:auto`, so they ignored the container's max-height
+  and grew to the full height of the DDL -- 1836px, taller than before, and
+  overflowing far enough that the DDL painted over the cards beneath it.
+  Measured after: panes 560px, the DDL scrolling inside them, page height
+  2740px instead of 4178, and the answer sitting at the top of the viewport.
+
 - **Fixed: every row of the working view sat flush against the next.** `.main`
   is a flex column with an 18px gap, and that gap is what spaces the page.
   `#workView` was introduced later as a wrapper around the working rows, which
