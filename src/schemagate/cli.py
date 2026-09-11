@@ -208,7 +208,7 @@ def cmd_studio(args) -> int:
                        config=args.config,
                        restrict_from_grants=args.restrict_from_grants,
                        sample_values=args.values,
-                       allow_remote_connect=args.allow_remote_connect)
+                       allow_remote_connect=args.allow_connect)
 
 
 def cmd_describe(args) -> int:
@@ -383,11 +383,16 @@ def build_parser() -> argparse.ArgumentParser:
                         help="read the distinct values of short, non-personal "
                              "columns so the model does not guess whether a "
                              "status reads 'denied' or 'DENIED'")
-    studio.add_argument("--allow-remote-connect", action="store_true",
-                        help="let the page connect to a database you type into "
-                             "it. Off by default: with it on, anyone who can "
-                             "reach the page can make this server connect "
-                             "anywhere it can see")
+    # `--allow-remote-connect` read as "let someone control this remotely",
+    # which is not what it does -- it lets the page hand the server a database
+    # URL. The clearer name is the one documented; the original stays as a
+    # hidden alias because it shipped in 0.1.14.
+    studio.add_argument("--allow-connect", "--allow-remote-connect",
+                        dest="allow_connect", action="store_true",
+                        help="let the Connect panel open a database you type "
+                             "into the page. Off by default: with it on, "
+                             "anyone who can reach the page can make this "
+                             "server connect anywhere the server can see")
     studio.set_defaults(func=cmd_studio)
 
     describe = sub.add_parser(

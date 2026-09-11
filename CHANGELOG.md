@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.15
+
+Two things 0.1.14 got wrong the moment someone read it.
+
+- **Renamed: `--allow-connect`.** It shipped as `--allow-remote-connect`,
+  which reads as "let someone control this machine remotely". It does not do
+  that -- it lets the Connect panel hand the server a database URL, and the
+  server opens it. A flag guarding a real risk has to describe the real risk,
+  or people turn it on to find out what it does. The old spelling still works
+  and always will; it is in a published release.
+
+- **Added: `pip install "schemagate[all]"`.** Choosing the extra that matches
+  your database is a step nobody should have to take to try something. One
+  command now brings every driver, the model SDKs and MCP; `[databases]` is
+  the four drivers alone.
+
+  Not the default, and that is deliberate rather than cautious: the base
+  install is one dependency, so `import schemagate` cannot fail over a driver
+  nobody is using -- there is a test that fails if the core import ever grows
+  another. `[all]` also leaves out `huggingface` (a torch download) and `oci`
+  (thousands of modules), which are large enough that someone should ask for
+  them by name.
+
+734 tests.
+
 ## 0.1.14
 
 Connect to a database from the Studio, plus a Windows bug that made the Studio unquittable, a leak in `--values`, and two
@@ -21,6 +46,7 @@ things in the repo that were quietly lying.
   the page clears the URL box on success for the same reason.
 
   `schemagate studio` also takes `--restrict-from-grants` and `--values`.
+
 
 - **Added: `schemagate.connect`.** The Connect box asked for a SQLAlchemy URL
   and most people do not have one -- an Oracle team has a wallet zip and a TNS

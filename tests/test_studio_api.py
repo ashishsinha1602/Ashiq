@@ -327,3 +327,41 @@ def test_run_sql_without_a_database_says_so_rather_than_failing(api):
     call, state = api
     state.engine = None
     assert call("/api/run-sql", {"sql": "SELECT 1"})["error"] == "no database connected"
+
+
+def test_both_spellings_of_the_connect_flag_work():
+    """`--allow-remote-connect` read as "let someone control this machine
+    remotely", which is not what it does -- it lets the page hand the server a
+    database URL. The clearer name is documented now, but the original shipped
+    in 0.1.14 and anyone using it should not have it break."""
+    from schemagate.cli import build_parser
+
+    for flag in ("--allow-connect", "--allow-remote-connect"):
+        assert build_parser().parse_args(["studio", flag]).allow_connect is True
+    assert build_parser().parse_args(["studio"]).allow_connect is False
+
+
+def test_one_install_can_bring_every_driver():
+    """"pick the extra that matches your database" is a step people should not
+    have to take to try something. `[all]` exists so one command does it --
+    but not by default, because `import schemagate` must not be able to fail
+    over a driver nobody is using."""
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file():
+        import pytest
+        pytest.skip("not an installed-from-source tree")
+
+    data = tomllib.loads(pyproject.read_text())["project"]
+    extras = data["optional-dependencies"]
+    assert len(data["dependencies"]) == 1, "the base install is one dependency"
+
+    for driver in ("oracledb", "psycopg", "pyodbc", "PyMySQL"):
+        assert any(driver in p for p in extras["databases"]), driver
+        assert any(driver in p for p in extras["all"]), driver
+    # the two that are large enough to ask for by name
+    assert not any("torch" in p for p in extras["all"])
+    assert not any(p.startswith("oci") for p in extras["all"])

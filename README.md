@@ -378,7 +378,8 @@ reconnect — a temporary directory gives you a connection that works once.
 Same thing from the Studio, with a dropdown instead of a dict:
 
 ```bash
-schemagate studio --allow-remote-connect
+pip install "schemagate[all]"      # every driver in one go
+schemagate studio --allow-connect
 ```
 
 | you have | pick |
@@ -388,7 +389,7 @@ schemagate studio --allow-remote-connect
 | `Wallet_mydb.zip` + `mydb_high` | Oracle wallet |
 | a host, a port and a database | the engine by name |
 
-Connecting from the page is **off** unless you pass `--allow-remote-connect`.
+Connecting from the page is **off** unless you pass `--allow-connect`.
 It is the only thing there that reaches outside the process: with it on,
 anyone who can reach the Studio can make your server connect anywhere it can
 see, using whatever credentials they type. A failed connection reports the
