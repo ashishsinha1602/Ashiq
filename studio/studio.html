@@ -237,10 +237,15 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <h2>Database <span class="label" id="connState">demo</span></h2>
       <p class="blurb" style="margin:0 0 6px">A SQLAlchemy URL. Only the schema is
       read — names, types and foreign keys. Nothing here is stored.</p>
+      <p class="blurb" id="cOrdsHint" hidden style="margin:0 0 6px">
+        The Database Actions link from your wallet's README, or the address bar
+        of that page. Reads the catalog over 443 — no wallet, and nothing on
+        port 1522. The schema must be REST-enabled.</p>
       <select id="cKind" aria-label="connection type" style="width:100%">
         <option value="url">SQLAlchemy URL</option>
         <option value="jdbc">JDBC URL</option>
         <option value="wallet">Oracle wallet (Autonomous Database)</option>
+        <option value="ords">Oracle over HTTPS (ORDS) — no wallet, no port 1522</option>
         <option value="postgresql">PostgreSQL — host and port</option>
         <option value="oracle">Oracle — host and service</option>
         <option value="mssql">SQL Server — host and database</option>
@@ -1618,6 +1623,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       url:        ["cUrl"],
       jdbc:       ["cUrl", "cUser", "cPassword"],
       wallet:     ["cWallet", "cAlias", "cWalletPw", "cUser", "cPassword"],
+      ords:       ["cUrl", "cUser", "cPassword"],
       postgresql: ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
       oracle:     ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
       mssql:      ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
@@ -1630,9 +1636,12 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       const kind = $("cKind").value;
       const want = new Set(CONN_FIELDS[kind] || ["cUrl"]);
       for (const id of CONN_ALL) $(id).hidden = !want.has(id);
-      $("cUrl").placeholder = kind === "jdbc"
-        ? "jdbc:oracle:thin:@//host:1521/SERVICE"
+      $("cUrl").placeholder =
+          kind === "jdbc" ? "jdbc:oracle:thin:@//host:1521/SERVICE"
+        : kind === "ords" ? "https://XXXX-DBNAME.adb.REGION.oraclecloudapps.com/ords/sql-developer"
         : "postgresql+psycopg://user:pw@host/db";
+      const hint = $("cOrdsHint");
+      if (hint) hint.hidden = kind !== "ords";
       $("cDatabase").placeholder = kind === "oracle"
         ? "service name, e.g. FREEPDB1" : "database";
     }
@@ -1646,7 +1655,10 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
         restrict_from_grants: $("cGrants").checked,
         sample_values: $("cValues").checked};
       const v = id => $(id).value.trim();
-      if (kind === "url")        { b.url = v("cUrl"); }
+      if (kind === "ords")       { b.url = v("cUrl"); b.user = v("cUser");
+                                   b.password = $("cPassword").value;
+                                   b.schema = (b.schemas[0] || v("cUser")); }
+      else if (kind === "url")   { b.url = v("cUrl"); }
       else if (kind === "jdbc")  { b.jdbc = v("cUrl"); b.user = v("cUser"); b.password = $("cPassword").value; }
       else if (kind === "wallet"){ b.wallet = v("cWallet"); b.alias = v("cAlias");
                                    b.wallet_password = $("cWalletPw").value;

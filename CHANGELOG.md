@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.27
+
+- **Added: Oracle over HTTPS (ORDS) -- an Autonomous Database with no wallet
+  and nothing on port 1522.** SQL*Net wants 1522 and a great many corporate
+  networks do not give it one. The same machine loads Database Actions in a
+  browser without trouble, because that is 443. So the catalog can be read
+  that way instead: `schemagate.ords.reflect_ords()` runs the `USER_*` catalog
+  queries through the ORDS SQL endpoint in a single request and returns the
+  same `ObjectDoc` list reflection produces over the driver. In the Studio it
+  is a connection type -- paste the Database Actions link, a user and a
+  password.
+
+  Verified against a live Autonomous Database, not a fixture: 29 objects, 161
+  columns and 30 foreign keys in 3.3 seconds, with selection returning 8 of 29
+  at 657 prompt tokens against 2,397 for the whole schema.
+
+  What it does not do, and says so: no rows. No sampled values, no GRANT
+  reading, and the model's SQL cannot be run, because all three need a
+  connection this path does not have. Nothing new to install -- it is
+  `urllib`.
+
+- **Fixed: `connected` meant "has an engine", which the ORDS path never has.**
+  The catalog would load, 29 real tables would appear, and the page would
+  insist it still needed connecting and pull the connect form back over them.
+  It now means a database has been reflected; whether SQL can be run is a
+  separate answer (`can_run_sql`).
+
+- **Fixed: the Oracle proxy is opt-in again.** 0.1.26 adopted a generic
+  `HTTPS_PROXY`, which a corporate machine sets for web traffic. Quietly
+  tunnelling SQL*Net through an HTTP proxy that will not carry it turned a
+  plain "timed out" into `DPY-4011: the database or network closed the
+  connection` -- a worse error, further from the truth, that blames the
+  database for a firewall. Only `SCHEMAGATE_ORACLE_PROXY` is read now.
+
+804 tests.
+
 ## 0.1.26
 
 - **Fixed: the reason for a failed connection is on the second line, and was

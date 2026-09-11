@@ -310,8 +310,13 @@ def _proxy_from_env() -> Tuple[Optional[str], int]:
     import os
     from urllib.parse import urlparse
 
-    raw = (os.environ.get("SCHEMAGATE_ORACLE_PROXY")
-           or os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY") or "").strip()
+    # Only the explicit variable. Auto-adopting the generic HTTPS_PROXY was a
+    # mistake: a corporate machine sets it for web traffic, and quietly
+    # tunnelling SQL*Net through an HTTP proxy that will not cleanly carry it
+    # turns a plain "timed out" into "DPY-4011: connection closed" -- a worse
+    # error, further from the truth, that looks like the database's fault. A
+    # proxy for Oracle is now something you ask for on purpose.
+    raw = os.environ.get("SCHEMAGATE_ORACLE_PROXY", "").strip()
     if not raw:
         return None, 0
     parsed = urlparse(raw if "://" in raw else "http://" + raw)

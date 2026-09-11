@@ -73,6 +73,11 @@ class StudioState:
         #: invented tables "your database" is the confusion this exists to
         #: stop.
         self.is_demo = False
+        #: Whether a real database has been reflected. Not "is there an
+        #: engine": the ORDS path has a catalog and no engine at all, and
+        #: answering that question with the engine left the page insisting it
+        #: still needed connecting while showing 29 of the user's own tables.
+        self.connected = False
 
     def schemas_json(self) -> Dict[str, Any]:
         """The shape the page expects: docs are not needed server-side, but
@@ -234,6 +239,60 @@ class StudioState:
         self.catalog.index()
         return {"written": written, "objects": len(self.catalog._docs)}
 
+    def _connect_ords(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Catalog over HTTPS, for a machine that cannot reach 1522.
+
+        No engine is kept. Everything that needs one -- running the SQL a
+        model writes, sampling values -- stays off, and the page is told so
+        rather than being left to fail at the point of use.
+        """
+        from .catalog import Catalog
+        from .ords import OrdsError, ords_base, reflect_ords
+
+        user = str(body.get("user") or "")
+        schema = str(body.get("schema") or body.get("schemas") or user or "")
+        if isinstance(schema, list):
+            schema = schema[0] if schema else user
+        try:
+            docs = reflect_ords(str(body.get("url") or ""), schema=schema,
+                                user=user, password=str(body.get("password") or ""))
+        except OrdsError as e:
+            return {"error": f"could not connect -- {e}"}
+        except Exception as e:                            # noqa: BLE001
+            from .connect import safe_error
+            return {"error": "could not connect -- " +
+                             safe_error(e, str(body.get("password") or ""))}
+
+        cat = Catalog(name="studio")
+        cat.add_all(docs)
+        cat.index()
+        self.catalog = cat
+        self.engine = None
+        self.is_demo = False
+        self.connected = True
+        self.title = "Your database"
+        self.blurb = (f"{len(docs)} objects reflected from Oracle over ORDS. "
+                      "Read-only catalog: no rows are read on this path.")
+        self.questions = []
+        base = ords_base(str(body.get("url") or ""))
+        return {"objects": len(docs), "dialect": "oracle (ORDS)",
+                "schemas": [schema.upper()], "grants": None, "values": False,
+                "demo": False, "schema": self.schemas_json()["live"],
+                "recipe": {
+                    "cli": "# ORDS is a library path today, not a CLI flag",
+                    "python": (
+                        "from schemagate import Catalog\n"
+                        "from schemagate.ords import reflect_ords\n\n"
+                        "docs = reflect_ords(\n"
+                        f"    {base!r},\n"
+                        f"    schema={schema.upper()!r}, user={user!r},\n"
+                        "    password=$DB_PASSWORD)\n"
+                        "cat = Catalog()\n"
+                        "cat.add_all(docs)   # returns None; chaining it does not work\n"
+                        "cat.index()"),
+                    "studio": "# connect from the page: Database -> Oracle over HTTPS (ORDS)",
+                }}
+
     def connect(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Reflect a database into this running Studio.
 
@@ -250,6 +309,14 @@ class StudioState:
         from sqlalchemy import create_engine
 
         from .catalog import Catalog
+
+        # ORDS is not a SQLAlchemy URL and never will be -- it is a REST
+        # endpoint that runs a statement and returns JSON. It gets its own
+        # branch rather than a fake dialect, because the difference is real:
+        # this path reads the catalog and nothing else.
+        if str(body.get("kind") or "").lower() == "ords":
+            return self._connect_ords(body)
+
         from .connect import (
             ConnectError,
             driver_hint,
@@ -326,6 +393,7 @@ class StudioState:
         self.catalog = cat
         self.engine = engine
         self.is_demo = False
+        self.connected = True
         self.title = "Your database"
         self.blurb = (f"{len(cat._docs)} objects reflected from "
                       f"{engine.dialect.name}. Nothing is catalogued yet.")
@@ -426,7 +494,10 @@ def _handler(state: StudioState):
             elif self.path == "/api/settings":
                 out = state.describe_settings()
                 out["allow_connect"] = state.allow_connect
-                out["connected"] = state.engine is not None and not state.is_demo
+                out["connected"] = state.connected and not state.is_demo
+                #: The engine is a separate question -- it is what runs the SQL
+                #: a model writes, and the ORDS path has none.
+                out["can_run_sql"] = state.engine is not None
                 out["demo"] = state.is_demo
                 self._json(200, out)
             else:
@@ -540,6 +611,9 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         questions = []
     state = StudioState(cat, title, blurb, questions, engine=engine)
     state.is_demo = bool(demo and not url)
+    # `--url` is a connection made before the page opened; the page must not
+    # then ask for one.
+    state.connected = bool(url)
     # On loopback, connecting needs no permission: the only person who can
     # reach the page is someone already sitting at a shell on this machine,
     # and they can open a database without asking the Studio to do it. The
