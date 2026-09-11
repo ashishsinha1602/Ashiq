@@ -23,7 +23,21 @@ Two things 0.1.14 got wrong the moment someone read it.
   (thousands of modules), which are large enough that someone should ask for
   them by name.
 
-734 tests.
+- **Fixed: connecting to a database left the demo on screen.** The page is
+  built around the bundled schema, and its hints, its restricted object and
+  its example questions are baked in. After connecting they stayed -- so the
+  header read "connected to your database" while the rail still said
+  `hr_compensation needs payroll`, about a database with no such table. That
+  is not cosmetic: the page was describing an access rule that did not exist.
+
+  Connecting now replaces the rail with the live catalog's own -- empty, for a
+  database nobody has catalogued yet -- clears the question box and the last
+  result, and hides the two things that only ever applied to the demo: the
+  "running entirely in this browser tab" intro and the pre-written AI
+  descriptions toggle. Cataloguing afterwards describes the connected
+  database, which it now has a test to prove.
+
+737 tests.
 
 ## 0.1.14
 

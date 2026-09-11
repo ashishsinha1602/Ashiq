@@ -151,3 +151,15 @@ def test_password_fields_are_password_inputs():
         import re as _re
         m = _re.search(rf'<input id="{control}"[^>]*>', s)
         assert m and 'type="password"' in m.group(0), control
+
+
+def test_connecting_replaces_the_demo_rail_in_the_page():
+    """The server returns the live catalog's own hints, restrictions and
+    questions; the page has to actually use them, hide the "this is a demo"
+    intro, and drop the pre-written AI descriptions toggle, which only ever
+    applied to the bundled schemas."""
+    s = page()
+    assert "SCHEMAS[state.schema] = Object.assign(" in s
+    assert '$("intro").hidden = true' in s
+    assert '$("aiswitch").hidden = true' in s
+    assert "renderRail(); renderExamples();" in s

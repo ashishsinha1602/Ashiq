@@ -286,10 +286,19 @@ class StudioState:
         self.catalog = cat
         self.engine = engine
         self.title = "Your database"
-        self.blurb = f"{len(cat._docs)} objects reflected from {engine.dialect.name}."
+        self.blurb = (f"{len(cat._docs)} objects reflected from "
+                      f"{engine.dialect.name}. Nothing is catalogued yet.")
+        # The page was built around the bundled demo, whose hints, restricted
+        # object and example questions are baked into it. None of that belongs
+        # to the database just connected, and leaving it on screen is worse
+        # than cosmetic: the rail would claim a restriction this database does
+        # not have. Hand back the live catalog's own -- empty, for a database
+        # nobody has catalogued yet -- so the page can replace them.
+        self.questions = []
         return {"objects": len(cat._docs), "dialect": engine.dialect.name,
                 "schemas": sorted({d.schema for d in cat._docs.values() if d.schema}),
-                "grants": report, "values": want_values}
+                "grants": report, "values": want_values,
+                "demo": False, "schema": self.schemas_json()["live"]}
 
     def run_sql(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Run one read-only statement, through the same guard as `--sql`."""

@@ -365,3 +365,48 @@ def test_one_install_can_bring_every_driver():
     # the two that are large enough to ask for by name
     assert not any("torch" in p for p in extras["all"])
     assert not any(p.startswith("oci") for p in extras["all"])
+
+
+def test_connecting_hands_back_the_new_catalog_not_the_old_one(api, tmp_path):
+    """The page is built around the bundled demo, whose hints, restricted
+    object and example questions are baked into it. After connecting to a real
+    database none of that belongs, and leaving it is worse than untidy: the
+    rail would claim `hr_compensation needs payroll` about a database that has
+    no such table, which is the page describing an access rule that does not
+    exist.
+    """
+    import sqlite3
+
+    db = tmp_path / "fresh.db"
+    con = sqlite3.connect(db)
+    con.executescript("CREATE TABLE widget (id INTEGER PRIMARY KEY, sku TEXT);")
+    con.commit(); con.close()
+
+    call, state = api
+    state.allow_connect = True
+    out = call("/api/connect", {"url": f"sqlite:///{db}"})
+
+    assert out["demo"] is False
+    schema = out["schema"]
+    assert schema["hints"] == {} and schema["restrict"] == {}
+    assert schema["questions"] == []
+    assert "Nothing is catalogued yet" in schema["blurb"]
+
+
+def test_cataloguing_after_connecting_describes_the_new_database(api, tmp_path):
+    """The catalogue button has to follow the connection. Describing the demo
+    schema while the page says it is connected to something else is the same
+    class of lie as the stale rail."""
+    import sqlite3
+
+    db = tmp_path / "fresh2.db"
+    con = sqlite3.connect(db)
+    con.executescript("CREATE TABLE invoice_line (id INTEGER PRIMARY KEY, qty INT);")
+    con.commit(); con.close()
+
+    call, state = api
+    state.allow_connect = True
+    call("/api/connect", {"url": f"sqlite:///{db}"})
+    prompt = call("/api/describe", {})["paste_prompt"]
+    assert "invoice_line" in prompt
+    assert "crm_customer" not in prompt, "still describing the demo schema"

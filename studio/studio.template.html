@@ -668,6 +668,25 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
                          (g.roles_expanded ? ", " + g.roles_expanded + " role(s) expanded" : "");
       note("cNote", msg + ".");
       $("sqlPanel").hidden = false;
+
+      // Become the new database. The demo's hints, its restricted object and
+      // its example questions are baked into this page, and none of them
+      // belong to what was just connected -- a rail still claiming
+      // `hr_compensation needs payroll` is not a cosmetic problem, it is the
+      // page describing an access rule this database does not have.
+      if (out.schema){
+        SCHEMAS[state.schema] = Object.assign(
+          {docs: [], hints: {}, restrict: {}, questions: [], golden: {}},
+          out.schema);
+        state.roles = new Set();
+        state.ai = false;
+        $("q").value = "";
+        $("intro").hidden = true;        // "this is a demo, in your browser"
+        $("aiswitch").hidden = true;     // pre-written descriptions, demo only
+        renderRail(); renderExamples();
+        $("objs").innerHTML = ""; $("ddl").textContent = "";
+        $("answerPane").hidden = true; $("sqlPane").hidden = true;
+      }
       run();
     };
 
