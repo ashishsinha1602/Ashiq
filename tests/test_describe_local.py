@@ -72,6 +72,17 @@ def test_extra_sentences_are_kept_not_trimmed():
     assert head == "One row per order line. It also carries the discount."
 
 
+def test_a_short_sentence_with_aliases_is_not_called_truncated():
+    """The pipe is the evidence that the model got to the end of the format.
+
+    Judging the sentence in isolation throws that away, and every sound reply
+    under twelve words with no full stop reads as cut off -- which warned on
+    34 of 39 objects and bought each a second call it did not need.
+    """
+    short = "Alerts raised by sanctions screening | flagged, watchlist, hits"
+    assert is_usable(short, doc())
+
+
 def test_a_missing_full_stop_is_not_tidied_onto_a_cut_reply():
     """Terminal punctuation is how truncation is detected.
 

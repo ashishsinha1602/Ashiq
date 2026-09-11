@@ -6,6 +6,7 @@ is about the page surviving that: nothing a user can type into the settings
 panel should be able to take the page down or make selection stop working.
 """
 import json
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -329,6 +330,8 @@ def test_both_spellings_of_the_connect_flag_work():
     assert build_parser().parse_args(["studio"]).allow_connect is None
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11),
+                    reason="tomllib is 3.11+; the pyproject extras it checks do not vary by interpreter")
 def test_one_install_can_bring_every_driver():
     """"pick the extra that matches your database" is a step people should not
     have to take to try something. `[all]` exists so one command does it --
@@ -400,6 +403,8 @@ def test_cataloguing_after_connecting_describes_the_new_database(api, tmp_path):
     assert "crm_customer" not in prompt, "still describing the demo schema"
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11),
+                    reason="tomllib is 3.11+; the pyproject extras it checks do not vary by interpreter")
 def test_the_oci_sdk_is_available_but_not_in_the_default_everything_install():
     """It is what lets cataloguing run through OCI Generative AI with no API
     key, so it has to be installable -- but on its own it is 488 MB and 17,505

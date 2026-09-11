@@ -234,7 +234,22 @@ def is_usable(text: str, doc: Optional[ObjectDoc] = None,
     all, not that it produced a full dozen words.
     """
     head, tail = split_description(text)
-    if len(head.split()) < 3 or looks_truncated(head):
+    # looks_truncated() must see the WHOLE reply, not the sentence alone. It
+    # treats a pipe as proof the model reached the everyday-words section and
+    # therefore was not cut off mid-clause; hand it the head with the pipe
+    # already split away and that evidence is gone, so every sound sentence
+    # shorter than twelve words and not ending in a full stop is read as
+    # truncated. That warned on 34 of 39 objects and bought each of them a
+    # pointless second call.
+    #
+    # There is deliberately no minimum word count. A very short description
+    # ("Table.") is a poor one, but it is not a *cut* one, and a provider that
+    # returns it will return it again -- so treating brevity as a retry
+    # condition spends a second call to get the same string, and reports it
+    # under a warning telling the user to check their output token limit,
+    # which is not the problem. Shortness is judged by the reader; truncation
+    # is judged here.
+    if looks_truncated(text):
         return False
     if doc is not None and head.rstrip(".").strip().lower() in {
             str(doc.qname or "").lower(), str(doc.name or "").lower()}:
