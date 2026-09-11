@@ -67,6 +67,23 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .restrict span{color:var(--muted)}
 
 .main{padding:22px 26px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.hero{max-width:660px;margin:6vh auto 0;display:flex;flex-direction:column;gap:14px}
+.hero h1{font-size:22px;font-weight:600;margin:0;letter-spacing:-.01em}
+.hero p{margin:0;color:var(--muted);font-size:14px;line-height:1.55}
+.hero p b{color:var(--fg)}
+.hero-alt{font-size:13px}
+.linky{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline}
+#connectSlot{margin-top:4px}
+#connectSlot section{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);
+  border-radius:10px;padding:18px;background:var(--panel)}
+#connectSlot h2{font-size:13px;font-weight:600;margin:0 0 2px;display:flex;justify-content:space-between}
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:4px}
+.choice{text-align:left;display:flex;flex-direction:column;gap:4px;padding:14px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel);cursor:pointer;font:inherit}
+.choice:hover{border-color:var(--accent)}
+.choice b{font-size:13.5px;font-weight:600}
+.choice span{font-size:12.5px;color:var(--muted);line-height:1.45}
+.choice.primary{border-color:var(--accent)}
 .ask{display:flex;gap:8px}
 .ask input{flex:1;font-size:16px;padding:12px 14px;font-family:var(--sans)}
 .ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
@@ -281,6 +298,38 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
   </aside>
 
   <main class="main">
+    <div id="connectHome" hidden>
+      <div class="hero">
+        <h1>Connect a database</h1>
+        <p>schemagate reads the schema only &mdash; names, types and foreign keys.
+           No rows are read unless you ask, and nothing leaves this machine.</p>
+        <div id="connectSlot"></div>
+        <p class="hero-alt">Not ready? <button class="linky" id="goDemo">Look at the sample schema instead</button></p>
+      </div>
+    </div>
+
+    <div id="modelChoice" hidden>
+      <div class="hero">
+        <h1 id="mcTitle">Connected</h1>
+        <p id="mcSub"></p>
+        <p><b>Add a description to each object?</b> One sentence per table is what
+           turns &ldquo;what does each person get paid&rdquo; into the pay table, which
+           matching names alone cannot do. Selection works without it.</p>
+        <div class="choices">
+          <button class="choice" id="mcSkip">
+            <b>Not now</b><span>Selection works on names, types and keys. You can add this later.</span>
+          </button>
+          <button class="choice primary" id="mcLocal">
+            <b>Local model &mdash; free</b><span>Runs on this machine, no key, no data sent anywhere.</span>
+          </button>
+          <button class="choice" id="mcKey">
+            <b>Use an API key</b><span>Anthropic, OpenAI, Gemini or OCI. Best quality.</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="workView">
     <div class="intro" id="intro">
       <div class="intro-what">
         <b>What this is.</b> A demo of <code>schemagate</code>, running entirely in this browser tab on six
@@ -376,6 +425,7 @@ SCHEMAGATE_DATABASE_URL=postgresql://localhost/app \
   python -m schemagate.mcp_server</pre></div>
       <div class="pane"><h4>Run this studio on your own database</h4><pre>pip install schemagate
 schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schema, nothing leaves your machine. <a href="https://github.com/ashishsinha1602/schemagate">github.com/ashishsinha1602/schemagate</a> · Apache-2.0 · Ashish Sinha</p></div>
+    </div>
     </div>
   </main>
 </div>
@@ -587,6 +637,19 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       // holds, so none of it belongs on the demo tab -- "Run SQL" there would
       // run against the live engine while the screen shows invented tables.
       const live = state.schema === "live";
+      // Connecting is the page's job until there is a connection, so the form
+      // moves to the middle and everything else steps back. It is the same
+      // <section> in both places -- moved, not duplicated -- so its fields and
+      // handlers survive the trip.
+      const needsConnect = live && st.allow_connect && !st.connected && !st.demo;
+      const slot = $("connectSlot"), panel = $("connectPanel");
+      if (panel) {
+        if (needsConnect && panel.parentNode !== slot) slot.appendChild(panel);
+        else if (!needsConnect && panel.parentNode === slot) railHome.insertBefore(panel, railAfter);
+        panel.hidden = false;
+      }
+      $("connectHome").hidden = !needsConnect;
+      $("workView").hidden = needsConnect || !$("modelChoice").hidden;
       $("connectPanel").hidden = !live || !st.allow_connect;
       $("sqlPanel").hidden = !live || !st.connected;
       $("modelPanel").hidden = !live;
@@ -663,6 +726,42 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       }
     }
     $("mProvider").addEventListener("change", paintProviderHints);
+
+    // where the connect panel sits in the rail, so moving it out and back is
+    // not a guess about ordering
+    const railHome = $("connectPanel") ? $("connectPanel").parentNode : null;
+    const railAfter = $("connectPanel") ? $("connectPanel").nextElementSibling : null;
+
+    async function leaveModelChoice(){
+      $("modelChoice").hidden = true;
+      $("workView").hidden = false;
+      // Re-read rather than re-apply: lastSettings was captured before the
+      // connection existed, and painting it again would decide the page still
+      // needs connecting and take the form back to the middle of the screen.
+      try {
+        lastSettings = await (await fetch(API+"/settings")).json();
+        paintSettings(lastSettings);
+      } catch(e){}
+      run();
+    }
+    $("mcSkip").onclick = leaveModelChoice;
+    $("mcLocal").onclick = async () => {
+      $("mProvider").value = "local"; paintProviderHints();
+      try { await post("/settings", {provider:"local", model:$("mModel").value.trim()}); } catch(e){}
+      leaveModelChoice();
+      $("catPanel").scrollIntoView({behavior:"smooth", block:"center"});
+    };
+    $("mcKey").onclick = () => {
+      $("mProvider").value = "anthropic"; paintProviderHints();
+      leaveModelChoice();
+      $("mKey").focus();
+      $("modelPanel").scrollIntoView({behavior:"smooth", block:"center"});
+    };
+    const gd = $("goDemo");
+    if (gd) gd.onclick = () => {
+      const t = [...$("tabs").querySelectorAll("button")].find(b => b.textContent === "Demo schema");
+      if (t) t.click();
+    };
 
     let lastSettings = null;
     window.__paintPanels = () => { if (lastSettings) paintSettings(lastSettings); };
@@ -761,6 +860,15 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       const mt2 = $("modeText");
       if (mt2) mt2.textContent = "connected to your database";
       if ($("intro")) $("intro").hidden = true;
+      // Ask the question once, here, where it has an answer: the catalog now
+      // exists and describing it is the obvious next step. Buried in a rail
+      // panel it reads as configuration, and nobody configures a thing they
+      // have not yet seen work.
+      $("mcSub").textContent = out.objects + " objects reflected from " +
+        out.dialect + ". Nothing is described yet.";
+      $("modelChoice").hidden = false;
+      $("connectHome").hidden = true;
+      $("workView").hidden = true;
       let msg = "Reflected " + out.objects + " object(s)";
       if (out.schemas && out.schemas.length) msg += " from " + out.schemas.join(", ");
       const g = out.grants;

@@ -206,3 +206,39 @@ def test_the_demo_tab_does_not_ask_the_server_about_its_tables():
     real, and the second is worse."""
     html = _served_page(_state())
     assert 'if (API && state.schema === "live")' in html
+
+
+# ---- connecting is the page, until there is a connection ----------------
+
+def test_the_connect_form_moves_to_the_middle_when_nothing_is_connected():
+    """It was the third panel in a nine-panel rail: the one thing the page
+    needs from you, sized like a footnote. Moved, not duplicated -- the same
+    section, so its fields and handlers survive the trip."""
+    html = _served_page(_state())
+    assert 'id="connectSlot"' in html
+    assert "if (needsConnect && panel.parentNode !== slot) slot.appendChild(panel)" in html
+    assert "railHome.insertBefore(panel, railAfter)" in html
+
+
+def test_the_working_view_is_hidden_until_there_is_something_to_work_on():
+    html = _served_page(_state())
+    assert 'id="workView"' in html
+    assert '$("workView").hidden = needsConnect' in html
+
+
+def test_the_model_question_is_asked_once_on_connect():
+    """Buried in a rail panel it reads as configuration, and nobody configures
+    a thing they have not seen work yet. It belongs at the moment the catalog
+    starts existing."""
+    html = _served_page(_state())
+    assert 'id="modelChoice"' in html
+    for el in ("mcSkip", "mcLocal", "mcKey"):
+        assert f'id="{el}"' in html
+
+
+def test_leaving_the_model_question_re_reads_the_settings():
+    """lastSettings was captured before the connection existed. Re-applying it
+    decided the page still needed connecting and pulled the form back to the
+    middle of the screen, over a catalog that had just loaded."""
+    html = _served_page(_state())
+    assert 'lastSettings = await (await fetch(API+"/settings")).json()' in html

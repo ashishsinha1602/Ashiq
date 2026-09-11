@@ -11,7 +11,7 @@ from .embedder import HashingEmbedder, cosine_distance, tokenize
 from .stores.memory import MemoryStore
 from .catalog import Catalog
 
-__version__ = "0.1.21"
+__version__ = "0.1.22"
 __all__ = ["Catalog", "Principal", "IdentityError", "ObjectDoc", "Column",
            "ForeignKey", "Selection", "Scored", "HashingEmbedder",
            "MemoryStore", "cosine_distance", "tokenize"]

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.22
+
+- **Changed: connecting is the page, until there is a connection.** The one
+  thing the Studio needs from you was the third panel in a nine-panel rail,
+  sized like a footnote, beside a working view that had nothing in it. With
+  nothing connected, the connect form now moves to the middle of the page
+  under a plain heading and everything else steps back. It is the same
+  `<section>` in both places -- moved, not duplicated -- so its fields and
+  handlers survive the trip, and it goes back to the rail once there is a
+  database to talk to.
+
+- **Added: the cataloguing question is asked once, at the moment it has an
+  answer.** The instant a connection lands: "29 objects reflected from oracle.
+  Nothing is described yet." -- and three ways forward. Not now, a local model
+  that is free and needs no key, or an API key. Asked from a rail panel this
+  reads as configuration, and nobody configures a thing they have not seen
+  work yet.
+
+- **Added: picking a provider fills in a model id.** Choosing the local
+  provider left an empty box whose answer -- `Qwen/Qwen2.5-1.5B-Instruct` --
+  was written down only in a docstring. Each provider now supplies a working
+  default, switching replaces a default with the new one's, and a model id you
+  typed yourself survives the switch. The API key box is hidden for the local
+  provider, which has no use for one.
+
+786 tests.
+
 ## 0.1.21
 
 - **Fixed: connecting is bounded.** A host that drops packets rather than
