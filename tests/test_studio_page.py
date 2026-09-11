@@ -163,3 +163,14 @@ def test_connecting_replaces_the_demo_rail_in_the_page():
     assert '$("intro").hidden = true' in s
     assert '$("aiswitch").hidden = true' in s
     assert "renderRail(); renderExamples();" in s
+
+
+def test_the_command_that_reproduces_a_connection_is_offered():
+    """Connecting in a page is how someone tries this; a command is how they
+    use it. Reconstructing the URL from memory afterwards is where a wallet
+    connection in particular goes wrong."""
+    s = page()
+    for control in ("recipePanel", "recipeCli", "recipePy", "recipeCopy",
+                    "recipeCopyPy"):
+        assert f'id="{control}"' in s, control
+    assert 'out.recipe.cli' in s and 'out.recipe.python' in s

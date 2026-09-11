@@ -20,7 +20,25 @@
   than assuming: the describe prompt now names the tables of the database that
   was connected, and none of the demo's.
 
-737 tests.
+- **Added: the command that reproduces the connection.** Connecting in a page
+  is how someone tries this; a command is how they use it. After a successful
+  connect the Studio shows the `schemagate select ... --url ...` line and the
+  Python equivalent, carrying the same schemas and flags that were actually
+  used -- otherwise it would be a different, quieter connection that happens
+  to reach the same database.
+
+  Passwords are placeholders, and the placeholder is `$DB_PASSWORD` rather
+  than `***` because the point is a command someone can paste and run. A
+  command with a live password in it ends up in a screenshot, a chat message
+  and shell history, which are the three places a password is hardest to
+  recall from. A wallet connection carries its `SCHEMAGATE_CONNECT_ARGS`,
+  since a wallet is not a URL and a command with only `--url` in it would
+  connect to nothing.
+
+  Everything stays on the machine that runs it: the server is local, the page
+  is local, and nothing is written to disk.
+
+743 tests.
 
 ## 0.1.15
 

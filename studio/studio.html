@@ -219,6 +219,18 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <button id="sqlGo" style="margin-top:6px;width:100%">Run</button>
       <div id="sqlNote" class="blurb" style="margin-top:6px"></div>
     </section>
+    <section id="recipePanel" hidden>
+      <h2>Use it from the command line</h2>
+      <p class="blurb" style="margin:0 0 6px">The same connection, outside this page.
+      Your password is a placeholder — set it in the environment rather than typing it
+      into a command.</p>
+      <textarea id="recipeCli" class="mono" rows="4" readonly aria-label="command line"
+                style="width:100%;font-size:11px"></textarea>
+      <button id="recipeCopy" style="margin-top:6px;width:100%">Copy command</button>
+      <textarea id="recipePy" class="mono" rows="5" readonly aria-label="python"
+                style="margin-top:6px;width:100%;font-size:11px"></textarea>
+      <button id="recipeCopyPy" style="margin-top:6px;width:100%">Copy Python</button>
+    </section>
     <section id="modelPanel" hidden>
       <h2>Model <span class="label" id="modelState">off</span></h2>
       <p class="blurb" style="margin:0 0 6px">Selection never uses a model. This is for
@@ -1404,6 +1416,11 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       return b;
     }
 
+
+    const copyFrom = id => { $(id).select(); document.execCommand("copy"); };
+    $("recipeCopy").onclick   = () => { copyFrom("recipeCli"); note("cNote", "Command copied."); };
+    $("recipeCopyPy").onclick = () => { copyFrom("recipePy");  note("cNote", "Python copied."); };
+
     $("cGo").onclick = async () => {
       note("cNote", "Connecting...");
       let out;
@@ -1425,6 +1442,12 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
                          (g.roles_expanded ? ", " + g.roles_expanded + " role(s) expanded" : "");
       note("cNote", msg + ".");
       $("sqlPanel").hidden = false;
+      if (out.recipe){
+        $("recipeCli").value = out.recipe.cli;
+        $("recipePy").value  = out.recipe.python;
+        $("recipePanel").hidden = false;
+      }
+
 
       // Become the new database. The demo's hints, its restricted object and
       // its example questions are baked into this page, and none of them

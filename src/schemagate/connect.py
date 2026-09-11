@@ -25,7 +25,8 @@ import re
 from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import parse_qsl, quote_plus, urlsplit
 
-__all__ = ["resolve", "from_jdbc", "oracle_wallet", "SUPPORTED", "ConnectError"]
+__all__ = ["resolve", "from_jdbc", "oracle_wallet", "recipe", "redact",
+           "SUPPORTED", "ConnectError"]
 
 #: What the Studio form offers. Each is a real driver that has to be installed
 #: -- the extra is named so the error can say which.
@@ -288,3 +289,78 @@ def driver_hint(url: str) -> Optional[str]:
         if prefix.split("+")[0] == scheme:
             return extra
     return None
+
+#: What a password is replaced with when a connection is shown back to the
+#: person who made it. Not `***`: the point is a command they can actually
+#: run, and an environment variable is both runnable and not a secret written
+#: into shell history.
+PASSWORD_PLACEHOLDER = "$DB_PASSWORD"
+
+
+def redact(url: str, placeholder: str = PASSWORD_PLACEHOLDER) -> str:
+    """A URL safe to print, with the password swapped for a placeholder.
+
+    Studio shows the command that reproduces a connection, and a command with
+    a live password in it ends up in a screenshot, a chat message and shell
+    history -- the three places a password is hardest to recall from.
+    """
+    m = re.match(r"^([^:]+://)([^:/@]+):([^@]*)@(.*)$", url)
+    if not m:
+        return url
+    scheme, user, _, rest = m.groups()
+    return f"{scheme}{user}:{placeholder}@{rest}"
+
+
+def recipe(url: str, connect_args: Optional[Mapping[str, Any]] = None,
+           schemas: Optional["list[str]"] = None,
+           restrict_from_grants: bool = False,
+           sample_values: bool = False) -> Dict[str, str]:
+    """The command line and the Python that reproduce this connection.
+
+    Connecting in a page is how someone tries this; a command is how they use
+    it. Handing back both at the moment it works is cheaper than asking them
+    to reconstruct the URL from memory -- especially for a wallet, where the
+    connection is not a URL at all and the shape is easy to get wrong.
+    """
+    import json as _json
+
+    args = dict(connect_args or {})
+    secret = args.pop("password", None)
+    wallet_secret = args.pop("wallet_password", None)
+    shown = dict(args)
+    if secret is not None:
+        shown["password"] = PASSWORD_PLACEHOLDER
+    if wallet_secret is not None:
+        shown["wallet_password"] = "$WALLET_PASSWORD"
+
+    safe_url = redact(url)
+    flags = "".join(f" --schema {s}" for s in (schemas or []))
+    if restrict_from_grants:
+        flags += " --restrict-from-grants"
+    if sample_values:
+        flags += " --values"
+
+    if shown:
+        env = ("export SCHEMAGATE_CONNECT_ARGS='"
+               + _json.dumps(shown, sort_keys=True) + "'\n")
+        cli = (env + f'schemagate select "which customers owe us money" '
+                     f'--url "{safe_url}"{flags} --answer')
+        py = ("from sqlalchemy import create_engine\n"
+              "from schemagate import Catalog\n"
+              "from schemagate.connect import resolve\n\n"
+              "url, connect_args = resolve(" + _json.dumps(
+                  {"kind": "wallet", **{k: v for k, v in shown.items()
+                                        if k in ("config_dir", "dsn", "user")}},
+                  sort_keys=True) + ")\n"
+              "cat = Catalog().bootstrap(create_engine(url, "
+              "connect_args=connect_args))")
+    else:
+        cli = (f'schemagate select "which customers owe us money" '
+               f'--url "{safe_url}"{flags} --answer')
+        py = ("from schemagate import Catalog\n\n"
+              f'cat = Catalog().bootstrap("{safe_url}"'
+              + (f", schemas={schemas!r}" if schemas else "")
+              + (", sample_values=True" if sample_values else "") + ")")
+
+    studio = f'schemagate studio --url "{safe_url}"{flags}'
+    return {"cli": cli, "python": py, "studio": studio}

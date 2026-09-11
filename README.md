@@ -389,6 +389,11 @@ schemagate studio --allow-connect
 | `Wallet_mydb.zip` + `mydb_high` | Oracle wallet |
 | a host, a port and a database | the engine by name |
 
+Once connected, the Studio shows the command that reproduces it — the
+`schemagate select ... --url ...` line and the Python equivalent, with the
+password as `$DB_PASSWORD` rather than the real one. Try it in the page, then
+take the command.
+
 Connecting from the page is **off** unless you pass `--allow-connect`.
 It is the only thing there that reaches outside the process: with it on,
 anyone who can reach the Studio can make your server connect anywhere it can

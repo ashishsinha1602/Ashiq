@@ -238,7 +238,7 @@ class StudioState:
         from sqlalchemy import create_engine
 
         from .catalog import Catalog
-        from .connect import ConnectError, driver_hint, resolve
+        from .connect import ConnectError, driver_hint, recipe, resolve
 
         # A SQLAlchemy URL, a JDBC string, or the wallet fields -- whichever
         # the person actually has. `connect_args` is not optional: an
@@ -298,7 +298,15 @@ class StudioState:
         return {"objects": len(cat._docs), "dialect": engine.dialect.name,
                 "schemas": sorted({d.schema for d in cat._docs.values() if d.schema}),
                 "grants": report, "values": want_values,
-                "demo": False, "schema": self.schemas_json()["live"]}
+                "demo": False, "schema": self.schemas_json()["live"],
+                # The command that reproduces this, handed over at the moment
+                # it works. Connecting in a page is how someone tries this; a
+                # command is how they use it, and reconstructing the URL from
+                # memory afterwards is where a wallet connection goes wrong.
+                # Passwords are placeholders -- a command with a live one in
+                # it ends up in a screenshot and in shell history.
+                "recipe": recipe(url, connect_args, schemas,
+                                 want_grants, want_values)}
 
     def run_sql(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Run one read-only statement, through the same guard as `--sql`."""

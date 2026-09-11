@@ -167,3 +167,55 @@ def test_every_supported_engine_names_the_extra_that_provides_its_driver():
             continue
         assert extra and extra.startswith("schemagate[")
         assert driver_hint(f"{prefix}://h/db") == extra
+
+
+# --- taking the connection away with you -----------------------------------
+
+def test_a_password_is_never_printed_back(monkeypatch):
+    """Studio shows the command that reproduces a connection, and a command
+    with a live password in it lands in a screenshot, a chat message and shell
+    history -- the three places a password is hardest to recall from."""
+    from schemagate.connect import PASSWORD_PLACEHOLDER, recipe, redact
+
+    url = "postgresql+psycopg://app:s3cret@h:5432/db"
+    assert "s3cret" not in redact(url)
+    assert PASSWORD_PLACEHOLDER in redact(url)
+
+    r = recipe(*resolve(url))
+    assert "s3cret" not in r["cli"] and "s3cret" not in r["python"]
+
+
+def test_the_placeholder_is_an_env_var_not_stars():
+    """`***` is not runnable. The point is a command someone can paste and
+    use, with the secret coming from the environment."""
+    from schemagate.connect import recipe
+    assert "$DB_PASSWORD" in recipe(*resolve(
+        "postgresql+psycopg://u:p@h/db"))["cli"]
+
+
+def test_the_wallet_password_is_masked_too(tmp_path):
+    from schemagate.connect import recipe
+    d = _wallet(tmp_path)
+    url, args = oracle_wallet(str(d), "mydb_high", "ADMIN", "pw", "walletsecret")
+    r = recipe(url, args)
+    assert "walletsecret" not in r["cli"] and "$WALLET_PASSWORD" in r["cli"]
+    assert "pw" not in r["cli"].replace("$DB_PASSWORD", "")
+
+
+def test_the_flags_used_to_connect_are_in_the_command():
+    """Otherwise the command is not the connection that was made -- it is a
+    different, quieter one that happens to reach the same database."""
+    from schemagate.connect import recipe
+    r = recipe(*resolve("postgresql+psycopg://u:p@h/db"), schemas=["med", "hr"],
+               restrict_from_grants=True, sample_values=True)
+    assert "--schema med" in r["cli"] and "--schema hr" in r["cli"]
+    assert "--restrict-from-grants" in r["cli"] and "--values" in r["cli"]
+
+
+def test_a_wallet_connection_carries_its_connect_args(tmp_path):
+    """A wallet is not a URL, so a command with only `--url` in it connects to
+    nothing. The env var is the part that matters and it has to be there."""
+    from schemagate.connect import recipe
+    url, args = oracle_wallet(str(_wallet(tmp_path)), "mydb_high", "ADMIN", "pw")
+    cli = recipe(url, args)["cli"]
+    assert "SCHEMAGATE_CONNECT_ARGS" in cli and "mydb_high" in cli
