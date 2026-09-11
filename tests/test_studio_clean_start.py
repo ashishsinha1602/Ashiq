@@ -266,3 +266,36 @@ def test_the_favicon_and_mark_travel_with_the_page():
     assert 'rel="icon" href="data:image/svg+xml,' in html
     assert 'class="mark"' in html
     assert 'stroke="currentColor"' in html
+
+
+# ---- settings belong in settings ----------------------------------------
+
+def test_identity_and_model_are_configuration_not_screen_furniture():
+    """Who is asking and which model to use are set once and then in the way.
+    The working screen is a question and its answer."""
+    html = _served_page(_state())
+    assert 'id="settingsDrawer"' in html and 'id="settingsBtn"' in html
+    assert 'for (const id of ["whoPanel", "modelPanel", "recipePanel"])' in html
+    assert "body.appendChild(el)" in html
+
+
+def test_the_drawer_is_set_up_on_load_not_after_connecting():
+    """It was first wired inside the connect handler -- one of five call sites
+    that look identical -- so the panels only moved once a database existed,
+    and the page opened with the rail it was supposed to have replaced."""
+    html = _served_page(_state())
+    i_settings = html.index("function settings()")
+    i_boot = html.index('$("q").value = SCHEMAS[state.schema].questions[0]')
+    i_connect = html.index("async function doConnect") if "async function doConnect" in html else None
+    assert i_settings < i_boot, "the drawer must be built in the bootstrap path"
+    if i_connect is not None:
+        assert not (i_connect < i_settings < i_boot)
+
+
+def test_the_panels_are_moved_not_copied():
+    """Two copies of a form means two sets of ids, and the second one wins the
+    getElementById that every handler here uses."""
+    html = _served_page(_state())
+    assert html.count('id="whoPanel"') == 1
+    assert html.count('id="principal"') == 1
+    assert html.count('id="modelPanel"') == 1

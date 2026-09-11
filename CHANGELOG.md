@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.25
+
+- **Changed: identity, model and the command-line recipe moved into Settings.**
+  They are configuration -- set once, then in the way -- and they were taking
+  up most of a rail that sits beside every question you ask. A gear in the
+  header opens a drawer; Escape or the backdrop closes it. The panels are
+  moved into it rather than copied, so there is still one `#principal` field
+  and one set of handlers.
+
+  What is left on the working screen is the schema, the catalog, the
+  restrictions in force and the hints -- the things that describe what you are
+  looking at, not what you configured.
+
+783 tests.
+
 ## 0.1.24
 
 - **Added: the page hands you the code for what you just did.** The Studio is

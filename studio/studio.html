@@ -42,6 +42,23 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 /* baseline alignment puts text on a line together; the mark is a box and
    wants centring, so the row centres and the wordmark keeps its own baseline
    against the sub-label. */
+.iconbtn{background:none;border:1px solid transparent;border-radius:var(--r);color:var(--muted);
+  cursor:pointer;padding:5px 7px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:17px;line-height:1}
+.iconbtn:hover{background:var(--panel-2);color:var(--ink);border-color:var(--line)}
+#settingsScrim{position:fixed;inset:0;background:rgba(12,16,24,.38);z-index:40}
+#settingsDrawer{position:fixed;top:0;right:0;bottom:0;width:370px;max-width:92vw;z-index:41;
+  background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;
+  box-shadow:-16px 0 40px rgba(12,16,24,.14)}
+#settingsDrawer > header{display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px;border-bottom:1px solid var(--line)}
+#settingsDrawer > header h2{margin:0;font-size:15px;font-weight:600}
+#settingsBody{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:22px}
+#settingsBody section{display:flex;flex-direction:column;gap:8px}
+#settingsBody h2{font-size:13px;font-weight:600;margin:0;display:flex;justify-content:space-between;align-items:baseline}
+#settingsBody p.blurb{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+@media (max-width:520px){#settingsDrawer{width:100%}}
+
 .brand{display:flex;align-items:center;gap:9px;white-space:nowrap}
 .brand b{font-weight:600;font-size:16px;letter-spacing:-.01em}
 .brand span{color:var(--muted);font-size:13px;align-self:flex-end;padding-bottom:1px}
@@ -185,8 +202,24 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
     <b>schemagate</b><span>studio</span>
   </div>
   <div class="tabs" role="tablist" id="tabs"></div>
+  <button id="settingsBtn" class="iconbtn" aria-label="settings" title="Settings">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  </button>
   <div class="right" id="mode"><span>demo · runs in your browser · no database connected</span> <code>pip install schemagate</code></div>
 </div>
+
+<div id="settingsScrim" hidden></div>
+<aside id="settingsDrawer" hidden aria-label="settings">
+  <header>
+    <h2>Settings</h2>
+    <button id="settingsClose" class="iconbtn" aria-label="close settings">&times;</button>
+  </header>
+  <div id="settingsBody"></div>
+</aside>
 
 <div class="work">
   <aside class="rail">
@@ -194,7 +227,7 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <h2 id="schemaTitle">Schema</h2>
       <p class="blurb" id="schemaBlurb"></p>
     </section>
-    <section>
+    <section id="whoPanel">
       <h2>Who is asking</h2>
       <input id="principal" class="mono" placeholder="okta:jdoe" value="okta:analyst" aria-label="principal">
       <div class="roles" id="roles"></div>
@@ -1527,13 +1560,13 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       $("mProvider").value = "local"; paintProviderHints();
       try { await post("/settings", {provider:"local", model:$("mModel").value.trim()}); } catch(e){}
       leaveModelChoice();
-      $("catPanel").scrollIntoView({behavior:"smooth", block:"center"});
+      if (window.__openSettings) window.__openSettings();
     };
     $("mcKey").onclick = () => {
       $("mProvider").value = "anthropic"; paintProviderHints();
       leaveModelChoice();
+      if (window.__openSettings) window.__openSettings();
       $("mKey").focus();
-      $("modelPanel").scrollIntoView({behavior:"smooth", block:"center"});
     };
     const cc = $("codeCopy");
     if (cc) cc.onclick = async () => {
@@ -1792,6 +1825,26 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
   // announced itself as the user's own data. It now follows the server's
   // answer, and paintSettings keeps it current.
   if (API){ $("mode").innerHTML='<span id="modeText">no database connected</span>'; }
+  // Identity and model are configuration: set once, then out of the way. The
+  // working screen is a question and its answer. The panels are moved into
+  // the drawer, not copied -- one set of ids, one set of handlers.
+  (function settings(){
+    const body = $("settingsBody"), drawer = $("settingsDrawer"), scrim = $("settingsScrim");
+    for (const id of ["whoPanel", "modelPanel", "recipePanel"]) {
+      const el = $(id); if (el) body.appendChild(el);
+    }
+    const open = (on) => {
+      drawer.hidden = !on; scrim.hidden = !on;
+      if (on) { const f = drawer.querySelector("input,select,button"); if (f) f.focus(); }
+      else $("settingsBtn").focus();
+    };
+    $("settingsBtn").onclick = () => open(true);
+    $("settingsClose").onclick = () => open(false);
+    scrim.onclick = () => open(false);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !drawer.hidden) open(false); });
+    window.__openSettings = () => open(true);
+  })();
+
   renderRail(); renderExamples();
   $("q").value = SCHEMAS[state.schema].questions[0] || "";
   run();
