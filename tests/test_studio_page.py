@@ -126,7 +126,7 @@ def test_the_template_keeps_the_placeholders_build_py_substitutes():
 @pytest.mark.parametrize("control", [
     "cKind", "cUrl", "cWallet", "cAlias", "cWalletPw", "cHost", "cPort",
     "cDatabase", "cUser", "cPassword", "cSchemas", "cGrants", "cValues",
-    "cGo", "sqlText", "sqlGo", "sqlRows",
+    "cGo",
 ])
 def test_the_connect_controls_exist(control):
     assert f'id="{control}"' in page()

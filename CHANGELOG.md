@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.23
+
+- **Removed: the box for pasting your own SQL, and `/api/run-sql` with it.**
+  This page decides which tables reach a model. Text you typed yourself does
+  not participate in that decision -- it goes straight past selection, past
+  the identity, past the restrictions -- so the panel demonstrated nothing the
+  product does, while being the only surface here that executed arbitrary
+  input. Every database already ships a SQL client.
+
+  The model still writes SQL and still runs it: that path goes through
+  `/api/answer`, where the statement is generated from the selected tables and
+  checked before it reaches the database. That is the one worth having,
+  because it is the one the selection actually shapes.
+
+778 tests.
+
 ## 0.1.22
 
 - **Changed: connecting is the page, until there is a connection.** The one

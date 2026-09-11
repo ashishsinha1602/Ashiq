@@ -349,22 +349,6 @@ class StudioState:
                 "recipe": recipe(url, connect_args, schemas,
                                  want_grants, want_values)}
 
-    def run_sql(self, body: Dict[str, Any]) -> Dict[str, Any]:
-        """Run one read-only statement, through the same guard as `--sql`."""
-        from .answer import UnsafeSQL, run_sql as _run
-
-        if self.engine is None:
-            return {"error": "no database connected"}
-        try:
-            cols, rows = _run(self.engine, str(body.get("sql") or ""),
-                              limit=int(body.get("limit") or 50))
-        except UnsafeSQL as e:
-            return {"error": f"refused: {e}"}
-        except Exception as e:                            # noqa: BLE001
-            return {"error": f"{type(e).__name__}: {e}"}
-        return {"columns": list(cols),
-                "rows": [[None if v is None else str(v) for v in r] for r in rows]}
-
     def select(self, body: Dict[str, Any]) -> Dict[str, Any]:
         cat = self.catalog
         question = str(body.get("question") or "").strip()[:2000]
@@ -451,7 +435,7 @@ def _handler(state: StudioState):
         def do_POST(self):
             if self.path not in ("/api/select", "/api/answer", "/api/settings",
                                  "/api/describe", "/api/apply-descriptions",
-                                 "/api/connect", "/api/run-sql"):
+                                 "/api/connect"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -468,8 +452,6 @@ def _handler(state: StudioState):
                     return self._json(200, state.apply_descriptions(payload))
                 if self.path == "/api/connect":
                     return self._json(200, state.connect(payload))
-                if self.path == "/api/run-sql":
-                    return self._json(200, state.run_sql(payload))
                 return self._json(200, state.select(payload))
             except IdentityError as e:
                 return self._json(400, {"error": str(e)})

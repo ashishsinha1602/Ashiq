@@ -227,15 +227,6 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <button id="cGo" style="margin-top:8px;width:100%">Connect</button>
       <div id="cNote" class="blurb" style="margin-top:6px"></div>
     </section>
-    <section id="sqlPanel" hidden>
-      <h2>Run SQL</h2>
-      <p class="blurb" style="margin:0 0 6px">Read-only. Anything that is not a single
-      SELECT or WITH is refused before it reaches the database.</p>
-      <textarea id="sqlText" class="mono" rows="3" placeholder="SELECT ..."
-                aria-label="sql" style="width:100%;font-size:11px"></textarea>
-      <button id="sqlGo" style="margin-top:6px;width:100%">Run</button>
-      <div id="sqlNote" class="blurb" style="margin-top:6px"></div>
-    </section>
     <section id="recipePanel" hidden>
       <h2>Use it from the command line</h2>
       <p class="blurb" style="margin:0 0 6px">The same connection, outside this page.
@@ -384,10 +375,6 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       </div>
     </div>
 
-    <div class="pane" id="sqlPane" hidden style="padding:12px 14px;gap:8px">
-      <header style="padding:0"><h3 style="margin:0;font-size:13px;font-weight:600">SQL result</h3>
-        <span class="meta" id="sqlMeta"></span></header>
-      <div id="sqlRows" style="overflow:auto"></div>
     </div>
 
     <div class="pane" id="answerPane" hidden style="padding:12px 14px;gap:8px">
@@ -651,7 +638,6 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       $("connectHome").hidden = !needsConnect;
       $("workView").hidden = needsConnect || !$("modelChoice").hidden;
       $("connectPanel").hidden = !live || !st.allow_connect;
-      $("sqlPanel").hidden = !live || !st.connected;
       $("modelPanel").hidden = !live;
       $("catPanel").hidden = !live;
       if ($("recipePanel") && !live) $("recipePanel").hidden = true;
@@ -877,7 +863,6 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
                          " public, " + g.unmatched + " left untouched" +
                          (g.roles_expanded ? ", " + g.roles_expanded + " role(s) expanded" : "");
       note("cNote", msg + ".");
-      $("sqlPanel").hidden = false;
       if (out.recipe){
         $("recipeCli").value = out.recipe.cli;
         $("recipePy").value  = out.recipe.python;
@@ -901,22 +886,11 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
         $("aiswitch").hidden = true;     // pre-written descriptions, demo only
         renderRail(); renderExamples();
         $("objs").innerHTML = ""; $("ddl").textContent = "";
-        $("answerPane").hidden = true; $("sqlPane").hidden = true;
+        $("answerPane").hidden = true;
       }
       run();
     };
 
-    $("sqlGo").onclick = async () => {
-      const sql = $("sqlText").value.trim();
-      if (!sql) return note("sqlNote", "Nothing to run.", true);
-      note("sqlNote", "");
-      $("sqlPane").hidden = false;
-      let out;
-      try { out = await post("/run-sql", {sql}); }
-      catch(e){ return note("sqlNote", e.message, true); }
-      if (out.error) note("sqlNote", out.error, true);
-      renderRows("sqlRows", "sqlMeta", out);
-    };
 
 
     $("mSave").onclick = async () => {

@@ -304,30 +304,16 @@ def test_the_page_is_told_whether_connecting_is_even_possible(api):
 
 # --- running SQL from the page ---------------------------------------------
 
-def test_run_sql_returns_rows(api):
-    out = api[0]("/api/run-sql",
-                 {"sql": "SELECT display_name FROM core_party ORDER BY id LIMIT 2"})
-    assert out["columns"] == ["display_name"] and len(out["rows"]) == 2
-
-
-@pytest.mark.parametrize("sql", [
-    "DROP TABLE core_party",
-    "UPDATE core_party SET display_name = 'x'",
-    "SELECT 1; DROP TABLE core_party",
-    "SELECT 1 -- \n; DELETE FROM core_party",
-])
-def test_run_sql_refuses_anything_that_is_not_a_single_read(api, sql):
-    """Same guard as `--sql`, not a second copy of it: this endpoint calls
-    `answer.run_sql`, which checks again at the point the text reaches the
-    database."""
-    assert "refused" in api[0]("/api/run-sql", {"sql": sql}).get("error", "")
-
-
-def test_run_sql_without_a_database_says_so_rather_than_failing(api):
-    call, state = api
-    state.engine = None
-    assert call("/api/run-sql", {"sql": "SELECT 1"})["error"] == "no database connected"
-
+def test_there_is_no_endpoint_for_running_pasted_sql(api):
+    """The page decides which tables reach a model. A box that runs text you
+    typed does not participate in that, and it was the only surface here that
+    executed arbitrary input. The model still writes and runs SQL through
+    /api/answer, where it is generated from the selected tables and checked
+    before it reaches the database."""
+    call = api[0]
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call("/api/run-sql", {"sql": "SELECT 1"})
+    assert e.value.code == 404
 
 def test_both_spellings_of_the_connect_flag_work():
     """`--allow-remote-connect` read as "let someone control this machine
