@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.33
+
+- **Changed: connecting asks for the whole schema at once.** Reflection made
+  four calls per table -- columns, primary key, foreign keys, comment. Against
+  a local database that is invisible; against an Autonomous Database across a
+  continent it is the entire cost of connecting, and it is what the page spent
+  "Connecting..." doing. Measured on PostgreSQL with 65 objects: **332 queries
+  before, 17 after**. At a 150ms round trip that is roughly 47 seconds of
+  waiting removed from a 43-object connection.
+
+  Oracle and PostgreSQL batch these natively. Dialects that do not are no
+  worse off: SQLAlchemy loops internally, and every lookup still falls back to
+  the single-table call.
+
+- **Fixed: the paste-the-prompt controls stayed after a model had catalogued.**
+  Revealed when no model is configured and never taken away, so a successful
+  run left half the rail occupied by a prompt whose work was already done.
+
+- **Changed: the restricted-objects list shows eight and offers the rest.**
+  Taking visibility from the database's GRANTs marks every object an owner
+  owns, so on Oracle that list is the whole schema and it pushed everything
+  else off the rail.
+
+818 tests.
+
 ## 0.1.32
 
 - **Added: saving, connecting and cataloguing say so.** All three finished by

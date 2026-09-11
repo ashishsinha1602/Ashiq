@@ -245,6 +245,61 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct,
     return found or None
 
 
+#: distinguishes "the batch had no comment for this table" from "the batch did
+#: not cover this table", which need different things done about them.
+_MISSING = object()
+
+
+def _multi_reflect(insp, schema, names, include_views):
+    """Columns, primary keys, foreign keys and comments for a whole schema.
+
+    Four queries instead of four per table. SQLAlchemy 2.0's `get_multi_*`
+    family does this natively where a dialect supports it and loops internally
+    where it does not, so the worst case is what the code did before.
+
+    Each map is keyed by bare table name. Anything missing is left for the
+    per-table call at the point of use: a batch that fails entirely returns
+    empty maps and reflection carries on exactly as it used to.
+    """
+    import warnings
+
+    out = {"columns": {}, "pk": {}, "fks": {}, "comments": {}}
+    kw = {"schema": schema}
+    if include_views:
+        kw["kind"] = None       # tables and views in one pass, where supported
+
+    def _run(method, **extra):
+        fn = getattr(insp, method, None)
+        if fn is None:
+            return {}
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Did not recognize type")
+                return dict(fn(**{**kw, **extra}))
+        except TypeError:
+            # an older signature that does not take `kind`
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="Did not recognize type")
+                    return dict(fn(schema=schema))
+            except Exception:
+                return {}
+        except Exception:
+            return {}
+
+    def _bare(d):
+        # keys come back as (schema, name); the loop works in bare names
+        return {(k[1] if isinstance(k, tuple) else k): v for k, v in d.items()}
+
+    out["columns"] = _bare(_run("get_multi_columns"))
+    out["fks"] = _bare(_run("get_multi_foreign_keys"))
+    pk = _bare(_run("get_multi_pk_constraint"))
+    out["pk"] = {k: set((v or {}).get("constrained_columns") or []) for k, v in pk.items()}
+    com = _bare(_run("get_multi_table_comment"))
+    out["comments"] = {k: (v or {}).get("text") for k, v in com.items()}
+    return out
+
+
 def reflect(engine_or_url, include=None, exclude=None,
             schemas: Optional[List[Optional[str]]] = None,
             include_views: bool = True,
@@ -336,6 +391,20 @@ def reflect(engine_or_url, include=None, exclude=None,
         names = [(n, "TABLE") for n in insp.get_table_names(schema=schema)]
         if include_views:
             names += [(n, "VIEW") for n in insp.get_view_names(schema=schema)]
+
+        # One query per kind of metadata for the whole schema, rather than four
+        # per table. Against a local database the difference is invisible;
+        # against an Autonomous Database across a continent it is the whole
+        # cost of connecting -- 43 tables meant 172 round trips to Phoenix,
+        # each one a few hundred milliseconds of nothing happening, and the
+        # page said "Connecting..." for all of it.
+        #
+        # SQLAlchemy falls back to per-table internally for any dialect that
+        # has not implemented the batched form, so this is never worse, and
+        # each lookup below still degrades to the single-table call if a key
+        # is missing.
+        multi = _multi_reflect(insp, schema, names, include_views)
+
         for name, kind in names:
             if (schema, name) in seen:
                 continue
@@ -344,28 +413,41 @@ def reflect(engine_or_url, include=None, exclude=None,
                 continue
             if not _match(name, include) or (exclude and _match(name, exclude)):
                 continue
-            try:
-                import warnings
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="Did not recognize type")
-                    raw_cols = insp.get_columns(name, schema=schema)
-            except Exception:
+            raw_cols = multi["columns"].get(name)
+            if raw_cols is None:
+                try:
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", message="Did not recognize type")
+                        raw_cols = insp.get_columns(name, schema=schema)
+                except Exception:
+                    continue
+            if not raw_cols:
                 continue
             from .dialects import fill_unknown_types
             fill_unknown_types(engine, schema, name, raw_cols)
-            try:
-                pk = set(insp.get_pk_constraint(name, schema=schema
-                                                ).get("constrained_columns") or [])
-            except Exception:
-                pk = set()
-            try:
-                raw_fks = insp.get_foreign_keys(name, schema=schema)
-            except Exception:
-                raw_fks = []
-            try:
-                comment = (insp.get_table_comment(name, schema=schema) or {}).get("text")
-            except Exception:
-                comment = None
+
+            pk = multi["pk"].get(name)
+            if pk is None:
+                try:
+                    pk = set(insp.get_pk_constraint(name, schema=schema
+                                                    ).get("constrained_columns") or [])
+                except Exception:
+                    pk = set()
+
+            raw_fks = multi["fks"].get(name)
+            if raw_fks is None:
+                try:
+                    raw_fks = insp.get_foreign_keys(name, schema=schema)
+                except Exception:
+                    raw_fks = []
+
+            comment = multi["comments"].get(name, _MISSING)
+            if comment is _MISSING:
+                try:
+                    comment = (insp.get_table_comment(name, schema=schema) or {}).get("text")
+                except Exception:
+                    comment = None
 
             definition = None
             if kind == "VIEW":

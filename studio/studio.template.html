@@ -542,7 +542,24 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
     const r=$("restrictions"); r.innerHTML="";
     const entries=Object.entries(spec.restrict);
     $("restrictCount").textContent=entries.length? entries.length+" objects":"none";
-    for (const [t,roles] of entries){ const d=document.createElement("div"); d.className="restrict"; d.innerHTML=`<code>${esc(t)}</code><span>needs ${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
+    // Taking visibility from the database's GRANTs on Oracle marks every
+    // object the owner owns, so this list is the whole schema. Rendering all
+    // of it pushes everything else off the rail and says nothing the count
+    // did not.
+    const SHOW = 8;
+    const shown = entries.slice(0, SHOW);
+    for (const [t,roles] of shown){ const d=document.createElement("div"); d.className="restrict"; d.innerHTML=`<code>${esc(t)}</code><span>needs ${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
+    if (entries.length > SHOW) {
+      const more = document.createElement("button");
+      more.className = "linky";
+      more.style.cssText = "font-size:12px;margin-top:4px;align-self:flex-start";
+      more.textContent = "show " + (entries.length - SHOW) + " more";
+      more.onclick = () => {
+        more.remove();
+        for (const [t,roles] of entries.slice(SHOW)){ const d=document.createElement("div"); d.className="restrict"; d.innerHTML=`<code>${esc(t)}</code><span>needs ${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
+      };
+      r.appendChild(more);
+    }
     const h=$("hints"); h.innerHTML="";
     for (const [t,text] of Object.entries(spec.hints)){
       const d=document.createElement("div"); d.className="hint";
@@ -1079,6 +1096,12 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
         note("catNote", (out.error ? out.error + " -- " : "") +
              "Paste this into any chat, then paste the JSON reply back.");
         return;
+      }
+      // Revealed when there is no model, and never taken away again: after a
+      // successful run they sat there asking you to paste a prompt whose work
+      // had just been done, taking half the rail with them.
+      for (const id of ["catPrompt","catCopy","catReply","catApply"]) {
+        const el = $(id); if (el) el.hidden = true;
       }
       const skipped = out.objects - out.written;
       note("catNote", "Wrote " + out.written + " description(s) of " + out.objects +
