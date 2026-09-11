@@ -209,7 +209,8 @@ def cmd_studio(args) -> int:
                        restrict_from_grants=args.restrict_from_grants,
                        sample_values=args.values,
                        allow_remote_connect=args.allow_connect,
-                       demo=args.demo, forget=args.forget)
+                       demo=args.demo, forget=args.forget,
+                       remember_connection=args.remember)
 
 
 def cmd_describe(args) -> int:
@@ -405,14 +406,17 @@ def build_parser() -> argparse.ArgumentParser:
                              "instead of an empty page. Without --url or "
                              "--demo the Studio starts with nothing loaded "
                              "and waits for you to connect")
-    # A connection made in the page is written to ~/.schemagate/connection.json
-    # (0600) and replayed on the next start, so restarting the Studio does not
-    # mean retyping a wallet directory and two passwords. That file can hold a
-    # database password, so there has to be a way to remove it -- and a way to
-    # never write it.
+    # A remembered connection is replayed on the next start, so restarting the
+    # Studio does not mean retyping a wallet directory and two passwords. It
+    # is off unless asked for: the file can hold a database password, and this
+    # is a tool that otherwise stores nothing.
+    studio.add_argument("--remember", action="store_true",
+                        help="save the connection to ~/.schemagate/"
+                             "connection.json (0600) and reconnect to it on "
+                             "the next start. Includes the database and "
+                             "wallet passwords; off by default")
     studio.add_argument("--forget", action="store_true",
-                        help="delete the remembered connection and exit. Set "
-                             "SCHEMAGATE_NO_REMEMBER=1 to never save one")
+                        help="delete the remembered connection and exit")
     studio.set_defaults(func=cmd_studio)
 
     describe = sub.add_parser(

@@ -14,15 +14,24 @@ fields, which do not fit in a URL and are the case that hurts most to retype.
 
 On secrets
 ----------
-This file can contain a database password and a wallet password. That is the
-point of it, and it is a real trade: a credential on disk is a credential that
-can be read. Three things bound it:
+This file can contain a database password and a wallet password. That is a
+real trade -- a credential on disk is a credential that can be read -- and it
+is not one to make on someone's behalf, in a tool whose whole pitch is that it
+reads your schema and stores nothing. So **nothing is written unless it is
+asked for**: tick "Remember this connection" in the page, or start with
+`--remember`. Without that the connection lives in the process, as it always
+has, and a restart asks again.
+
+When it is asked for:
 
 * It is written 0600, and to the user's own home directory.
 * An AI provider key is never included. Those stay in memory for the life of
   the process, as they always have -- they are not needed to reconnect.
-* `SCHEMAGATE_NO_REMEMBER=1` turns the whole thing off, and `--forget`
-  deletes what is there.
+* `--forget` deletes what is there.
+
+Replaying is not gated the same way: if the file exists, someone already said
+yes to it, and asking a second time on every start would just be a prompt to
+click through.
 
 On Windows, `chmod` cannot express 0600 -- the file inherits the ACL of the
 user profile directory instead, which is user-scoped but not the same promise.
@@ -39,7 +48,8 @@ from typing import Any, Dict, Optional
 
 __all__ = ["save", "load", "forget", "path", "enabled", "describe"]
 
-ENV_OFF = "SCHEMAGATE_NO_REMEMBER"
+#: Opt-in, not opt-out. The default is to write nothing.
+ENV_ON = "SCHEMAGATE_REMEMBER"
 ENV_HOME = "SCHEMAGATE_HOME"
 
 #: Only fields that belong to *connecting* are kept. An allow-list rather than
@@ -65,7 +75,8 @@ _NEVER = frozenset({"api_key", "provider", "model"})
 
 
 def enabled() -> bool:
-    return str(os.environ.get(ENV_OFF, "")).strip().lower() not in (
+    """Whether saving was asked for by the environment. Default: no."""
+    return str(os.environ.get(ENV_ON, "")).strip().lower() in (
         "1", "true", "yes", "on")
 
 
@@ -82,9 +93,14 @@ def _harden(p: Path) -> None:
         pass                                          # best effort, Windows
 
 
-def save(body: Dict[str, Any]) -> Optional[Path]:
-    """Persist a connect request. Returns where it went, or None."""
-    if not enabled() or not isinstance(body, dict):
+def save(body: Dict[str, Any], allow: bool = False) -> Optional[Path]:
+    """Persist a connect request, if saving was asked for.
+
+    `allow` is the per-request answer -- the page's checkbox, or --remember.
+    The environment variable is the standing one. Either is enough; neither
+    means nothing is written, which is the default.
+    """
+    if not (allow or enabled()) or not isinstance(body, dict):
         return None
     keep = {k: v for k, v in body.items()
             if k in _KEEP and k not in _NEVER and v not in (None, "", [], {})}
@@ -109,9 +125,12 @@ def save(body: Dict[str, Any]) -> Optional[Path]:
 
 
 def load() -> Optional[Dict[str, Any]]:
-    """The last connect request, or None if there is not one to replay."""
-    if not enabled():
-        return None
+    """The last connect request, or None if there is not one to replay.
+
+    Deliberately not gated on `enabled()`: the file only exists because
+    someone asked for it, and refusing to read it back would make --remember
+    a no-op on the very next run, which is the run it exists for.
+    """
     p = path()
     try:
         raw = json.loads(p.read_text("utf-8"))
@@ -135,10 +154,9 @@ def forget() -> bool:
 def describe() -> str:
     """One line for the CLI, with no secret in it."""
     p = path()
-    if not enabled():
-        return f"remembering is off ({ENV_OFF} is set)"
     if not p.exists():
-        return f"nothing remembered ({p})"
+        return ("nothing remembered -- tick 'Remember this connection', or "
+                f"start with --remember ({p})")
     conn = load() or {}
     what = conn.get("kind") or ("url" if conn.get("url") else "connection")
     note = "" if os.name != "nt" else "  (Windows: protected by profile ACL, not 0600)"

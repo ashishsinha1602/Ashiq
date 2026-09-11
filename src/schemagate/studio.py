@@ -82,6 +82,11 @@ class StudioState:
         #: Reported to the page so it can say so rather than leaving someone
         #: to wonder whether a restart will cost them the wallet fields again.
         self.remembered = False
+        #: Saving a connection means putting a database password on disk, in a
+        #: tool that otherwise stores nothing. That is the user's call, not a
+        #: default -- set by --remember, or per-connection by the page's
+        #: checkbox.
+        self.remember_connection = False
 
     def schemas_json(self) -> Dict[str, Any]:
         """The shape the page expects: docs are not needed server-side, but
@@ -428,7 +433,9 @@ class StudioState:
         # that actually reflected something is worth replaying on restart, so
         # this sits after the bootstrap rather than beside the form handler.
         from . import remember
-        self.remembered = remember.save(body) is not None
+        self.remembered = remember.save(
+            body, allow=self.remember_connection or bool(body.get("remember"))
+        ) is not None
         self.title = "Your database"
         self.blurb = (f"{len(cat._docs)} objects reflected from "
                       f"{engine.dialect.name}. Nothing is catalogued yet.")
@@ -629,7 +636,8 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
          config: Optional[str] = None, restrict_from_grants: bool = False,
          sample_values: bool = False,
          allow_remote_connect: Optional[bool] = None,
-         demo: bool = False, forget: bool = False) -> int:
+         demo: bool = False, forget: bool = False,
+         remember_connection: bool = False) -> int:
     if forget:
         from . import remember
         print("forgot the remembered connection" if remember.forget()
@@ -697,6 +705,7 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
     state.allow_connect = bool(allow_remote_connect)
     state.restrict_from_grants = restrict_from_grants
     state.sample_values = sample_values
+    state.remember_connection = bool(remember_connection)
 
     # Replay the last connection, if there is one and nothing more specific
     # was asked for. This is what stops a restart from meaning "type the
