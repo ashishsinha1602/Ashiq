@@ -49,9 +49,16 @@ def test_an_uncoded_error_still_names_its_type():
     assert "Boom" in out and "something opaque" in out
 
 
-def test_only_the_first_line_comes_back():
-    out = safe_error(Boom("DPY-6005: cannot connect\nHelp: https://example/dpy-6005\nstack"))
-    assert "stack" not in out and "DPY-6005" in out
+def test_a_stack_trace_does_not_come_along():
+    """Bounded, not first-line-only: the reason lives on line two, so taking
+    one line threw away the diagnosis. What must not follow is an unbounded
+    tail -- a traceback can drag a connect string, and that carries a
+    password."""
+    out = safe_error(Boom("DPY-6005: cannot connect\ntimed out\n" +
+                          "\n".join(f"  File \"x.py\", line {i}" for i in range(40))))
+    assert "DPY-6005" in out and "timed out" in out
+    assert len(out) <= 400
+    assert out.count("File ") <= 1
 
 
 def test_a_code_further_down_is_hoisted_to_the_front():
@@ -89,3 +96,59 @@ def test_a_real_password_is_still_masked():
     out = safe_error(Boom("ORA-01017: denied pw=Str0ng#Passw0rd_2026"),
                      "Str0ng#Passw0rd_2026")
     assert "Str0ng#Passw0rd_2026" not in out and "***" in out
+
+
+# ---- the cause, not just the headline -----------------------------------
+
+def test_the_reason_on_the_second_line_survives():
+    """oracledb puts the headline on line one and the reason on line two.
+    "timed out" and "Connection refused" are different problems -- a firewall
+    swallowing packets versus nothing listening -- and reporting both as
+    "DPY-6005: cannot connect" is exactly the collapsing this function exists
+    to undo."""
+    timed = safe_error(Boom("DPY-6005: cannot connect to database (CONNECTION_ID=a).\ntimed out"))
+    refused = safe_error(Boom("DPY-6005: cannot connect to database (CONNECTION_ID=a).\n[Errno 111] Connection refused"))
+    assert "timed out" in timed
+    assert "Connection refused" in refused
+    assert timed != refused
+
+
+def test_help_urls_are_dropped():
+    out = safe_error(Boom("ORA-28759: failure to open file\nHelp: https://docs.oracle.com/x"))
+    assert "ORA-28759" in out and "docs.oracle.com" not in out
+
+
+def test_a_proxy_is_taken_from_the_environment_for_oracle():
+    """A network that blocks 1522 outbound usually still allows an HTTPS
+    proxy, and oracledb can tunnel through one."""
+    import os
+
+    from schemagate.connect import with_timeout
+
+    for var in ("SCHEMAGATE_ORACLE_PROXY", "https_proxy", "HTTPS_PROXY"):
+        os.environ.pop(var, None)
+    assert "https_proxy" not in with_timeout("oracle+oracledb://@", {})
+
+    os.environ["SCHEMAGATE_ORACLE_PROXY"] = "proxy.corp.example:8080"
+    try:
+        out = with_timeout("oracle+oracledb://@", {})
+        assert out["https_proxy"] == "proxy.corp.example"
+        assert out["https_proxy_port"] == 8080
+        # and it is Oracle-specific: psycopg would reject the keyword
+        assert "https_proxy" not in with_timeout("postgresql+psycopg://h/d", {})
+    finally:
+        os.environ.pop("SCHEMAGATE_ORACLE_PROXY", None)
+
+
+def test_an_explicit_proxy_is_not_overridden():
+    import os
+
+    from schemagate.connect import with_timeout
+
+    os.environ["SCHEMAGATE_ORACLE_PROXY"] = "env.example:8080"
+    try:
+        out = with_timeout("oracle+oracledb://@", {"https_proxy": "mine.example",
+                                                   "https_proxy_port": 3128})
+        assert out["https_proxy"] == "mine.example" and out["https_proxy_port"] == 3128
+    finally:
+        os.environ.pop("SCHEMAGATE_ORACLE_PROXY", None)

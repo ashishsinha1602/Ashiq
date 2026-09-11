@@ -304,6 +304,22 @@ def resolve(spec: "str | Mapping[str, Any]") -> Tuple[str, Dict[str, Any]]:
 CONNECT_TIMEOUT = 20
 
 
+def _proxy_from_env() -> Tuple[Optional[str], int]:
+    """``(host, port)`` of an HTTPS proxy from the usual variables, or
+    ``(None, 0)``. Accepts ``host:port`` with or without a scheme."""
+    import os
+    from urllib.parse import urlparse
+
+    raw = (os.environ.get("SCHEMAGATE_ORACLE_PROXY")
+           or os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY") or "").strip()
+    if not raw:
+        return None, 0
+    parsed = urlparse(raw if "://" in raw else "http://" + raw)
+    if not parsed.hostname:
+        return None, 0
+    return parsed.hostname, int(parsed.port or 443)
+
+
 def with_timeout(url: str, args: Dict[str, Any],
                  seconds: int = CONNECT_TIMEOUT) -> Dict[str, Any]:
     """Add this driver's connect-timeout parameter, if it has one and the
@@ -319,6 +335,15 @@ def with_timeout(url: str, args: Dict[str, Any],
         # port costs the timeout several times over.
         out.setdefault("tcp_connect_timeout", seconds)
         out.setdefault("retry_count", 0)
+        # A network that blocks 1522 outbound very often still allows an
+        # HTTPS proxy, and oracledb can tunnel the connection through one.
+        # Taken from the environment rather than a form field because that is
+        # where a machine's proxy already is, and someone fighting a corporate
+        # network has it set.
+        host, port = _proxy_from_env()
+        if host:
+            out.setdefault("https_proxy", host)
+            out.setdefault("https_proxy_port", port)
     elif head.startswith(("postgresql", "mysql")):
         out.setdefault("connect_timeout", seconds)
     elif head.startswith("mssql"):
@@ -446,7 +471,15 @@ def safe_error(exc: BaseException, *secrets: Optional[str]) -> str:
     # which pushes the useful half out of a narrow field and makes the code
     # appear twice once it is hoisted.
     text = re.sub(r"^\((?:[A-Za-z_][\w.]*\.)?\w*(?:Error|Exception)\)\s*", "", text)
-    first = text.split("\n")[0][:300]
+    # Keep the cause, not only the headline. oracledb puts the reason on the
+    # second line -- "DPY-6005: cannot connect to database (...)" then "timed
+    # out" or "[Errno 111] Connection refused" -- and those are different
+    # problems with different fixes. Taking the first line alone reported both
+    # as the same thing, which is the mistake this function was written to
+    # stop making one level up.
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    lines = [ln for ln in lines if not ln.lower().startswith(("help:", "https://", "see https"))]
+    first = " -- ".join(lines[:3])[:400]
     codes = _CODE_RE.findall(first) or _CODE_RE.findall(text)
     if not first:
         return type(exc).__name__

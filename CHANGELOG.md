@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.26
+
+- **Fixed: the reason for a failed connection is on the second line, and was
+  being thrown away.** oracledb reports `DPY-6005: cannot connect to database`
+  and then, on the next line, why -- `timed out` or `[Errno 111] Connection
+  refused`. Those are different problems: a firewall swallowing packets versus
+  nothing listening. 0.1.20 kept the first line only, so both arrived as the
+  same sentence -- the exact collapsing that release existed to undo. Up to
+  three lines now survive, `Help:` URLs are dropped, and the whole thing stays
+  bounded so a traceback cannot drag a connect string along behind it.
+
+- **Added: Oracle connections can tunnel through an HTTPS proxy.** A network
+  that blocks 1522 outbound usually still permits a proxy, and oracledb can
+  connect through one. Set `SCHEMAGATE_ORACLE_PROXY=host:port` (or rely on
+  `HTTPS_PROXY`, which a machine behind a corporate network already has) and
+  it is passed as `https_proxy`/`https_proxy_port`. A proxy you pass
+  explicitly is never overridden, and it is applied to Oracle only -- psycopg
+  rejects the keyword.
+
+787 tests.
+
 ## 0.1.25
 
 - **Changed: identity, model and the command-line recipe moved into Settings.**
