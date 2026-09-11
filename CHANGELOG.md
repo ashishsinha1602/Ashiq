@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.24
+
+- **Added: the page hands you the code for what you just did.** The Studio is
+  a test bench; the library is the product, and the code block was an
+  illustration containing someone else's database, someone else's question and
+  someone else's identity -- the right shape, rewritten line by line before it
+  could run. It is now this connection, this question, this principal and
+  these roles, and it runs as pasted. Verified by pasting it: the block the
+  page produced was executed unmodified and printed the DDL.
+
+- **Added: a mark and a favicon.** Three rows arrive, a gate, one leaves --
+  which is the product. The favicon is a data URI so a self-contained page
+  carries its own icon, and the header mark is drawn in `currentColor` so it
+  follows the theme rather than needing a second definition for dark mode.
+
+780 tests.
+
 ## 0.1.23
 
 - **Removed: the box for pasting your own SQL, and `/api/run-sql` with it.**

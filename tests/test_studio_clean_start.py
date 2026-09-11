@@ -242,3 +242,27 @@ def test_leaving_the_model_question_re_reads_the_settings():
     middle of the screen, over a catalog that had just loaded."""
     html = _served_page(_state())
     assert 'lastSettings = await (await fetch(API+"/settings")).json()' in html
+
+
+def test_the_code_block_is_this_connection_not_an_illustration():
+    """The Studio is a test bench; the library is the product. A code block
+    with someone else's database, someone else's question and someone else's
+    identity in it teaches the shape and then has to be rewritten line by
+    line. This one is paste-ready."""
+    html = _served_page(_state())
+    assert 'id="codePy"' in html
+    assert "function paintCode(q, principal)" in html
+    assert "state.recipe && state.recipe.python" in html
+    # the API it writes has to be the API that exists
+    from schemagate import Catalog
+    sel = Catalog().select("x")
+    assert hasattr(sel, "prompt_fragment")
+
+
+def test_the_favicon_and_mark_travel_with_the_page():
+    """A self-contained page cannot fetch an icon, and the mark has to follow
+    the theme without a second colour definition."""
+    html = _served_page(_state())
+    assert 'rel="icon" href="data:image/svg+xml,' in html
+    assert 'class="mark"' in html
+    assert 'stroke="currentColor"' in html

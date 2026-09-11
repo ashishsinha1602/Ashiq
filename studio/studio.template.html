@@ -1,4 +1,5 @@
 <title>schemagate studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%230F7B6C%22%2F%3E%3Cg%20stroke%3D%22%23fff%22%20stroke-width%3D%222.6%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M5%209h7M5%2016h7M5%2023h7%22%2F%3E%3Cpath%20d%3D%22M16%205.5v21%22%2F%3E%3Cpath%20d%3D%22M20%2016h7%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -38,9 +39,13 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 
 /* top bar */
 .top{display:flex;align-items:center;gap:20px;padding:12px 22px;border-bottom:1px solid var(--line);background:var(--panel)}
-.brand{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
-.brand b{font-weight:600;font-size:16px}
-.brand span{color:var(--muted);font-size:13px}
+/* baseline alignment puts text on a line together; the mark is a box and
+   wants centring, so the row centres and the wordmark keeps its own baseline
+   against the sub-label. */
+.brand{display:flex;align-items:center;gap:9px;white-space:nowrap}
+.brand b{font-weight:600;font-size:16px;letter-spacing:-.01em}
+.brand span{color:var(--muted);font-size:13px;align-self:flex-end;padding-bottom:1px}
+.brand .mark{width:22px;height:22px;color:var(--accent);flex:none}
 .tabs{display:flex;gap:4px;margin-left:8px;overflow-x:auto}
 .tab{border:1px solid transparent;border-radius:var(--r);padding:6px 10px;color:var(--muted);white-space:nowrap}
 .tab[aria-selected="true"]{background:var(--panel-2);color:var(--ink);border-color:var(--line)}
@@ -169,7 +174,16 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
 </style>
 
 <div class="top">
-  <div class="brand"><b>schemagate</b><span>studio</span></div>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+        <path d="M2.5 7h7M2.5 12h7M2.5 17h7"/>
+        <path d="M12.5 3.5v17"/>
+        <path d="M15.5 12h6"/>
+      </g>
+    </svg>
+    <b>schemagate</b><span>studio</span>
+  </div>
   <div class="tabs" role="tablist" id="tabs"></div>
   <div class="right" id="mode"><span>demo · runs in your browser · no database connected</span> <code>pip install schemagate</code></div>
 </div>
@@ -401,7 +415,7 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
     </details>
 
     <div class="foot">
-      <div class="pane"><h4>Use it from Python</h4><pre>pip install schemagate
+      <div class="pane"><h4>Use it from Python <button id="codeCopy" class="linky" style="font-size:12px">copy</button></h4><pre id="codePy">pip install schemagate
 
 from schemagate import Catalog, Principal
 cat = Catalog().bootstrap("postgresql://localhost/app")
@@ -543,7 +557,28 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
     $("cFull").textContent = money(full); $("cSel").textContent = money(sel); $("cSave").textContent = money(Math.max(0, full - sel));
   }
   $("cQpd").oninput = renderCost; $("cPrice").oninput = renderCost;
+  // The Studio is a test bench; the library is the product. So the code block
+  // is not an illustration with someone else's database in it -- it is this
+  // connection, this identity, this question, ready to paste into an editor.
+  function paintCode(q, principal){
+    const pre = $("codePy"); if (!pre) return;
+    const boot = (state.recipe && state.recipe.python)
+      ? state.recipe.python
+      : 'from schemagate import Catalog, Principal\n\ncat = Catalog().bootstrap("postgresql://localhost/app")';
+    const roles = [...state.roles];
+    const who = principal
+      ? ('Principal(' + JSON.stringify(principal) +
+         (roles.length ? ', roles={' + roles.map(r=>JSON.stringify(r)).join(", ") + '}' : '') + ')')
+      : "None";
+    const question = JSON.stringify(q || "revenue by month");
+    pre.textContent =
+      boot.replace(/^from schemagate import Catalog\b.*$/m, "from schemagate import Catalog, Principal") +
+      "\n\nsel = cat.select(" + question + ",\n                 principal=" + who + ")\n" +
+      "print(sel.prompt_fragment())";
+  }
+
   function render(out, q, principal){
+    paintCode(q, principal);
     $("sSel").innerHTML=`${out.objects.length}<small> / ${out.total}</small>`;
     $("sTok").innerHTML=`${out.tokens.toLocaleString()}<small> vs ${out.full_tokens.toLocaleString()}</small>`;
     const saved = out.full_tokens? 1-out.tokens/out.full_tokens : 0;
@@ -743,6 +778,12 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       $("mKey").focus();
       $("modelPanel").scrollIntoView({behavior:"smooth", block:"center"});
     };
+    const cc = $("codeCopy");
+    if (cc) cc.onclick = async () => {
+      try { await navigator.clipboard.writeText($("codePy").textContent);
+            cc.textContent = "copied"; setTimeout(()=>cc.textContent="copy", 1200); } catch(e){}
+    };
+
     const gd = $("goDemo");
     if (gd) gd.onclick = () => {
       const t = [...$("tabs").querySelectorAll("button")].find(b => b.textContent === "Demo schema");
@@ -850,6 +891,7 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       // exists and describing it is the obvious next step. Buried in a rail
       // panel it reads as configuration, and nobody configures a thing they
       // have not yet seen work.
+      state.recipe = out.recipe || null;
       $("mcSub").textContent = out.objects + " objects reflected from " +
         out.dialect + ". Nothing is described yet.";
       $("modelChoice").hidden = false;
