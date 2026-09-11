@@ -97,20 +97,31 @@ class Column:
     #: it has never seen, so the fix is to stop asking it to.
     values: Optional[List[str]] = None
 
-    def render(self) -> str:
+    def render_parts(self) -> "tuple[str, str]":
+        """``(declaration, note)`` -- kept apart so the caller can put the
+        DDL's own comma between them.
+
+        Joined into one string, the comma a column list needs lands *after*
+        the comment, and `one of: 'Acme', 'Globex',` reads as a list that
+        continues rather than one that ended. Every comment had the problem;
+        value lists are just where it became obvious.
+        """
         bits = [self.name, self.type]
         if self.pk:
             bits.append("PK")
         if not self.nullable:
             bits.append("NOT NULL")
-        s = " ".join(bits)
         notes = []
         if self.values:
             notes.append("one of: " + ", ".join(repr(v) for v in self.values))
         comment = _one_line(self.comment)
         if comment:
             notes.append(comment)
-        return f"{s}  -- {'; '.join(notes)}" if notes else s
+        return " ".join(bits), "; ".join(notes)
+
+    def render(self) -> str:
+        decl, note = self.render_parts()
+        return f"{decl}  -- {note}" if note else decl
 
 
 @dataclass
@@ -174,11 +185,20 @@ class ObjectDoc:
         lines = [f"-- {note}" if note else "", head + " ("]
         visible = self.visible_columns(principal)
         cols = visible[:max_columns]
-        lines += [f"  {c.render()}," for c in cols]
+        for c in cols:
+            decl, note = c.render_parts()
+            # Comma first, then the comment. The other order hands the list's
+            # last value a trailing comma it does not own.
+            lines.append(f"  {decl},  -- {note}" if note else f"  {decl},")
         if len(visible) > max_columns:
             lines.append(f"  -- ...{len(visible) - max_columns} more columns")
+        # The last column carries no comma. With the comma now before the
+        # comment it is no longer the last character, so trim it where it is.
         if lines[-1].endswith(","):
             lines[-1] = lines[-1][:-1]
+        elif "  -- " in lines[-1]:
+            decl, _, note = lines[-1].partition("  -- ")
+            lines[-1] = f"{decl.rstrip().rstrip(',')}  -- {note}"
         lines.append(")")
         # A foreign-key line names its columns, so it puts back the exact
         # identifier the loop above just withheld. Drop any line that does.

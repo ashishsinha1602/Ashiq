@@ -123,12 +123,19 @@ def mixed(tmp_path):
     con.executescript("""
       CREATE TABLE claim_vc   (id INTEGER PRIMARY KEY, status VARCHAR(30));
       CREATE TABLE claim_text (id INTEGER PRIMARY KEY, status TEXT, note TEXT);
-      INSERT INTO claim_vc   VALUES (1,'denied'),(2,'paid'),(3,'denied');
-      INSERT INTO claim_text VALUES
-        (1,'denied','the claim was rejected because prior authorisation was never obtained'),
-        (2,'paid','settled in full by bacs on the third of the month without adjustment'),
-        (3,'denied','coding does not match the recorded diagnosis for this encounter');
     """)
+    # Enough rows that the cardinality floor is not what decides these: the
+    # question here is TEXT versus VARCHAR, so the tables have to be big
+    # enough for a two-value column to read as a category rather than as a
+    # small table.
+    prose = ["the claim was rejected because prior authorisation was never obtained",
+             "settled in full by bacs on the third of the month without adjustment",
+             "coding does not match the recorded diagnosis for this encounter"]
+    for i in range(200):
+        con.execute("INSERT INTO claim_vc VALUES (?,?)",
+                    (i, ("denied", "paid")[i % 2]))
+        con.execute("INSERT INTO claim_text VALUES (?,?,?)",
+                    (i, ("denied", "paid")[i % 2], prose[i % 3]))
     con.commit(); con.close()
     return f"sqlite:///{path}"
 
@@ -154,3 +161,109 @@ def test_long_prose_in_a_text_column_is_still_dropped(mixed):
     prose, and the paragraph is what says so."""
     docs = reflect(mixed, sample_values=True)
     assert _col(docs, "claim_text", "note").values is None
+
+
+# --- PII: --values put real row data in the model prompt -------------------
+# Reproduced on a live PostgreSQL before the guards existed:
+#   hr.employee full_name    TEXT -> ['A Patel', 'B Osei']
+#   hr.employee home_address TEXT -> ['12 Main St', '9 Kings Rd']
+# Names and home addresses to whichever provider the user configured, with no
+# guard of any kind -- the only filters were string type, width and distinct
+# count.
+
+@pytest.fixture
+def people(tmp_path):
+    path = tmp_path / "p.db"
+    con = sqlite3.connect(path)
+    con.executescript("""
+      CREATE TABLE employee (
+        id INTEGER PRIMARY KEY, full_name TEXT, home_address TEXT,
+        email TEXT, work_phone TEXT, date_of_birth TEXT, status VARCHAR(20));
+    """)
+    # Enough rows that the cardinality floor is not what blocks the PII
+    # columns -- otherwise this would pass for the wrong reason.
+    for i in range(200):
+        con.execute("INSERT INTO employee VALUES (?,?,?,?,?,?,?)",
+                    (i, f"Person {i % 3}", f"{i % 3} Main St", f"p{i % 3}@x.com",
+                     f"0700000{i % 3}", f"19{70 + i % 3}-01-01",
+                     ("active", "leaver")[i % 2]))
+    con.commit(); con.close()
+    return f"sqlite:///{path}"
+
+
+def _values(url, **kw):
+    return {c.name: c.values for d in reflect(url, sample_values=True, **kw)
+            for c in d.columns}
+
+
+@pytest.mark.parametrize("col", ["full_name", "home_address", "email",
+                                 "work_phone", "date_of_birth"])
+def test_a_personal_column_is_never_sampled(people, col):
+    assert _values(people)[col] is None
+
+
+def test_a_plain_category_column_is_still_sampled(people):
+    """The guard must not be so broad that the feature stops working -- the
+    whole point is that a model should not have to guess whether a status
+    reads 'denied' or 'DENIED'."""
+    assert _values(people)["status"] == ["active", "leaver"]
+
+
+def test_the_deny_list_is_overridable(people):
+    """It is a deny-list, so it is wrong by construction: it misses
+    `nachname`, `nino`, `mrn`. A caller who knows their schema must be able to
+    say so."""
+    assert _values(people, deny_columns=["status"])["status"] is None
+    assert _values(people, deny_columns=["status"])["full_name"] is not None
+
+
+def test_a_nearly_unique_column_is_an_identifier_not_a_category(tmp_path):
+    """Three distinct values in a three-row table says only that the table is
+    small. Without a floor relative to the row count, a tiny employee table
+    hands over every name in it."""
+    path = tmp_path / "tiny.db"
+    con = sqlite3.connect(path)
+    con.executescript("CREATE TABLE t (id INTEGER PRIMARY KEY, nickname TEXT);")
+    con.executemany("INSERT INTO t VALUES (?,?)",
+                    [(1, "ada"), (2, "grace"), (3, "alan")])
+    con.commit(); con.close()
+    assert _values(f"sqlite:///{path}")["nickname"] is None
+
+
+def test_restricting_a_column_clears_values_already_sampled():
+    """The DDL omits a restricted column, but the sampled data should not
+    survive the restriction either -- anything reading `Column.values`
+    directly would still see it."""
+    from schemagate import Catalog
+    from schemagate.models import Column, ObjectDoc
+
+    cat = Catalog()
+    cat.add(ObjectDoc(name="t", columns=[Column("secret", "TEXT",
+                                                values=["a", "b"])]))
+    cat.restrict_column("t", "secret", ["x"])
+    assert cat._docs["t"].columns[0].values is None
+
+
+def test_a_restricted_column_is_not_sampled_when_reflection_knows(tmp_path):
+    """Reflection usually runs before `restrict_column`, but when a caller
+    reflects into a catalog that already carries roles this is the cheaper
+    stop -- do not read the data at all."""
+    from schemagate.introspect import _candidates
+
+    raw = [{"name": "salary", "type": "VARCHAR(20)", "roles": ["payroll"]},
+           {"name": "grade", "type": "VARCHAR(20)"}]
+    assert _candidates(raw, set()) == ["grade"]
+
+
+def test_a_value_list_is_not_left_looking_unfinished():
+    """Rendered into a column list, the DDL's own comma used to land after the
+    comment: `one of: 'Acme', 'Globex',` reads as a list that continues. The
+    comma belongs to the declaration, so it goes before the note."""
+    from schemagate.models import Column, ObjectDoc
+
+    ddl = ObjectDoc(name="t", columns=[
+        Column("customer", "VARCHAR(30)", values=["Acme", "Globex"]),
+        Column("id", "INT")]).render_ddl()
+    assert "one of: 'Acme', 'Globex'\n" in ddl + "\n"
+    assert "'Globex'," not in ddl
+    assert "  customer VARCHAR(30),  -- " in ddl

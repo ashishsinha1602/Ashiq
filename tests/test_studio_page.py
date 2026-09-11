@@ -77,3 +77,43 @@ def test_the_model_panels_are_hidden_without_a_server():
     assert 'id="modelPanel" hidden' in s and 'id="catPanel" hidden' in s
     assert re.search(r'for \(const id of \["modelPanel","catPanel"\]\) \$\(id\)\.hidden = false',
                      s)
+
+
+def test_the_template_and_the_shipped_page_agree():
+    """`studio/build.py` regenerates `src/schemagate/studio.html` from
+    `studio/studio.template.html`, and the template had fallen behind: it had
+    no mKey, no answerPane, no catPrompt. Running the documented build command
+    silently deleted the entire model panel and took 25 tests with it.
+
+    Nothing warned, because the build succeeds either way -- it is a string
+    substitution, and a template missing a whole panel substitutes just fine.
+    So the check has to be that every control the shipped page drives also
+    exists in the thing that regenerates it.
+    """
+    tpl = PAGE.parent.parent.parent / "studio" / "studio.template.html"
+    if not tpl.is_file():
+        pytest.skip("no template in this tree; the page is hand-maintained")
+
+    t = tpl.read_text("utf-8")
+    for control in ("modelPanel", "catPanel", "answerPane", "mProvider",
+                    "mModel", "mKey", "mRerank", "mAnswer", "mSave",
+                    "catRun", "catApply", "catPrompt", "catReply",
+                    "answerSql", "answerRows"):
+        assert f'id="{control}"' in t, (
+            f"{control} is in the shipped page but not in the template that "
+            "regenerates it -- running studio/build.py would delete it")
+
+
+def test_the_template_keeps_the_placeholders_build_py_substitutes():
+    """Regenerating the template from the built page is only correct if the
+    four injected blobs went back to being placeholders. A template with the
+    442 KB of schema JSON baked in would build, and would then be impossible
+    to update."""
+    tpl = PAGE.parent.parent.parent / "studio" / "studio.template.html"
+    if not tpl.is_file():
+        pytest.skip("no template in this tree")
+    t = tpl.read_text("utf-8")
+    for token in ("__BLAKE__", "__SCHEMAGATE_JS__", "__SCHEMAS_JSON__",
+                  "__DESCRIPTIONS_JSON__"):
+        assert t.count(token) == 1, f"{token} appears {t.count(token)} times"
+    assert len(t) < 100_000, "the template has a built blob baked into it"

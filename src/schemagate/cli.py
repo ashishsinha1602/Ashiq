@@ -288,17 +288,21 @@ def cmd_describe(args) -> int:
 
 
 def cmd_certify(args) -> int:
-    import pathlib
-    import subprocess
+    """Run the dialect certification against a real database.
 
-    # the script lives in the sdist, not the wheel, so locate it or fall back
-    here = pathlib.Path(__file__).resolve()
-    candidates = [here.parents[2] / "scripts" / "certify_dialect.py"]
-    for path in candidates:
-        if path.exists():
-            return subprocess.call([sys.executable, str(path), args.url])
-    sys.exit("schemagate: certify_dialect.py is in the source repository:\n"
-             "  https://github.com/ashishsinha1602/schemagate/blob/main/scripts/certify_dialect.py")
+    This used to shell out to `scripts/certify_dialect.py`, located relative
+    to the installed module -- a path that only exists in a git checkout. Every
+    pip user got a link to GitHub rather than a run, which made the subcommand
+    advertise something it could not do.
+    """
+    import traceback
+
+    from .certify import main as certify_main
+    try:
+        return certify_main(args.url)
+    except Exception:
+        traceback.print_exc()
+        return 2
 
 
 def build_parser() -> argparse.ArgumentParser:

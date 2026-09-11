@@ -224,6 +224,12 @@ class Catalog:
                 for col in doc.columns:
                     if col.name == column:
                         col.roles = list(roles)
+                        # Values sampled before the restriction was applied
+                        # would otherwise sit on the column, reachable by
+                        # anything that reads `Column.values` directly. The
+                        # DDL already omits a restricted column, but the data
+                        # should not survive the restriction either.
+                        col.values = None
                         return
                 raise KeyError(f"{table!r} has no column {column!r}")
         raise KeyError(f"{table!r} not in catalog")

@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.1.14
+
+A Windows bug that made the Studio unquittable, a leak in `--values`, and two
+things in the repo that were quietly lying.
+
+- **Fixed: Ctrl+C did not stop the Studio on Windows.** `main()` waited with
+  `threading.Event().wait(3600)`. Python runs a signal handler only between
+  bytecodes in the main thread, and Windows has no EINTR to cut a wait short,
+  so Ctrl+C sat unhandled for up to an hour and the only way out was killing
+  python.exe. On Linux and macOS the wait is interrupted immediately, which is
+  why it survived: it was never broken on the machines it was written on. It
+  now waits in short slices and closes the listening socket on the way out, so
+  an immediate restart does not fail with "address already in use".
+
+- **Fixed: `--values` sent personal data to the model.** It put real row
+  values in the prompt with no guard beyond string type, width and distinct
+  count. On a live PostgreSQL that meant names and home addresses going to
+  whichever provider was configured:
+
+      hr.employee full_name    -> ['A Patel', 'B Osei']
+      hr.employee home_address -> ['12 Main St', '9 Kings Rd']
+
+  Three guards. A column already restricted with `restrict_column` is never
+  sampled, and restricting one now clears anything sampled earlier. Column
+  names that read as personal -- name, address, email, phone, ssn, dob, birth,
+  passport -- are skipped by default, and the list is overridable because a
+  deny-list is wrong by construction: it misses `nachname`, `nino`, `mrn`. And
+  a column must have distinct values well under the row count, so a two-row
+  table never qualifies -- three distinct values in a three-row table says
+  only that the table is small.
+
+  The guards are a floor, not a boundary. What actually protects a column is
+  `restrict_column`, which is exact, and the fact that `--values` is off by
+  default.
+
+- **Fixed: a value list looked unfinished.** Rendered into a column list, the
+  DDL's own comma landed after the comment -- `one of: 'Acme', 'Globex',` reads
+  as a list that continues. The comma belongs to the declaration, so it goes
+  before the note. Every comment had the problem; value lists are where it
+  showed.
+
+- **Fixed: `studio/build.py` destroyed the Studio.** The template had fallen
+  behind the shipped page -- no `mKey`, no `answerPane`, no `catPrompt` -- so
+  running the documented build command silently deleted the entire model panel
+  and took 25 tests with it. Nothing warned, because a string substitution
+  succeeds whether or not the template still has the panel. The template is
+  regenerated from the shipped page, the build now reproduces it byte for
+  byte, and a test fails if the two ever disagree again.
+
+- **Fixed: `schemagate certify` was a dead command.** It looked for
+  `scripts/certify_dialect.py` three directories above the installed module --
+  a path that exists in a git checkout and nowhere else. Every pip user got a
+  link to GitHub instead of a certification run, and the comment explaining
+  the fallback said the script was in the sdist, which it was not. The
+  implementation moved into the package; `scripts/certify_dialect.py` still
+  works and now calls it.
+
+677 tests. Guards and render verified against live PostgreSQL 16.
+
 ## 0.1.13
 
 Two things promised in public and not shipped for twelve releases, a live bug,

@@ -322,6 +322,10 @@ def serve(state: StudioState, host: str = "127.0.0.1", port: int = 8770,
     server = _Server((host, port), _handler(state))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    # Kept on the server so main() can wait on it in short, interruptible
+    # slices. Returning it instead would change a signature the tests and the
+    # OCI stack both call.
+    server.serve_thread = thread                          # type: ignore[attr-defined]
     url = f"http://{host}:{server.server_address[1]}/"
     print(f"schemagate studio: {url}   ({len(state.catalog._docs)} objects)")
     if open_browser:
@@ -359,12 +363,26 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         questions = [q for q, _ in GOLDEN]
     state = StudioState(cat, title, blurb, questions, engine=engine)
     server = serve(state, host, port, open_browser)
+
+    # Wait in short slices rather than one long one. Python runs a signal
+    # handler only between bytecodes in the main thread, and on Windows there
+    # is no EINTR to break a wait early -- so `Event().wait(3600)` meant Ctrl+C
+    # sat unhandled for up to an hour and the only way out was killing
+    # python.exe. On Linux and macOS the wait is interrupted immediately, which
+    # is why this survived: it was never broken on the machines it was written
+    # on.
+    thread = getattr(server, "serve_thread", None)
     try:
-        while True:
-            threading.Event().wait(3600)
+        while thread is not None and thread.is_alive():
+            thread.join(0.5)
     except KeyboardInterrupt:
+        pass
+    finally:
         server.shutdown()
-        return 0
+        # Without this the listening socket stays open until the process
+        # exits, so an immediate restart fails with "address already in use".
+        server.server_close()
+    return 0
 
 
 if __name__ == "__main__":

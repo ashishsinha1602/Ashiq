@@ -198,3 +198,52 @@ def test_a_reply_that_is_not_json_says_so(api):
 def test_descriptions_must_be_an_object_not_a_list(api):
     call, _ = api
     assert "error" in call("/api/apply-descriptions", {"descriptions": "[1, 2, 3]"})
+
+
+def test_serve_exposes_its_thread_so_main_can_wait_on_it_interruptibly():
+    """`main()` used to wait with `threading.Event().wait(3600)`.
+
+    Python runs a signal handler only between bytecodes in the main thread,
+    and Windows has no EINTR to cut a wait short -- so Ctrl+C sat unhandled
+    for up to an hour and the only way out was killing python.exe. On Linux
+    and macOS the wait is interrupted immediately, which is why this survived:
+    it was never broken on the machines it was written on.
+
+    The fix waits in short slices on the serving thread, so `serve()` has to
+    hand that thread back.
+    """
+    import threading
+
+    from schemagate import Catalog
+    from schemagate.demo_schema import create_demo_db
+    from schemagate.studio import StudioState, serve
+
+    srv = serve(StudioState(Catalog(name="t").bootstrap(create_demo_db()),
+                            "t", "b", []), "127.0.0.1", 0, False)
+    try:
+        thread = getattr(srv, "serve_thread", None)
+        assert isinstance(thread, threading.Thread) and thread.is_alive()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_main_waits_in_short_slices_and_closes_the_socket():
+    """Two things, both of which a user notices and neither of which a unit
+    test of `serve()` would catch: the wait must be short enough for a signal
+    to land between slices, and the listening socket must be closed rather
+    than left to the process exit -- otherwise an immediate restart fails with
+    "address already in use"."""
+    import inspect
+
+    from schemagate.studio import main
+
+    # Comments stripped first. The comment that explains this fix quotes the
+    # very call it forbids, so a plain substring check matches the prose and
+    # fails on correct code -- which is what it did the first time it ran.
+    src = inspect.getsource(main)
+    code = "\n".join(ln.split("#")[0] for ln in src.splitlines())
+
+    assert "Event().wait(" not in code, "the un-interruptible wait is back"
+    assert "thread.join(0.5)" in code
+    assert "server_close()" in code

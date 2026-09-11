@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence
 
 from .models import Column, ForeignKey, ObjectDoc
 
@@ -95,7 +95,32 @@ _SAMPLEABLE = re.compile(r"^(VARCHAR|VARCHAR2|NVARCHAR|NVARCHAR2|CHAR|NCHAR|TEXT
 _MAX_WIDTH = 40
 
 
-def _candidates(raw_cols, pk_names) -> "List[str]":
+#: Column names whose contents are personal by default. Matched on the name
+#: as a substring, case-insensitively, so `customer_email` and `EMAILADDR`
+#: both match.
+#:
+#: This is a deny-list, which means it is wrong by construction: it will miss
+#: `nachname`, `nino`, `mrn`. It is here because the alternative was no guard
+#: at all -- `--values` sent real names and home addresses to whichever model
+#: the user had configured, and nothing in the code said otherwise. Treat it
+#: as a floor, not a boundary: the guarantees are `restrict_column`, which is
+#: exact, and the fact that this is off by default.
+_PII_NAMES = ("name", "address", "email", "phone", "ssn", "dob", "birth",
+              "passport")
+
+#: A column whose values are nearly unique is an identifier, not a category,
+#: whatever it is called. Four distinct values in a four-row table says only
+#: that the table is small. Requiring the distinct count to be well under the
+#: row count is what stops a two-row table qualifying for anything.
+_MAX_DISTINCT_RATIO = 5
+
+
+def _looks_personal(name: str, deny: "Sequence[str]") -> bool:
+    low = name.casefold()
+    return any(p in low for p in deny)
+
+
+def _candidates(raw_cols, pk_names, deny=_PII_NAMES) -> "List[str]":
     """Columns worth one small query each.
 
     Declared width used to decide this on its own, and unbounded TEXT was
@@ -114,6 +139,15 @@ def _candidates(raw_cols, pk_names) -> "List[str]":
     for c in raw_cols:
         if c["name"] in pk_names:          # a key is not a category
             continue
+        # A column somebody has already restricted must never have its
+        # contents read, let alone rendered. Reflection rarely knows about it
+        # -- `restrict_column` is usually called afterwards, and clears any
+        # values that were already sampled -- but when a caller reflects into
+        # an existing catalog it does, and then this is the cheaper stop.
+        if c.get("roles"):
+            continue
+        if _looks_personal(c["name"], deny):
+            continue
         m = _SAMPLEABLE.match(str(c["type"]).strip())
         if not m:
             continue
@@ -124,7 +158,8 @@ def _candidates(raw_cols, pk_names) -> "List[str]":
     return out
 
 
-def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
+def _sample_values(engine, schema, table, raw_cols, kind, max_distinct,
+                   deny=_PII_NAMES):
     """The distinct values of short string columns, when there are few.
 
     This exists because of a specific wrong answer, and it is worth stating
@@ -141,10 +176,10 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
     view that cannot be scanned -- is skipped, not fatal: this is an
     enrichment, and reflection must still finish without it.
     """
-    from sqlalchemy import Column as SAColumn, MetaData, Table, select
+    from sqlalchemy import Column as SAColumn, MetaData, Table, func, select
 
     pk_names = {c["name"] for c in raw_cols if c.get("primary_key")}
-    names = _candidates(raw_cols, pk_names)
+    names = _candidates(raw_cols, pk_names, deny)
     if not names:
         return None
 
@@ -152,6 +187,13 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
     tbl = Table(table, md, *[SAColumn(n, None) for n in names], schema=schema)
     found = {}
     with engine.connect() as conn:
+        # One count, reused for every column: a distinct count only means
+        # "category" relative to how many rows there are.
+        try:
+            rows_total = conn.execute(
+                select(func.count()).select_from(tbl)).scalar() or 0
+        except Exception:
+            rows_total = 0
         for n in names:
             col = tbl.c[n]
             try:
@@ -168,6 +210,11 @@ def _sample_values(engine, schema, table, raw_cols, kind, max_distinct):
             # paragraph is prose, and the paragraph is what says so.
             if any(len(v) > _MAX_WIDTH for v in vals):
                 continue
+            # And nearly-unique means identifier, not category. Without this a
+            # three-row employee table hands over three full names, because
+            # three distinct values is under any fixed cap.
+            if rows_total and len(vals) * _MAX_DISTINCT_RATIO >= rows_total:
+                continue
             found[n] = vals
     return found or None
 
@@ -176,7 +223,8 @@ def reflect(engine_or_url, include=None, exclude=None,
             schemas: Optional[List[Optional[str]]] = None,
             include_views: bool = True,
             sample_values: bool = False,
-            max_distinct: int = 25) -> List[ObjectDoc]:
+            max_distinct: int = 25,
+            deny_columns: Optional[Sequence[str]] = None) -> List[ObjectDoc]:
     """Return an ObjectDoc per table/view. ``include``/``exclude`` accept glob
     or SQL-LIKE style patterns ('sales_%', 'v_*').
 
@@ -273,7 +321,9 @@ def reflect(engine_or_url, include=None, exclude=None,
                     definition = None
 
             values = (_sample_values(engine, schema, name, raw_cols, kind,
-                                     max_distinct)
+                                     max_distinct,
+                                     _PII_NAMES if deny_columns is None
+                                     else tuple(deny_columns))
                       if sample_values else None)
             docs.append(ObjectDoc(
                 name=name,
