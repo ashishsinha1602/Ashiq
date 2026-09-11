@@ -118,6 +118,13 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .ask input{flex:1;font-size:16px;padding:12px 14px;font-family:var(--sans)}
 .ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
 .examples{display:flex;flex-wrap:wrap;gap:6px}
+/* `.main` is a flex column with an 18px gap, so an EMPTY child is not free:
+   it still takes a slot and the gap lands on both sides of it. A connected
+   database has no example questions (those are the demo's), so this div
+   renders empty and the space under the ask box doubles to 36px, reading as
+   a hole in the layout rather than as spacing. Collapse it when there is
+   nothing in it. Same for any other row that can legitimately render empty. */
+.main > :empty{display:none}
 .examples button{border-style:dashed;color:var(--muted);font-size:12.5px;padding:4px 10px}
 .examples button:hover{color:var(--ink)}
 
