@@ -457,7 +457,8 @@ def serve(state: StudioState, host: str = "127.0.0.1", port: int = 8770,
 def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
          open_browser: bool = True, include=None, exclude=None,
          config: Optional[str] = None, restrict_from_grants: bool = False,
-         sample_values: bool = False, allow_remote_connect: bool = False) -> int:
+         sample_values: bool = False,
+         allow_remote_connect: Optional[bool] = None) -> int:
     engine = None
     if url:
         from sqlalchemy import create_engine
@@ -486,7 +487,16 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         title, blurb = "Demo schema", "42 objects. Pass --url to run this against your own database."
         questions = [q for q, _ in GOLDEN]
     state = StudioState(cat, title, blurb, questions, engine=engine)
-    state.allow_connect = allow_remote_connect
+    # On loopback, connecting needs no permission: the only person who can
+    # reach the page is someone already sitting at a shell on this machine,
+    # and they can open a database without asking the Studio to do it. The
+    # guard exists for the other case -- a Studio on 0.0.0.0 is a URL box
+    # anyone on the network can use to make this server connect to hosts only
+    # it can see. So the default follows the bind address rather than making
+    # every local user pass a flag to get the feature the page is for.
+    if allow_remote_connect is None:
+        allow_remote_connect = host in ("127.0.0.1", "::1", "localhost")
+    state.allow_connect = bool(allow_remote_connect)
     state.restrict_from_grants = restrict_from_grants
     state.sample_values = sample_values
     server = serve(state, host, port, open_browser)

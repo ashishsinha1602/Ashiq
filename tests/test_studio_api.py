@@ -338,7 +338,9 @@ def test_both_spellings_of_the_connect_flag_work():
 
     for flag in ("--allow-connect", "--allow-remote-connect"):
         assert build_parser().parse_args(["studio", flag]).allow_connect is True
-    assert build_parser().parse_args(["studio"]).allow_connect is False
+    # `None`, not False: with no flag the answer comes from the bind address,
+    # and main() decides. An explicit --no-connect is how you say False.
+    assert build_parser().parse_args(["studio"]).allow_connect is None
 
 
 def test_one_install_can_bring_every_driver():
@@ -429,3 +431,37 @@ def test_the_oci_sdk_is_available_but_not_in_the_default_everything_install():
 
     assert any(p.startswith("oci") for p in extras["oci"])
     assert not any(p.startswith("oci>") for p in extras["all"])
+
+
+@pytest.mark.parametrize("host,expected", [
+    ("127.0.0.1", True), ("localhost", True), ("::1", True),
+    ("0.0.0.0", False), ("192.168.1.10", False),
+])
+def test_connecting_is_allowed_by_default_only_on_loopback(host, expected):
+    """The flag was making every local user ask permission for the feature the
+    page exists to provide. On loopback there is nobody to ask: the only
+    person who can reach the page is already at a shell on this machine, and
+    they can open a database without the Studio's help.
+
+    The risk the flag guards is real on any other address -- a Studio on
+    0.0.0.0 is a URL box anyone on the network can use to make this server
+    connect to hosts only it can see. So the default follows the bind address.
+    """
+    import inspect
+
+    from schemagate.studio import main
+
+    src = inspect.getsource(main)
+    assert 'host in ("127.0.0.1", "::1", "localhost")' in src
+    assert (host in ("127.0.0.1", "::1", "localhost")) is expected
+
+
+def test_an_explicit_flag_beats_the_default_either_way():
+    from schemagate.cli import build_parser
+
+    p = build_parser()
+    assert p.parse_args(["studio"]).allow_connect is None          # decide later
+    assert p.parse_args(["studio", "--allow-connect"]).allow_connect is True
+    assert p.parse_args(["studio", "--no-connect"]).allow_connect is False
+    assert p.parse_args(["studio", "--host", "0.0.0.0",
+                         "--allow-connect"]).allow_connect is True

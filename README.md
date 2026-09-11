@@ -379,7 +379,7 @@ Same thing from the Studio, with a dropdown instead of a dict:
 
 ```bash
 pip install "schemagate[all]"          # every driver, the model SDKs, MCP
-schemagate studio --allow-connect
+schemagate
 ```
 
 On Oracle Cloud, add the OCI SDK so cataloguing can go through OCI Generative
@@ -404,10 +404,11 @@ Once connected, the Studio shows the command that reproduces it — the
 password as `$DB_PASSWORD` rather than the real one. Try it in the page, then
 take the command.
 
-Connecting from the page is **off** unless you pass `--allow-connect`.
-It is the only thing there that reaches outside the process: with it on,
-anyone who can reach the Studio can make your server connect anywhere it can
-see, using whatever credentials they type. A failed connection reports the
+Connecting works out of the box on `localhost`, where the only person who can
+reach the page is already sitting at a shell on that machine. Serve the Studio
+on any other address and it takes `--allow-connect`, because there it becomes
+a URL box anyone on the network can use to make your server connect to hosts
+only it can see. `--no-connect` turns it off anywhere. A failed connection reports the
 exception type and nothing else, because driver errors quote the URL they
 were given and a URL carries a password.
 

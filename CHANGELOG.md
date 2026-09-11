@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.17
+
+- **Changed: `schemagate studio` connects to databases without a flag.**
+  `--allow-connect` was making every local user ask permission for the feature
+  the page exists to provide. On loopback there is nobody to ask: the only
+  person who can reach the page is already at a shell on this machine, and
+  they can open a database without the Studio's help.
+
+  The risk the flag guards is real everywhere else -- a Studio on `0.0.0.0` is
+  a URL box anyone on the network can use to make this server connect to hosts
+  only it can see -- so the default follows the bind address. On
+  `127.0.0.1`, `localhost` or `::1` the Connect panel is there. On any other
+  address it takes `--allow-connect`, and `--no-connect` turns it off
+  anywhere.
+
+  So the whole thing is now two commands:
+
+      pip install "schemagate[all,oci]"
+      schemagate
+
+- **Documented: `pip install "schemagate[all,oci]"`.** The OCI SDK is what
+  lets cataloguing run through OCI Generative AI with no API key. It is not in
+  `[all]` on a measurement rather than a preference: 488 MB and 17,505 modules
+  on its own, against 217 MB for every database driver, every model SDK and
+  MCP combined.
+
+750 tests.
+
 ## 0.1.16
 
 - **Fixed: connecting to a database left the demo on screen.** The page is

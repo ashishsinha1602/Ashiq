@@ -387,12 +387,18 @@ def build_parser() -> argparse.ArgumentParser:
     # which is not what it does -- it lets the page hand the server a database
     # URL. The clearer name is the one documented; the original stays as a
     # hidden alias because it shipped in 0.1.14.
+    # `None` rather than False: main() reads it as "decide from the bind
+    # address". An explicit flag either way still wins.
     studio.add_argument("--allow-connect", "--allow-remote-connect",
-                        dest="allow_connect", action="store_true",
-                        help="let the Connect panel open a database you type "
-                             "into the page. Off by default: with it on, "
-                             "anyone who can reach the page can make this "
-                             "server connect anywhere the server can see")
+                        dest="allow_connect", action="store_true", default=None,
+                        help="let the Connect panel open a database typed into "
+                             "the page. On by default on localhost; needed "
+                             "when serving on any other address, where anyone "
+                             "who can reach the page could make this server "
+                             "connect to hosts only it can see")
+    studio.add_argument("--no-connect", dest="allow_connect",
+                        action="store_false",
+                        help="turn the Connect panel off, even on localhost")
     studio.set_defaults(func=cmd_studio)
 
     describe = sub.add_parser(
