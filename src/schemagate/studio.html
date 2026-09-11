@@ -118,6 +118,13 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .ask input{flex:1;font-size:16px;padding:12px 14px;font-family:var(--sans)}
 .ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
 .examples{display:flex;flex-wrap:wrap;gap:6px}
+/* `.main` is a flex column with an 18px gap, so an EMPTY child is not free:
+   it still takes a slot and the gap lands on both sides of it. A connected
+   database has no example questions (those are the demo's), so this div
+   renders empty and the space under the ask box doubles to 36px, reading as
+   a hole in the layout rather than as spacing. Collapse it when there is
+   nothing in it. Same for any other row that can legitimately render empty. */
+.main > :empty{display:none}
 .examples button{border-style:dashed;color:var(--muted);font-size:12.5px;padding:4px 10px}
 .examples button:hover{color:var(--ink)}
 
@@ -285,6 +292,12 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
         Take visibility from the database's GRANTs</label>
       <label style="display:block"><input type="checkbox" id="cValues">
         Read values of short, non-personal columns</label>
+      <label style="display:block"><input type="checkbox" id="cRemember">
+        Remember this connection</label>
+      <div class="blurb" style="margin:2px 0 0 22px">reconnects on the next
+        start. Writes this form — passwords included — to
+        <code>~/.schemagate/connection.json</code>, readable only by you.
+        Undo with <code>schemagate studio --forget</code>.</div>
       <button id="cGo" style="margin-top:8px;width:100%">Connect</button>
       <div id="cNote" class="blurb" style="margin-top:6px"></div>
     </section>
@@ -1734,7 +1747,8 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       const b = {kind,
         schemas: $("cSchemas").value.split(",").map(x=>x.trim()).filter(Boolean),
         restrict_from_grants: $("cGrants").checked,
-        sample_values: $("cValues").checked};
+        sample_values: $("cValues").checked,
+        remember: $("cRemember").checked};
       const v = id => $(id).value.trim();
       if (kind === "ords")       { b.url = v("cUrl"); b.user = v("cUser");
                                    b.password = $("cPassword").value;

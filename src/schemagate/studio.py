@@ -78,6 +78,15 @@ class StudioState:
         #: answering that question with the engine left the page insisting it
         #: still needed connecting while showing 29 of the user's own tables.
         self.connected = False
+        #: Whether the current connection was written down for next time.
+        #: Reported to the page so it can say so rather than leaving someone
+        #: to wonder whether a restart will cost them the wallet fields again.
+        self.remembered = False
+        #: Saving a connection means putting a database password on disk, in a
+        #: tool that otherwise stores nothing. That is the user's call, not a
+        #: default -- set by --remember, or per-connection by the page's
+        #: checkbox.
+        self.remember_connection = False
 
     def schemas_json(self) -> Dict[str, Any]:
         """The shape the page expects: docs are not needed server-side, but
@@ -345,7 +354,20 @@ class StudioState:
             # the page sits on "Connecting..." with nothing to show. A
             # timeout turns that silence into DPY-6005, which is an answer.
             engine = create_engine(
-                url, connect_args=with_timeout(url, connect_args))
+                url, connect_args=with_timeout(url, connect_args),
+                # A pooled connection that has been sitting idle is not
+                # necessarily still open: an Autonomous Database closes idle
+                # sessions, and any firewall between here and 1522 will drop
+                # the socket without telling either end. Without pre_ping the
+                # pool hands that dead connection to the next question and the
+                # page reports a lost connection for a database that is up.
+                # pre_ping costs one round trip on checkout and turns the
+                # whole class of "it worked this morning" into a silent
+                # reconnect.
+                pool_pre_ping=True,
+                # And retire them on a timer regardless, so a connection never
+                # ages past whatever the far end is willing to keep.
+                pool_recycle=1800)
             # Connecting is meant to be quick: reflect the schema and get out
             # of the way. Reading values is the only part that touches rows,
             # and it is the part whose cost is set by the network rather than
@@ -407,6 +429,13 @@ class StudioState:
         self.engine = engine
         self.is_demo = False
         self.connected = True
+        # Write the request down now that it is known to work. Only a connect
+        # that actually reflected something is worth replaying on restart, so
+        # this sits after the bootstrap rather than beside the form handler.
+        from . import remember
+        self.remembered = remember.save(
+            body, allow=self.remember_connection or bool(body.get("remember"))
+        ) is not None
         self.title = "Your database"
         self.blurb = (f"{len(cat._docs)} objects reflected from "
                       f"{engine.dialect.name}. Nothing is catalogued yet.")
@@ -458,8 +487,25 @@ class StudioState:
         }
 
 
-def _handler(state: StudioState):
-    page = _PAGE.read_text("utf-8")
+def _render_page(state: StudioState, _raw: Dict[str, str] = {}) -> bytes:
+    """Build the page against the state as it is *now*.
+
+    This used to be done once, when the server started, and the resulting
+    bytes were closed over and served to every GET for the life of the
+    process. Connecting from the page updated the server but could not update
+    those bytes, so refreshing the browser re-served the startup snapshot: a
+    rail still reading "Nothing connected yet" and an empty object list, while
+    /api/settings answered `connected: true` and the header said "connected to
+    your database". The page looked like it had lost a connection it still
+    had. Re-rendering per request is what makes a refresh tell the truth.
+
+    Only the file read is cached -- the injection is a couple of small JSON
+    dumps (`docs` is deliberately empty in `schemas_json`), so this is cheap
+    enough to do per request and wrong to do any less often.
+    """
+    page = _raw.get("html")
+    if page is None:
+        page = _raw["html"] = _PAGE.read_text("utf-8")
     # The live catalog goes in front of the bundled sample rather than over
     # the top of it. Replacing it outright left one tab, so a Studio with
     # nothing connected had only invented tables to show and looked like it
@@ -478,7 +524,10 @@ def _handler(state: StudioState):
     page = (page[:start] + json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
             + page[end:])
     page = page.replace("<script>\n(function(){", '<script>window.SCHEMAGATE_API="/api";\n(function(){', 1)
-    body = page.encode("utf-8")
+    return page.encode("utf-8")
+
+
+def _handler(state: StudioState):
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "schemagate-studio"
@@ -497,9 +546,13 @@ def _handler(state: StudioState):
 
         def do_GET(self):
             if self.path in ("/", "/index.html"):
+                body = _render_page(state)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
+                # The page carries connection state now, so a cached copy is a
+                # stale one -- which is the bug this whole change is about.
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
             elif self.path == "/api/health":
@@ -583,11 +636,20 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
          config: Optional[str] = None, restrict_from_grants: bool = False,
          sample_values: bool = False,
          allow_remote_connect: Optional[bool] = None,
-         demo: bool = False) -> int:
+         demo: bool = False, forget: bool = False,
+         remember_connection: bool = False) -> int:
+    if forget:
+        from . import remember
+        print("forgot the remembered connection" if remember.forget()
+              else "there was no remembered connection")
+        return 0
     engine = None
     if url:
         from sqlalchemy import create_engine
-        engine = create_engine(url)
+        # Same reasoning as the Connect path: an idle pooled connection is not
+        # a live one, and without pre_ping the first question after a quiet
+        # spell fails against a database that never went away.
+        engine = create_engine(url, pool_pre_ping=True, pool_recycle=1800)
         cat = Catalog(name="studio").bootstrap(engine, include=include,
                                                exclude=exclude,
                                                sample_values=sample_values)
@@ -643,6 +705,31 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
     state.allow_connect = bool(allow_remote_connect)
     state.restrict_from_grants = restrict_from_grants
     state.sample_values = sample_values
+    state.remember_connection = bool(remember_connection)
+
+    # Replay the last connection, if there is one and nothing more specific
+    # was asked for. This is what stops a restart from meaning "type the
+    # wallet directory and both passwords again" -- the connection outlives
+    # the process that made it. --url and --demo are explicit instructions and
+    # win; a saved connection only fills the otherwise-empty case.
+    if not url and not demo and state.allow_connect:
+        from . import remember
+        saved = remember.load()
+        if saved:
+            print("reconnecting to the remembered database...", file=sys.stderr)
+            try:
+                out = state.connect(dict(saved))
+            except Exception as e:                        # noqa: BLE001
+                out = {"error": f"{type(e).__name__}: {e}"}
+            if out.get("error"):
+                # A remembered connection that no longer works must not stop
+                # the Studio from starting -- the page is how someone fixes it.
+                print(f"  could not reconnect: {out['error']}", file=sys.stderr)
+                print(f"  (clear it with: schemagate studio --forget)", file=sys.stderr)
+            else:
+                print(f"  reconnected: {out['objects']} objects from "
+                      f"{out['dialect']}", file=sys.stderr)
+
     server = serve(state, host, port, open_browser)
 
     # Wait in short slices rather than one long one. Python runs a signal
