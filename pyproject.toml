@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "schemagate"
-version = "0.1.30"
+version = "0.1.31"
 description = "Identity-scoped schema selection for text-to-SQL: give the model only the tables this caller may read, and 75% fewer prompt tokens"
 readme = "README.md"
 license = "Apache-2.0"

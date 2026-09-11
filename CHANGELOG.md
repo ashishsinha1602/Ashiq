@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.31
+
+- **Fixed: a connected Studio insisting nothing was connected.** The page
+  asked `/api/settings` once, at load, and believed the answer for the rest of
+  its life. Anything that connected afterwards -- or any reload that raced the
+  connection -- left it painting the disconnected state over a catalog it was
+  simultaneously displaying: "no database connected" in the header, "Nothing is
+  loaded yet" in the body, no Database panel, and 43 objects in the rail.
+
+  `/api/settings` now returns the object count, and the page treats a catalog
+  it can see as evidence of a connection rather than trusting a boolean it may
+  have read too early.
+
+812 tests.
+
 ## 0.1.30
 
 - **Added: a wallet password that does not open the wallet is said so, before

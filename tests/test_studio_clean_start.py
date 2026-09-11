@@ -153,7 +153,10 @@ def test_the_page_does_not_hardcode_the_connected_header():
     # user's database. Counting occurrences would break on any copy edit; the
     # thing that must not come back is this one assignment.
     assert "$(\"mode\").innerHTML='<span>connected to your database</span>'" not in html
-    assert 'mt.textContent = st.connected ? "connected to your database"' in html
+    # isLive, not st.connected: the flag alone left a reloaded page insisting
+    # nothing was loaded while showing forty-three objects in the rail.
+    assert 'mt.textContent = isLive ? "connected to your database"' in html
+    assert 'const hasCatalog = (st.objects || 0) > 0' in html
 
 
 # ---- the two tabs -------------------------------------------------------

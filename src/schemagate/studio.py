@@ -512,6 +512,10 @@ def _handler(state: StudioState):
                 #: a model writes, and the ORDS path has none.
                 out["can_run_sql"] = state.engine is not None
                 out["demo"] = state.is_demo
+                # The object count travels with the flag so the page can tell
+                # "connected" from a catalog it can see, rather than trusting a
+                # boolean it may have read before the connection existed.
+                out["objects"] = len(state.catalog._docs)
                 self._json(200, out)
             else:
                 self._json(404, {"error": "not found"})

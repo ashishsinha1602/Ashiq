@@ -720,7 +720,14 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       // moves to the middle and everything else steps back. It is the same
       // <section> in both places -- moved, not duplicated -- so its fields and
       // handlers survive the trip.
-      const needsConnect = live && st.allow_connect && !st.connected && !st.demo;
+      // "Is there a catalog on screen" is the question, and a catalog is
+      // evidence of itself. Relying on the flag alone meant a page that read
+      // the settings before connecting -- or after a reload that raced the
+      // connection -- sat there insisting nothing was loaded while showing
+      // forty-three objects in the rail.
+      const hasCatalog = (st.objects || 0) > 0 || state.hasCatalog === true;
+      const isLive = st.connected || (hasCatalog && !st.demo);
+      const needsConnect = live && st.allow_connect && !isLive && !st.demo;
       const slot = $("connectSlot"), panel = $("connectPanel");
       if (panel) {
         try {
@@ -739,10 +746,10 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       $("modelPanel").hidden = !live;
       $("catPanel").hidden = !live;
       if ($("recipePanel") && !live) $("recipePanel").hidden = true;
-      $("connState").textContent = st.connected ? "connected"
+      $("connState").textContent = isLive ? "connected"
                                 : (st.demo ? "demo" : "not connected");
       const mt = $("modeText");
-      if (mt) mt.textContent = st.connected ? "connected to your database"
+      if (mt) mt.textContent = isLive ? "connected to your database"
                              : (st.demo ? "demo schema \u2014 not your data"
                                         : "no database connected");
       // The intro box is written for the browser demo -- it says this page is
@@ -751,7 +758,7 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       // the page is actually in.
       const intro = $("intro");
       if (intro) {
-        if (st.connected) {
+        if (isLive) {
           intro.hidden = true;
         } else {
           intro.hidden = false;
