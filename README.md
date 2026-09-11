@@ -343,6 +343,58 @@ provider = OpenAIProvider(model="gpt-4.1-mini",
 cat = Catalog(embedder=APIEmbedder(provider, dim=1536))
 ```
 
+## Connecting to what you actually have
+
+Most people do not have a SQLAlchemy URL. They have a wallet zip, a JDBC
+string out of a config file, or a host and a port. `schemagate.connect`
+turns any of those into the two things SQLAlchemy needs:
+
+```python
+from sqlalchemy import create_engine
+from schemagate import Catalog
+from schemagate.connect import resolve
+
+url, connect_args = resolve("jdbc:oracle:thin:@//host:1521/ORCLPDB1")
+cat = Catalog().bootstrap(create_engine(url, connect_args=connect_args))
+```
+
+`connect_args` is not optional. An Autonomous Database has no URL worth the
+name — the wallet directory, the wallet password and the TNS alias have
+nowhere to live in one — so the URL degenerates to `oracle+oracledb://@` and
+the connection travels beside it:
+
+```python
+url, connect_args = resolve({
+    "kind": "wallet",
+    "wallet": "~/Downloads/Wallet_mydb.zip",   # the zip as downloaded
+    "alias": "mydb_high",
+    "user": "ADMIN", "password": "...",
+})
+```
+
+The zip is extracted next to itself, because the driver re-reads it on every
+reconnect — a temporary directory gives you a connection that works once.
+
+Same thing from the Studio, with a dropdown instead of a dict:
+
+```bash
+schemagate studio --allow-remote-connect
+```
+
+| you have | pick |
+|---|---|
+| `postgresql+psycopg://...` | SQLAlchemy URL |
+| `jdbc:oracle:thin:@//host:1521/SVC` | JDBC URL |
+| `Wallet_mydb.zip` + `mydb_high` | Oracle wallet |
+| a host, a port and a database | the engine by name |
+
+Connecting from the page is **off** unless you pass `--allow-remote-connect`.
+It is the only thing there that reaches outside the process: with it on,
+anyone who can reach the Studio can make your server connect anywhere it can
+see, using whatever credentials they type. A failed connection reports the
+exception type and nothing else, because driver errors quote the URL they
+were given and a URL carries a password.
+
 ## Restricting one column, and reading the ACL you already have
 
 An object-level rule cannot express the common case: the table is the right

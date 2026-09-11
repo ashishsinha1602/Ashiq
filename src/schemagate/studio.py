@@ -235,22 +235,35 @@ class StudioState:
             return {"error": "connecting from the page is off. Restart with "
                              "`schemagate studio --allow-remote-connect`, or "
                              "pass --url when you start it."}
-        url = str(body.get("url") or "").strip()
-        if not url:
-            return {"error": "no url"}
-
         from sqlalchemy import create_engine
 
         from .catalog import Catalog
+        from .connect import ConnectError, driver_hint, resolve
+
+        # A SQLAlchemy URL, a JDBC string, or the wallet fields -- whichever
+        # the person actually has. `connect_args` is not optional: an
+        # Autonomous Database has no URL to speak of and the whole connection
+        # lives there.
+        try:
+            url, connect_args = resolve(body if body.get("kind") else
+                                        str(body.get("url") or ""))
+        except ConnectError as e:
+            return {"error": str(e)}
+
         schemas = [s for s in (body.get("schemas") or []) if s] or None
         want_grants = bool(body.get("restrict_from_grants", self.restrict_from_grants))
         want_values = bool(body.get("sample_values", self.sample_values))
         try:
-            engine = create_engine(url)
+            engine = create_engine(url, connect_args=connect_args)
             cat = Catalog(name="studio").bootstrap(
                 engine, schemas=schemas, sample_values=want_values)
+        except ModuleNotFoundError as e:
+            hint = driver_hint(url)
+            return {"error": f"driver not installed ({e.name})" +
+                             (f" -- pip install '{hint}'" if hint else "")}
         except Exception as e:                            # noqa: BLE001
-            # The message can carry the URL, and the URL can carry a password.
+            # Never the message: driver errors quote the URL they were given,
+            # and a URL carries a password.
             return {"error": f"could not connect: {type(e).__name__}"}
 
         report = None

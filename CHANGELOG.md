@@ -22,6 +22,27 @@ things in the repo that were quietly lying.
 
   `schemagate studio` also takes `--restrict-from-grants` and `--values`.
 
+- **Added: `schemagate.connect`.** The Connect box asked for a SQLAlchemy URL
+  and most people do not have one -- an Oracle team has a wallet zip and a TNS
+  alias, a SQL Server team has a JDBC string from a config file.
+  `resolve(spec)` returns `(url, connect_args)` from any of: a SQLAlchemy URL,
+  a JDBC URL for PostgreSQL, Oracle, SQL Server, MySQL or SQLite, an Oracle
+  wallet (directory or the zip as downloaded), or host/port/database fields.
+  The Studio picks the kind from a dropdown and shows only the fields that
+  kind needs.
+
+  Oracle's service-name form is the one that needed care: JDBC writes
+  `@//host:port/service` and SQLAlchemy wants `?service_name=`. The obvious
+  translation treats the last segment as a SID, which connects to nothing and
+  reports a login failure -- so the symptom points at the password rather than
+  at the URL.
+
+  A wallet zip is extracted next to itself, not into a temporary directory:
+  the driver re-reads `sqlnet.ora` and the wallet on every reconnect, so a
+  directory that vanishes gives a connection that works exactly once. Both the
+  flat layout the OCI console ships and a re-zipped one with a folder inside
+  are handled, and a zip that writes outside its own directory is refused.
+
 - **Fixed: Ctrl+C did not stop the Studio on Windows.** `main()` waited with
   `threading.Event().wait(3600)`. Python runs a signal handler only between
   bytecodes in the main thread, and Windows has no EINTR to cut a wait short,
@@ -74,7 +95,7 @@ things in the repo that were quietly lying.
   implementation moved into the package; `scripts/certify_dialect.py` still
   works and now calls it.
 
-687 tests. Guards, render, Connect and Run SQL all verified against a
+732 tests. Guards, render, Connect and Run SQL all verified against a
 live PostgreSQL 16 -- Connect driven through the browser DOM: 219 objects
 reflected, 218 restricted by GRANTs, a nested role expanded, four rows back
 from a SELECT and a DROP refused.

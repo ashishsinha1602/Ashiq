@@ -173,8 +173,34 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <h2>Database <span class="label" id="connState">demo</span></h2>
       <p class="blurb" style="margin:0 0 6px">A SQLAlchemy URL. Only the schema is
       read — names, types and foreign keys. Nothing here is stored.</p>
+      <select id="cKind" aria-label="connection type" style="width:100%">
+        <option value="url">SQLAlchemy URL</option>
+        <option value="jdbc">JDBC URL</option>
+        <option value="wallet">Oracle wallet (Autonomous Database)</option>
+        <option value="postgresql">PostgreSQL — host and port</option>
+        <option value="oracle">Oracle — host and service</option>
+        <option value="mssql">SQL Server — host and database</option>
+        <option value="mysql">MySQL — host and database</option>
+      </select>
       <input id="cUrl" class="mono" placeholder="postgresql+psycopg://user:pw@host/db"
-             aria-label="database url" style="width:100%">
+             aria-label="database url" style="margin-top:6px;width:100%">
+      <input id="cWallet" class="mono" hidden placeholder="path to the wallet zip or folder"
+             aria-label="wallet" style="margin-top:6px;width:100%">
+      <input id="cAlias" class="mono" hidden placeholder="TNS alias, e.g. mydb_high"
+             aria-label="tns alias" style="margin-top:6px;width:100%">
+      <input id="cWalletPw" class="mono" hidden type="password"
+             placeholder="wallet password (if the wallet has one)"
+             aria-label="wallet password" style="margin-top:6px;width:100%">
+      <input id="cHost" class="mono" hidden placeholder="host"
+             aria-label="host" style="margin-top:6px;width:100%">
+      <input id="cPort" class="mono" hidden placeholder="port"
+             aria-label="port" style="margin-top:6px;width:100%">
+      <input id="cDatabase" class="mono" hidden placeholder="database / service name"
+             aria-label="database" style="margin-top:6px;width:100%">
+      <input id="cUser" class="mono" hidden placeholder="user"
+             aria-label="user" style="margin-top:6px;width:100%">
+      <input id="cPassword" class="mono" hidden type="password" placeholder="password"
+             aria-label="password" style="margin-top:6px;width:100%">
       <input id="cSchemas" class="mono" placeholder="schemas, comma separated (optional)"
              aria-label="schemas" style="margin-top:6px;width:100%">
       <label style="margin-top:6px;display:block"><input type="checkbox" id="cGrants">
@@ -574,21 +600,64 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       host.appendChild(t);
     }
 
+
+    // Which boxes a connection kind actually needs. Showing all of them makes
+    // the panel look like a form nobody wants to fill in; showing the wrong
+    // ones makes it look broken.
+    const CONN_FIELDS = {
+      url:        ["cUrl"],
+      jdbc:       ["cUrl", "cUser", "cPassword"],
+      wallet:     ["cWallet", "cAlias", "cWalletPw", "cUser", "cPassword"],
+      postgresql: ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
+      oracle:     ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
+      mssql:      ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
+      mysql:      ["cHost", "cPort", "cDatabase", "cUser", "cPassword"],
+    };
+    const CONN_ALL = ["cUrl","cWallet","cAlias","cWalletPw","cHost","cPort",
+                      "cDatabase","cUser","cPassword"];
+
+    function paintConnKind(){
+      const kind = $("cKind").value;
+      const want = new Set(CONN_FIELDS[kind] || ["cUrl"]);
+      for (const id of CONN_ALL) $(id).hidden = !want.has(id);
+      $("cUrl").placeholder = kind === "jdbc"
+        ? "jdbc:oracle:thin:@//host:1521/SERVICE"
+        : "postgresql+psycopg://user:pw@host/db";
+      $("cDatabase").placeholder = kind === "oracle"
+        ? "service name, e.g. FREEPDB1" : "database";
+    }
+    $("cKind").addEventListener("change", paintConnKind);
+    paintConnKind();
+
+    function connBody(){
+      const kind = $("cKind").value;
+      const b = {kind,
+        schemas: $("cSchemas").value.split(",").map(x=>x.trim()).filter(Boolean),
+        restrict_from_grants: $("cGrants").checked,
+        sample_values: $("cValues").checked};
+      const v = id => $(id).value.trim();
+      if (kind === "url")        { b.url = v("cUrl"); }
+      else if (kind === "jdbc")  { b.jdbc = v("cUrl"); b.user = v("cUser"); b.password = $("cPassword").value; }
+      else if (kind === "wallet"){ b.wallet = v("cWallet"); b.alias = v("cAlias");
+                                   b.wallet_password = $("cWalletPw").value;
+                                   b.user = v("cUser"); b.password = $("cPassword").value; }
+      else { b.host = v("cHost"); b.port = v("cPort"); b.database = v("cDatabase");
+             b.service_name = v("cDatabase");
+             b.user = v("cUser"); b.password = $("cPassword").value; }
+      return b;
+    }
+
     $("cGo").onclick = async () => {
-      const url = $("cUrl").value.trim();
-      if (!url) return note("cNote", "Paste a SQLAlchemy URL.", true);
       note("cNote", "Connecting...");
       let out;
-      try { out = await post("/connect", {
-              url,
-              schemas: $("cSchemas").value.split(",").map(x=>x.trim()).filter(Boolean),
-              restrict_from_grants: $("cGrants").checked,
-              sample_values: $("cValues").checked}); }
+      try { out = await post("/connect", connBody()); }
       catch(e){ return note("cNote", e.message, true); }
       if (out.error) return note("cNote", out.error, true);
 
-      // The URL carries a password. Do not leave it in the box.
-      $("cUrl").value = "";
+      // Every one of these can carry a credential. None of them should sit
+      // in the page afterwards, where a screenshot or a shared screen picks
+      // them up.
+      for (const id of ["cUrl","cPassword","cWalletPw"]) $(id).value = "";
       $("connState").textContent = out.dialect + " · " + out.objects + " objects";
       let msg = "Reflected " + out.objects + " object(s)";
       if (out.schemas && out.schemas.length) msg += " from " + out.schemas.join(", ");

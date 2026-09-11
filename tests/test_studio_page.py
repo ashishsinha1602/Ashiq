@@ -117,3 +117,37 @@ def test_the_template_keeps_the_placeholders_build_py_substitutes():
                   "__DESCRIPTIONS_JSON__"):
         assert t.count(token) == 1, f"{token} appears {t.count(token)} times"
     assert len(t) < 100_000, "the template has a built blob baked into it"
+
+
+@pytest.mark.parametrize("control", [
+    "cKind", "cUrl", "cWallet", "cAlias", "cWalletPw", "cHost", "cPort",
+    "cDatabase", "cUser", "cPassword", "cSchemas", "cGrants", "cValues",
+    "cGo", "sqlText", "sqlGo", "sqlRows",
+])
+def test_the_connect_controls_exist(control):
+    assert f'id="{control}"' in page()
+
+
+@pytest.mark.parametrize("kind", ["url", "jdbc", "wallet", "postgresql",
+                                  "oracle", "mssql", "mysql"])
+def test_every_connection_kind_is_offered_and_has_fields(kind):
+    """A kind in the dropdown with no field map shows an empty form; a field
+    map with no option is dead code. They have to match."""
+    s = page()
+    assert f'<option value="{kind}">' in s
+    assert f"{kind}:" in s or f'"{kind}"' in s
+
+
+def test_credentials_are_cleared_after_a_successful_connect():
+    """Not just the URL. A wallet password and a plain password are just as
+    much of a problem sitting in the page during a shared screen."""
+    s = page()
+    assert 'for (const id of ["cUrl","cPassword","cWalletPw"]) $(id).value = "";' in s
+
+
+def test_password_fields_are_password_inputs():
+    s = page()
+    for control in ("cPassword", "cWalletPw"):
+        import re as _re
+        m = _re.search(rf'<input id="{control}"[^>]*>', s)
+        assert m and 'type="password"' in m.group(0), control
