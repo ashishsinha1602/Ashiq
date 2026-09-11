@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.28
+
+- **Changed: a blocked port says it is a blocked port.** `DPY-6005` and
+  `DPY-4011` on an Oracle connection both mean the TCP connection never
+  happened, and on an Autonomous Database that is nearly always a network that
+  will not carry 1522 -- a wallet fault reads `ORA-28759` or a PEM error, and
+  arrives before any network attempt. The message now says so, and points at
+  the ORDS connection type, because the machine that cannot reach 1522 can
+  almost always reach Database Actions on 443.
+
+804 tests.
+
 ## 0.1.27
 
 - **Added: Oracle over HTTPS (ORDS) -- an Autonomous Database with no wallet

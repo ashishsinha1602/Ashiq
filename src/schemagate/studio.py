@@ -371,7 +371,20 @@ class StudioState:
                        str(connect_args.get("wallet_password") or ""),
                        str(body.get("password") or ""),
                        str(body.get("wallet_password") or "")]
-            return {"error": "could not connect -- " + safe_error(e, *secrets)}
+            msg = safe_error(e, *secrets)
+            # DPY-6005 and DPY-4011 are both "the TCP connection did not
+            # happen", and on an Autonomous Database that is nearly always a
+            # network that will not carry 1522 rather than anything about the
+            # wallet -- a wallet fault reads ORA-28759 or a PEM error. The
+            # same machine can almost always reach Database Actions on 443,
+            # so say which door is open instead of leaving someone to
+            # re-check a wallet that was never the problem.
+            if ("DPY-6005" in msg or "DPY-4011" in msg) and "oracle" in url.lower():
+                msg += ("  |  This is the network, not the wallet: nothing "
+                        "reached port 1522. If Database Actions opens in your "
+                        "browser, use the 'Oracle over HTTPS (ORDS)' "
+                        "connection type instead -- same database, port 443.")
+            return {"error": "could not connect -- " + msg}
 
         report = None
         if want_grants:
