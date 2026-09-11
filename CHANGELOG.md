@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.21
+
+- **Fixed: connecting is bounded.** A host that drops packets rather than
+  refusing them -- which is exactly what a firewall in front of port 1522
+  looks like -- never returned. The page sat on "Connecting..." indefinitely
+  with nothing to report. Each driver's connect timeout is now set (20s), and
+  oracledb's retries capped, so that silence becomes `DPY-6005: cannot connect
+  to database`. Measured against a black-hole address: 20 seconds, then an
+  error naming the failure.
+
+- **Changed: connecting reflects and gets out of the way.** Reading values is
+  the only part that touches rows and the only part whose cost is set by the
+  network rather than by the schema, so inside a connect it now gets a 10
+  second leash rather than the library's 30. Whatever was sampled is kept.
+  Cataloguing with a model happens afterwards, on demand -- that is where the
+  minutes belong.
+
+- **Fixed: a short password no longer corrupts the error it appears in.**
+  Masking by substring meant a one-character password rewrote every occurrence
+  of that letter: `oracledb.exceptions` came back as `oracledb.exce***tions`.
+  Secrets under four characters are left alone -- a fragment that short was
+  never recoverable from the message anyway, and destroying the diagnosis to
+  hide it protected nothing.
+
+782 tests.
+
 ## 0.1.20
 
 - **Fixed: a failed connection now says what failed.** Driver messages quote

@@ -37,6 +37,13 @@ def _estimate_tokens(text: str) -> int:
     return n
 
 
+#: Value sampling inside a connect. Deliberately shorter than the library
+#: default: at this point someone is watching a button, and a catalog that
+#: arrives now beats one with more values in it later. Everything sampled
+#: before this is kept.
+_CONNECT_SAMPLE_BUDGET = 10.0
+
+
 class StudioState:
     """One catalog, one optional described twin, served by the handlers."""
 
@@ -243,7 +250,14 @@ class StudioState:
         from sqlalchemy import create_engine
 
         from .catalog import Catalog
-        from .connect import ConnectError, driver_hint, recipe, resolve, safe_error
+        from .connect import (
+            ConnectError,
+            driver_hint,
+            recipe,
+            resolve,
+            safe_error,
+            with_timeout,
+        )
 
         # A SQLAlchemy URL, a JDBC string, or the wallet fields -- whichever
         # the person actually has. `connect_args` is not optional: an
@@ -259,9 +273,21 @@ class StudioState:
         want_grants = bool(body.get("restrict_from_grants", self.restrict_from_grants))
         want_values = bool(body.get("sample_values", self.sample_values))
         try:
-            engine = create_engine(url, connect_args=connect_args)
+            # Bound the connect. Without this a host that drops packets --
+            # a firewall in front of 1522, most often -- never returns, and
+            # the page sits on "Connecting..." with nothing to show. A
+            # timeout turns that silence into DPY-6005, which is an answer.
+            engine = create_engine(
+                url, connect_args=with_timeout(url, connect_args))
+            # Connecting is meant to be quick: reflect the schema and get out
+            # of the way. Reading values is the only part that touches rows,
+            # and it is the part whose cost is set by the network rather than
+            # by the schema -- so inside a connect it gets a short leash.
+            # Cataloguing with a model happens afterwards, on demand, and is
+            # where the minutes are supposed to be spent.
             cat = Catalog(name="studio").bootstrap(
-                engine, schemas=schemas, sample_values=want_values)
+                engine, schemas=schemas, sample_values=want_values,
+                sample_budget=_CONNECT_SAMPLE_BUDGET)
         except ModuleNotFoundError as e:
             hint = driver_hint(url)
             return {"error": f"driver not installed ({e.name})" +

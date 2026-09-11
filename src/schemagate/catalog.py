@@ -248,7 +248,8 @@ class Catalog:
 
     def bootstrap(self, engine_or_url=None, include=None, exclude=None,
                   schemas=None, include_views=True,
-                  sample_values: bool = False) -> "Catalog":
+                  sample_values: bool = False,
+                  sample_budget: float = 30.0) -> "Catalog":
         """``sample_values`` reads a little data as well as the catalog: for
         short string columns holding only a handful of distinct values, it
         puts those values in the prompt. Off by default -- everything else
@@ -257,7 +258,8 @@ class Catalog:
             from .introspect import reflect
             self.add_all(reflect(engine_or_url, include=include, exclude=exclude,
                                  schemas=schemas, include_views=include_views,
-                                 sample_values=sample_values))
+                                 sample_values=sample_values,
+                                 sample_budget=sample_budget))
         self.index()
         return self
 

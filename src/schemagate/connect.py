@@ -294,6 +294,38 @@ def resolve(spec: "str | Mapping[str, Any]") -> Tuple[str, Dict[str, Any]]:
     raise ConnectError(f"unknown connection kind {kind!r}")
 
 
+#: How long to wait for a TCP connection before giving up, in seconds. The
+#: drivers' own defaults are long or absent -- oracledb retries, psycopg waits
+#: on the OS -- so a host that silently drops packets, which is exactly what a
+#: firewall blocking 1522 looks like, produces no error at all. The page then
+#: sits on "Connecting..." with nothing to report and no way to tell a slow
+#: link from a blocked port. Twenty seconds is longer than any reachable
+#: database needs and short enough to be an answer.
+CONNECT_TIMEOUT = 20
+
+
+def with_timeout(url: str, args: Dict[str, Any],
+                 seconds: int = CONNECT_TIMEOUT) -> Dict[str, Any]:
+    """Add this driver's connect-timeout parameter, if it has one and the
+    caller has not set it.
+
+    Each driver spells it differently and rejects the others' spelling, so
+    this is keyed off the URL rather than passed blindly.
+    """
+    out = dict(args)
+    head = url.split("://", 1)[0].lower()
+    if head.startswith("oracle"):
+        # oracledb also retries by default; without capping that, a blocked
+        # port costs the timeout several times over.
+        out.setdefault("tcp_connect_timeout", seconds)
+        out.setdefault("retry_count", 0)
+    elif head.startswith(("postgresql", "mysql")):
+        out.setdefault("connect_timeout", seconds)
+    elif head.startswith("mssql"):
+        out.setdefault("timeout", seconds)
+    return out
+
+
 def driver_hint(url: str) -> Optional[str]:
     """The extra to install for this URL, when the driver is missing."""
     scheme = urlsplit(url).scheme.split("+")[0]
@@ -382,6 +414,10 @@ def recipe(url: str, connect_args: Optional[Mapping[str, Any]] = None,
 #: and contains no credentials. `DPY-6005` is "cannot connect", `ORA-12154` is
 #: an unresolved alias, `ORA-01017` is a bad password -- three completely
 #: different problems that all reach a user as "OperationalError" otherwise.
+#: Below this length a secret is not masked: see safe_error. Four characters
+#: is shorter than anything a database will accept as a password.
+_MIN_MASKABLE = 4
+
 _CODE_RE = re.compile(r"\b((?:ORA|DPY|DPI|TNS|IAM)-\d{4,5})\b")
 
 
@@ -398,7 +434,12 @@ def safe_error(exc: BaseException, *secrets: Optional[str]) -> str:
     """
     text = str(exc).strip()
     for sec in secrets:
-        if sec:
+        # Short secrets are skipped on purpose. Masking by substring means a
+        # one-character password rewrites every occurrence of that letter --
+        # "oracledb.exceptions" became "oracledb.exce***tions" -- which
+        # destroys the message while protecting nothing: a fragment that short
+        # is not recoverable from the text anyway.
+        if sec and len(sec) >= _MIN_MASKABLE:
             text = text.replace(sec, "***")
     # SQLAlchemy prefixes the driver's own message with the exception class in
     # parentheses -- "(oracledb.exceptions.OperationalError) DPY-6005: ..." --

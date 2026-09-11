@@ -73,3 +73,19 @@ def test_the_sqlalchemy_class_prefix_is_stripped():
     assert out.startswith("DPY-6005")
     assert "oracledb.exceptions" not in out
     assert out.count("DPY-6005") == 1
+
+
+def test_a_short_secret_is_not_masked_into_the_message():
+    """Masking by substring means a one-character password rewrites every
+    occurrence of that letter: "oracledb.exceptions" became
+    "oracledb.exce***tions", destroying the diagnosis to hide a fragment that
+    was never recoverable from the text anyway."""
+    out = safe_error(Boom("(oracledb.exceptions.OperationalError) DPY-6005: cannot connect"), "p")
+    assert "exceptions" in out or "DPY-6005" in out
+    assert "exce***tions" not in out
+
+
+def test_a_real_password_is_still_masked():
+    out = safe_error(Boom("ORA-01017: denied pw=Str0ng#Passw0rd_2026"),
+                     "Str0ng#Passw0rd_2026")
+    assert "Str0ng#Passw0rd_2026" not in out and "***" in out
