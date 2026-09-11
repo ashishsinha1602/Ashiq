@@ -183,6 +183,110 @@ pip install 'schemagate[anthropic]'    'schemagate[openai]'      'schemagate[gem
 pip install 'schemagate[huggingface]'
 ```
 
+## Commands
+
+Every subcommand, and what it is for. `schemagate <command> --help` prints the
+same thing.
+
+```
+schemagate demo      [question]          run against the bundled 42-object schema
+schemagate select    --url URL [question]  select against your own database
+schemagate studio    [--url URL]         the Studio page, served locally
+schemagate describe  --url URL           write AI descriptions for your objects
+schemagate certify   URL                 end-to-end check on a real engine
+```
+
+### `demo` and `select`
+
+`select` is `demo` pointed at a real database; they take the same flags.
+
+```bash
+schemagate demo "who reports to whom"
+schemagate select --url postgresql+psycopg://user:pw@host/db "unpaid invoices"
+```
+
+| flag | what it does |
+|---|---|
+| `--top-k N` | how many objects to select (default 6) |
+| `--principal SOURCE:ID` | who is asking, e.g. `okta:jdoe`, `db:APPUSER`. Must be namespaced |
+| `--role ROLE` | a role the caller holds; repeatable |
+| `--prompt` | print the prompt instead of the selection |
+| `--explain` | show why each object was picked, and what was withheld |
+| `--answer` | write the SQL and run it (needs a provider) |
+| `--provider NAME` / `--model ID` | which model to use |
+| `--limit N` | row cap for `--answer` |
+| `--restrict-from-grants` | take visibility from the database's own GRANTs |
+| `--rerank` | let the model reorder the shortlist the maths produced |
+| `--values` | sample short, non-personal column values |
+| `--include` / `--exclude PATTERN` | narrow what is reflected (`select` only) |
+| `--schema NAME`, `--no-fk`, `--config JSON`, `--sql SELECT` | `select` only |
+
+### `studio`
+
+```bash
+schemagate studio                       # empty, connect from the page
+schemagate studio --demo                # the bundled sample schema
+schemagate studio --url postgresql://localhost/app
+schemagate studio --remember            # save the connection, reconnect next time
+schemagate studio --forget              # delete the saved connection and exit
+```
+
+| flag | what it does |
+|---|---|
+| `--url URL` | connect at startup instead of from the page |
+| `--host` / `--port` | default `127.0.0.1:8770` |
+| `--no-browser` | do not open a browser |
+| `--demo` | open on the bundled sample schema |
+| `--remember` | save this connection to `~/.schemagate/connection.json` (`0600`) and replay it on the next start. Includes the database and wallet passwords, so it is off unless asked for |
+| `--forget` | delete that file and exit |
+| `--allow-connect` / `--no-connect` | whether the page may open a database itself. On by default on loopback, off when bound anywhere else |
+| `--restrict-from-grants` | derive visibility from GRANTs at startup |
+| `--values` | sample column values while reflecting |
+| `--include` / `--exclude` / `--config` | as for `select` |
+
+In the page: **Catalogue this database** describes what has no description yet,
+**Re-catalogue all** rewrites every one, and **Resync schema** re-reflects the
+database while keeping the descriptions you already have.
+
+### `describe`
+
+```bash
+# with a key
+schemagate describe --url postgresql://localhost/app --provider anthropic --model claude-sonnet-5
+
+# without one: write the prompt out, paste it into any chat, apply the reply
+schemagate describe --url postgresql://localhost/app --out prompt.txt
+schemagate describe --url postgresql://localhost/app --apply reply.json
+```
+
+| flag | what it does |
+|---|---|
+| `--out FILE` | write the prompt instead of calling a model |
+| `--apply REPLY.json` | apply a reply produced that way |
+| `--all` | re-describe everything, not only what is missing |
+| `--cache FILE` | where to keep generated descriptions; re-runs are then free |
+| `--provider` / `--model` | which model to use |
+| `--include` / `--exclude` / `--schema` / `--config` | as for `select` |
+
+### `certify`
+
+```bash
+schemagate certify "postgresql+psycopg://user:pw@host/db"
+```
+
+Reflects, selects, and reports what a real engine actually did — the check to
+run before trusting a new database or driver.
+
+### Environment
+
+| variable | what it does |
+|---|---|
+| `SCHEMAGATE_CONNECT_ARGS` | JSON passed to `create_engine(connect_args=...)`, for connections a URL cannot express (an Autonomous Database wallet) |
+| `SCHEMAGATE_REMEMBER=1` | save the connection without passing `--remember` |
+| `SCHEMAGATE_HOME` | where `connection.json` lives (default `~/.schemagate`) |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`, `OCI_COMPARTMENT_ID` | picked up automatically by `--provider` |
+| `SCHEMAGATE_STUDIO_LOG=1` | log Studio requests |
+
 ## How it picks
 
 1. Reflect the schema through SQLAlchemy. No vendor SQL anywhere.

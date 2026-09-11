@@ -82,6 +82,14 @@ class StudioState:
         #: Reported to the page so it can say so rather than leaving someone
         #: to wonder whether a restart will cost them the wallet fields again.
         self.remembered = False
+        #: True while a remembered connection is being replayed on a
+        #: background thread, so the page can say "connecting" instead of
+        #: "no database connected" for the half-minute that takes.
+        self.connecting = False
+        self.connect_error: Optional[str] = None
+        #: The request that produced the current catalog, so "Resync" can
+        #: replay it without asking for the wallet and passwords again.
+        self.last_connect: Optional[Dict[str, Any]] = None
         #: Saving a connection means putting a database password on disk, in a
         #: tool that otherwise stores nothing. That is the user's call, not a
         #: default -- set by --remember, or per-connection by the page's
@@ -302,6 +310,49 @@ class StudioState:
                     "studio": "# connect from the page: Database -> Oracle over HTTPS (ORDS)",
                 }}
 
+    def resync(self) -> Dict[str, Any]:
+        """Re-reflect the same database, keeping the descriptions.
+
+        A schema moves -- a column is added, a view is replaced -- and the
+        catalog is a snapshot taken at connect time. Without this the only way
+        to pick that up was to retype the whole connection, which for a wallet
+        is a directory and two passwords. Descriptions are carried across by
+        qualified name so a resync does not mean paying to catalogue again;
+        an object whose structure actually changed is re-described by the
+        fingerprint cache the next time cataloguing runs.
+        """
+        if not self.last_connect:
+            return {"error": "nothing to resync -- connect first"}
+        keep = {q: d.description for q, d in self.catalog._docs.items()
+                if d.description}
+        hints = {q: d.hint for q, d in self.catalog._docs.items() if d.hint}
+        out = self.connect(dict(self.last_connect))
+        if out.get("error"):
+            return out
+        # Three outcomes, not two. A description that came back on its own is
+        # kept, not lost: most of these originate as database comments, which
+        # the reflection re-reads every time. Counting "I did not have to
+        # restore it" as a loss reported 7 lost on a resync that lost nothing.
+        restored = reflected = gone = 0
+        for q, text in keep.items():
+            doc = self.catalog._docs.get(q)
+            if doc is None:
+                gone += 1                      # the object itself is no longer there
+            elif doc.description:
+                reflected += 1                 # came back from the database
+            else:
+                doc.description = text
+                restored += 1
+        for q, text in hints.items():
+            doc = self.catalog._docs.get(q)
+            if doc is not None:
+                doc.hint = text
+        self.catalog.index()
+        out["descriptions_kept"] = restored + reflected
+        out["descriptions_restored"] = restored
+        out["descriptions_lost"] = gone
+        return out
+
     def connect(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Reflect a database into this running Studio.
 
@@ -432,13 +483,21 @@ class StudioState:
         # Write the request down now that it is known to work. Only a connect
         # that actually reflected something is worth replaying on restart, so
         # this sits after the bootstrap rather than beside the form handler.
+        self.last_connect = dict(body)
         from . import remember
         self.remembered = remember.save(
             body, allow=self.remember_connection or bool(body.get("remember"))
         ) is not None
         self.title = "Your database"
+        # Say what is actually true. Oracle and PostgreSQL both carry table
+        # comments, so a fresh reflection often arrives already part-described
+        # -- announcing "nothing is catalogued yet" over seven descriptions
+        # reads as a product that has not noticed its own state.
+        _described = sum(1 for d in cat._docs.values() if d.description)
         self.blurb = (f"{len(cat._docs)} objects reflected from "
-                      f"{engine.dialect.name}. Nothing is catalogued yet.")
+                      f"{engine.dialect.name}. " +
+                      (f"{_described} already carry a description."
+                       if _described else "Nothing is catalogued yet."))
         # The page was built around the bundled demo, whose hints, restricted
         # object and example questions are baked into it. None of that belongs
         # to the database just connected, and leaving it on screen is worse
@@ -569,6 +628,12 @@ def _handler(state: StudioState):
                 # "connected" from a catalog it can see, rather than trusting a
                 # boolean it may have read before the connection existed.
                 out["objects"] = len(state.catalog._docs)
+                out["connecting"] = state.connecting
+                out["connect_error"] = state.connect_error
+                # Whether "Resync" and "Re-catalogue" have anything to act on.
+                out["can_resync"] = bool(state.last_connect)
+                out["described"] = sum(
+                    1 for d in state.catalog._docs.values() if d.description)
                 self._json(200, out)
             else:
                 self._json(404, {"error": "not found"})
@@ -576,7 +641,7 @@ def _handler(state: StudioState):
         def do_POST(self):
             if self.path not in ("/api/select", "/api/answer", "/api/settings",
                                  "/api/describe", "/api/apply-descriptions",
-                                 "/api/connect"):
+                                 "/api/connect", "/api/resync"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -591,6 +656,8 @@ def _handler(state: StudioState):
                     return self._json(200, state.describe(payload))
                 if self.path == "/api/apply-descriptions":
                     return self._json(200, state.apply_descriptions(payload))
+                if self.path == "/api/resync":
+                    return self._json(200, state.resync())
                 if self.path == "/api/connect":
                     return self._json(200, state.connect(payload))
                 return self._json(200, state.select(payload))
@@ -712,25 +779,41 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
     # wallet directory and both passwords again" -- the connection outlives
     # the process that made it. --url and --demo are explicit instructions and
     # win; a saved connection only fills the otherwise-empty case.
+    #
+    # On a background thread, and the server starts first. Reflecting a real
+    # schema across a network takes tens of seconds -- 30 against an
+    # Autonomous Database -- and doing it before serve() meant the port was
+    # not open for that whole time: the browser opened on a refused
+    # connection, which looks exactly like a Studio that failed to start. The
+    # page comes up immediately now and fills in when the reconnect lands.
+    saved = None
     if not url and not demo and state.allow_connect:
         from . import remember
         saved = remember.load()
-        if saved:
+
+    server = serve(state, host, port, open_browser)
+
+    if saved:
+        def _reconnect():
             print("reconnecting to the remembered database...", file=sys.stderr)
             try:
                 out = state.connect(dict(saved))
             except Exception as e:                        # noqa: BLE001
                 out = {"error": f"{type(e).__name__}: {e}"}
+            finally:
+                state.connecting = False
             if out.get("error"):
                 # A remembered connection that no longer works must not stop
-                # the Studio from starting -- the page is how someone fixes it.
+                # the Studio -- the page is how someone fixes it.
+                state.connect_error = out["error"]
                 print(f"  could not reconnect: {out['error']}", file=sys.stderr)
-                print(f"  (clear it with: schemagate studio --forget)", file=sys.stderr)
+                print("  (clear it with: schemagate studio --forget)", file=sys.stderr)
             else:
                 print(f"  reconnected: {out['objects']} objects from "
                       f"{out['dialect']}", file=sys.stderr)
 
-    server = serve(state, host, port, open_browser)
+        state.connecting = True
+        threading.Thread(target=_reconnect, daemon=True).start()
 
     # Wait in short slices rather than one long one. Python runs a signal
     # handler only between bytecodes in the main thread, and on Windows there

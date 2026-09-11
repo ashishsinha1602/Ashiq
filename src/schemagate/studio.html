@@ -94,6 +94,12 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .hint textarea{border:0;background:transparent;padding:0;resize:vertical;min-height:34px;font-size:12.5px;color:var(--ink)}
 .restrict{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px dashed var(--line)}
 .restrict code{color:var(--restrict)}
+/* A restriction the current caller satisfies is information, not a
+   warning. Painting all 43 in the same alarm colour told someone
+   holding APPUSER they needed APPUSER, next to an answer that had
+   just proved otherwise. */
+.restrict.met code{color:var(--muted);font-weight:400}
+.restrict.met span{opacity:.55}
 .restrict span{color:var(--muted)}
 
 .main{padding:22px 26px;display:flex;flex-direction:column;gap:18px;min-width:0}
@@ -118,6 +124,33 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .ask input{flex:1;font-size:16px;padding:12px 14px;font-family:var(--sans)}
 .ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
 .examples{display:flex;flex-wrap:wrap;gap:6px}
+.catops{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+/* The answer table is unbounded -- 50 rows made the pane 1436px on a 1000px
+   viewport, so the page grew a second screen of scrolling for one result.
+   It scrolls inside itself instead; #answerRows is already overflow:auto and
+   .pane now has min-height:0, which is what lets that take effect. */
+#answerPane{max-height:min(70vh,720px)}
+#answerSql{flex:0 0 auto;max-height:160px}
+/* A pane that scrolls needs to look like one. The DDL was clipped with no
+   visible scrollbar, so there was nothing to say more existed below. */
+pre.ddl,#answerRows{scrollbar-width:thin}
+/* The header is one nowrap flex row: at 400px the tabs were crushed to zero
+   width while still painting their buttons, and the "connected to your
+   database" block pushed the document 50px wider than the viewport, giving
+   the whole page a sideways scroll. Let it wrap instead. */
+@media (max-width:700px){
+  .top{flex-wrap:wrap;gap:10px;padding:10px 14px}
+  .top .right{margin-left:0;width:100%;white-space:normal;font-size:12px}
+  .tabs{margin-left:0}
+  .main{padding:16px 14px;order:-1}
+  .work{display:flex;flex-direction:column}
+  .rail{border-right:0;border-top:1px solid var(--line)}
+  .results{grid-template-columns:1fr;max-height:none;overflow:visible}
+  .results > .pane{max-height:60vh}
+}
+
+.catops button{font-size:12px;padding:5px 8px;min-width:0}
+
 /* `.main` is a flex column with an 18px gap, and that gap is what spaces the
    page. #workView was added later as a wrapper around the working rows, which
    moved .ask/.examples/.stats/.cost/.aiswitch/.results one level down -- and a
@@ -156,7 +189,7 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
    and made a question that had already returned 50 rows look unanswered. They
    scroll internally instead (pre.ddl is already overflow:auto), so the answer
    stays within reach of the question that asked for it. */
-.results{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;min-height:320px;max-height:min(60vh,560px)}
+.results{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;min-height:320px;max-height:min(60vh,560px);overflow:hidden}
 @media (max-width:1000px){.results{grid-template-columns:1fr}}
 /* `min-height:0` is what makes the max-height on `.results` mean anything. A
    grid (and flex) item defaults to `min-height:auto`, i.e. never smaller than
@@ -364,6 +397,14 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <p class="blurb" style="margin:0 0 6px">One sentence per object. This is what turns
       "what does each person get paid" into the pay table, which matching names cannot do.</p>
       <button id="catRun" style="width:100%">Catalogue this database</button>
+      <!-- Two things a catalog needs once it exists and not before: describe
+           the objects that were skipped or added, and pick up a schema that
+           has moved. Both were previously only reachable by reconnecting from
+           scratch, which for a wallet means a directory and two passwords. -->
+      <div class="catops">
+        <button id="catRedo" title="Describe every object again, ignoring what is already written">Re-catalogue all</button>
+        <button id="catResync" title="Reflect the database again, keeping the descriptions you have">Resync schema</button>
+      </div>
       <div id="catNote" class="blurb" style="margin-top:6px"></div>
       <textarea id="catPrompt" hidden class="mono" rows="4" readonly
                 style="margin-top:6px;width:100%;font-size:11px"></textarea>
@@ -402,14 +443,19 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
            turns &ldquo;what does each person get paid&rdquo; into the pay table, which
            matching names alone cannot do. Selection works without it.</p>
         <div class="choices">
+          <button class="choice primary" id="mcKey">
+            <b>Use an API key</b><span>Anthropic, OpenAI, Gemini or OCI. This is the
+              option that makes the catalogue worth having &mdash; only schema
+              metadata is sent, never rows.</span>
+          </button>
+          <button class="choice" id="mcLocal">
+            <b>Local model &mdash; free</b><span>Nothing leaves this machine, but it
+              downloads about 3&nbsp;GB the first time, runs on your CPU, and a 1.5B
+              model writes noticeably weaker descriptions than a hosted one. Worth a
+              look when a key is not an option; not the way to see this at its best.</span>
+          </button>
           <button class="choice" id="mcSkip">
             <b>Not now</b><span>Selection works on names, types and keys. You can add this later.</span>
-          </button>
-          <button class="choice primary" id="mcLocal">
-            <b>Local model &mdash; free</b><span>Runs on this machine, no key, no data sent anywhere.</span>
-          </button>
-          <button class="choice" id="mcKey">
-            <b>Use an API key</b><span>Anthropic, OpenAI, Gemini or OCI. Best quality.</span>
           </button>
         </div>
       </div>
@@ -459,6 +505,14 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <span class="delta" id="aidelta"></span>
     </div>
 
+    <div class="pane" id="answerPane" hidden style="padding:12px 14px;gap:8px">
+      <header style="padding:0"><h3 style="margin:0;font-size:13px;font-weight:600">Answer</h3>
+        <span class="meta" id="answerMeta"></span></header>
+      <pre class="ddl" id="answerSql" hidden style="max-height:160px;white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+      <div id="answerRows" style="overflow:auto"></div>
+      <textarea id="answerPaste" hidden class="mono" rows="6" readonly
+                style="width:100%;font-size:11px"></textarea>
+    </div>
     <div class="results">
       <div class="pane">
         <header><h3>Selected objects</h3><span class="meta" id="objMeta"></span></header>
@@ -472,14 +526,6 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
 
     </div>
 
-    <div class="pane" id="answerPane" hidden style="padding:12px 14px;gap:8px">
-      <header style="padding:0"><h3 style="margin:0;font-size:13px;font-weight:600">Answer</h3>
-        <span class="meta" id="answerMeta"></span></header>
-      <pre class="ddl" id="answerSql" hidden style="max-height:160px"></pre>
-      <div id="answerRows" style="overflow:auto"></div>
-      <textarea id="answerPaste" hidden class="mono" rows="6" readonly
-                style="width:100%;font-size:11px"></textarea>
-    </div>
 
     <div class="pane" style="padding:12px 14px;gap:8px">
       <h3 style="margin:0;font-size:13px;font-weight:600">Hidden from <code id="hidWho">this caller</code></h3>
@@ -1331,15 +1377,22 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
     const spec=SCHEMAS[state.schema];
     $("schemaTitle").textContent=spec.title; $("schemaBlurb").textContent=spec.blurb;
     const r=$("restrictions"); r.innerHTML="";
-    const entries=Object.entries(spec.restrict);
-    $("restrictCount").textContent=entries.length? entries.length+" objects":"none";
+    let entries=Object.entries(spec.restrict);
+    // Order by what the caller cannot see. Those are the rows worth reading;
+    // the ones they already hold are context.
+    const holds = ([t,roles]) => roles.some(x => state.roles.has(x));
+    const unmet = entries.filter(e => !holds(e)).length;
+    entries = entries.filter(e => !holds(e)).concat(entries.filter(holds));
+    $("restrictCount").textContent = !entries.length ? "none"
+      : (unmet ? unmet + " hidden from you, " + entries.length + " restricted"
+               : "all " + entries.length + " visible to you");
     // Taking visibility from the database's GRANTs on Oracle marks every
     // object the owner owns, so this list is the whole schema. Rendering all
     // of it pushes everything else off the rail and says nothing the count
     // did not.
     const SHOW = 8;
     const shown = entries.slice(0, SHOW);
-    for (const [t,roles] of shown){ const d=document.createElement("div"); d.className="restrict"; d.innerHTML=`<code>${esc(t)}</code><span>needs ${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
+    for (const [t,roles] of shown){ const d=document.createElement("div"); d.className="restrict" + (holds([t,roles]) ? " met" : ""); d.innerHTML=`<code>${esc(t)}</code><span>${holds([t,roles]) ? "you have " : "needs "}${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
     if (entries.length > SHOW) {
       const more = document.createElement("button");
       more.className = "linky";
@@ -1347,7 +1400,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       more.textContent = "show " + (entries.length - SHOW) + " more";
       more.onclick = () => {
         more.remove();
-        for (const [t,roles] of entries.slice(SHOW)){ const d=document.createElement("div"); d.className="restrict"; d.innerHTML=`<code>${esc(t)}</code><span>needs ${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
+        for (const [t,roles] of entries.slice(SHOW)){ const d=document.createElement("div"); d.className="restrict" + (holds([t,roles]) ? " met" : ""); d.innerHTML=`<code>${esc(t)}</code><span>${holds([t,roles]) ? "you have " : "needs "}${roles.map(esc).join(" or ")}</span>`; r.appendChild(d); }
       };
       r.appendChild(more);
     }
@@ -1365,7 +1418,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
     const box=$("roles"); box.innerHTML="";
     for (const r of [...known].sort()){
       const c=document.createElement("span"); c.className="chip"+(state.roles.has(r)?" on":""); c.tabIndex=0;
-      c.innerHTML=esc(r); c.onclick=()=>{ state.roles.has(r)? state.roles.delete(r): state.roles.add(r); renderRoles(); run(); };
+      c.innerHTML=esc(r); c.onclick=()=>{ state.roles.has(r)? state.roles.delete(r): state.roles.add(r); renderRoles(); renderRail(); run(); };
       c.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();c.onclick();} };
       box.appendChild(c);
     }
@@ -1586,6 +1639,12 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       // connected to nothing and calls no model, which is the opposite of the
       // truth once a Python backend is serving it. Replace it with the state
       // the page is actually in.
+      // "What that is worth at 5000 queries/day" is how the public demo makes
+      // its case. On someone's own database it is a row of marketing maths
+      // sitting between the question and the answer, and the stat strip above
+      // already carries the number that matters (saved vs full schema).
+      const cost = $("cost");
+      if (cost) cost.hidden = isLive;
       const intro = $("intro");
       if (intro) {
         if (isLive) {
@@ -1875,6 +1934,46 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       } catch(e){ note("mNote", e.message, true); toast("Could not save: " + e.message, true); }
     };
 
+    // `only_missing:false` is the difference between the two: the main button
+    // fills the gaps, this one overwrites. Worth separating because the
+    // second costs a call per object and the first usually costs none.
+    $("catRedo").onclick = async () => {
+      note("catNote", "Re-cataloguing every object...");
+      let out;
+      try { out = await post("/describe", {only_missing:false}); }
+      catch(e){ return note("catNote", e.message, true); }
+      if (out.error && !out.paste_prompt) return note("catNote", out.error, true);
+      if (out.paste_prompt !== undefined) {
+        $("catPrompt").value = out.paste_prompt;
+        for (const id of ["catPrompt","catCopy","catReply","catApply"]) $(id).hidden = false;
+        return note("catNote", (out.error ? out.error + " -- " : "") +
+                    "Paste this into any chat, then paste the JSON reply back.");
+      }
+      note("catNote", "Rewrote " + out.written + " description(s) of " + out.objects + ".");
+      run();
+    };
+
+    // Re-reflect the same database and keep what has been written about it.
+    // A schema moves; the catalog is a snapshot taken at connect time.
+    $("catResync").onclick = async () => {
+      note("catNote", "Resyncing the schema...");
+      let out;
+      try { out = await post("/resync", {}); }
+      catch(e){ return note("catNote", e.message, true); }
+      if (out.error) return note("catNote", out.error, true);
+      let msg = "Reflected " + out.objects + " object(s) from " + out.dialect + ".";
+      if (out.descriptions_kept) msg += " Kept " + out.descriptions_kept + " description(s).";
+      if (out.descriptions_lost) msg += " " + out.descriptions_lost +
+          " no longer match an object and were dropped.";
+      note("catNote", msg);
+      if (out.schema){
+        SCHEMAS[state.schema] = Object.assign(
+          {docs: [], hints: {}, restrict: {}, questions: [], golden: {}}, out.schema);
+        renderRail();
+      }
+      run();
+    };
+
     $("catRun").onclick = async () => {
       note("catNote", "Cataloguing...");
       let out;
@@ -1951,6 +2050,14 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       // something to read, including the no-columns and error paths, which an
       // earlier version missed by scrolling only after the table was built.
       const reveal = () => {
+        // Only when it is actually off screen. The answer sits above the
+        // supporting panes now, so on any normal viewport it is already in
+        // view -- and scrolling to it anyway pushed the question and the
+        // four stat cards out of sight at the exact moment they were proven,
+        // which is the opposite of helpful. Short viewports still get taken
+        // to the answer.
+        const top = pane.getBoundingClientRect().top;
+        if (top < window.innerHeight - 40) return;
         try { pane.scrollIntoView({behavior: "smooth", block: "nearest"}); }
         catch (e) { pane.scrollIntoView(); }   // older browsers: no options arg
       };
@@ -1994,8 +2101,8 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
   }
 
   $("go").onclick=run; $("q").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
-  $("principal").addEventListener("change",run);
-  $("newRole").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){state.roles.add(v); e.target.value=""; renderRoles(); run();} }});
+  $("principal").addEventListener("change",()=>{ renderRail(); run(); });
+  $("newRole").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){state.roles.add(v); e.target.value=""; renderRoles(); renderRail(); run();} }});
   $("ai").addEventListener("change",e=>{ state.ai=e.target.checked; run(); });
   $("copy").onclick=async()=>{ try{ await navigator.clipboard.writeText($("ddl").textContent); $("copy").textContent="Copied"; setTimeout(()=>$("copy").textContent="Copy DDL",1200);}catch(e){} };
   // The header used to say "connected to your database" for anything served
