@@ -390,7 +390,11 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
   const SCHEMAS = JSON.parse($("schemas").textContent);
   const DESC = JSON.parse($("descriptions").textContent);
   const keys = Object.keys(SCHEMAS);
-  let state = { schema: keys.includes("warehouse") ? "warehouse" : keys[0], roles: new Set(), ai: false, cats: {} };
+  // With a backend there are two tabs and the live one is the point of the
+  // page; the browser demo keeps its own default.
+  let state = { schema: keys.includes("live") ? "live"
+                      : (keys.includes("warehouse") ? "warehouse" : keys[0]),
+                roles: new Set(), ai: false, cats: {} };
 
   function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
@@ -413,7 +417,10 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
     const t=$("tabs"); t.innerHTML="";
     for (const k of keys){
       const b=document.createElement("button"); b.className="tab"; b.role="tab"; b.textContent=SCHEMAS[k].title;
-      b.setAttribute("aria-selected", k===state.schema); b.onclick=()=>{state.schema=k; renderRail(); renderExamples(); $("q").value=SCHEMAS[k].questions[0]||""; run();};
+      b.setAttribute("aria-selected", k===state.schema);
+      b.onclick=()=>{state.schema=k; renderTabs(); renderRail(); renderExamples();
+                     if (window.__paintPanels) window.__paintPanels();
+                     $("q").value=SCHEMAS[k].questions[0]||""; run();};
       t.appendChild(b);
     }
   }
@@ -450,7 +457,11 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
 
   // ---- selection ----
   async function selectVia(question, principal, roles, topK){
-    if (API){
+    // API only for the live tab. The demo tab is the in-browser selector over
+    // the bundled sample -- asking the backend about `sales_order` when it is
+    // connected to someone's warehouse would either error or, worse, match
+    // something real.
+    if (API && state.schema === "live"){
       const res = await fetch(API+"/select",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,principal,roles:[...roles],top_k:topK,ai:state.ai})});
       if(!res.ok) throw new Error(await res.text());
       return await res.json();
@@ -553,7 +564,7 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
   // build runs the catalog in the browser, where there is no key to hold and
   // nothing to run SQL against.
   if (API) {
-    for (const id of ["modelPanel","catPanel"]) $(id).hidden = false;
+    // unhidden by paintSettings, which knows which tab is showing
 
     const note = (el, text, bad) => {
       const n = $(el); n.textContent = text || "";
@@ -571,9 +582,43 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       // Connecting reaches outside the process, so the server decides whether
       // the box exists at all -- showing it when the endpoint will refuse is
       // just a button that always fails.
-      $("connectPanel").hidden = !st.allow_connect;
-      $("sqlPanel").hidden = !st.connected;
-      if (st.connected) $("connState").textContent = "connected";
+      // Everything in this block talks to the server about the database it
+      // holds, so none of it belongs on the demo tab -- "Run SQL" there would
+      // run against the live engine while the screen shows invented tables.
+      const live = state.schema === "live";
+      $("connectPanel").hidden = !live || !st.allow_connect;
+      $("sqlPanel").hidden = !live || !st.connected;
+      $("modelPanel").hidden = !live;
+      $("catPanel").hidden = !live;
+      if ($("recipePanel") && !live) $("recipePanel").hidden = true;
+      $("connState").textContent = st.connected ? "connected"
+                                : (st.demo ? "demo" : "not connected");
+      const mt = $("modeText");
+      if (mt) mt.textContent = st.connected ? "connected to your database"
+                             : (st.demo ? "demo schema \u2014 not your data"
+                                        : "no database connected");
+      // The intro box is written for the browser demo -- it says this page is
+      // connected to nothing and calls no model, which is the opposite of the
+      // truth once a Python backend is serving it. Replace it with the state
+      // the page is actually in.
+      const intro = $("intro");
+      if (intro) {
+        if (st.connected) {
+          intro.hidden = true;
+        } else {
+          intro.hidden = false;
+          intro.innerHTML = st.demo
+            ? '<div class="intro-what"><b>This is the sample schema.</b> 42 invented ' +
+              'objects, so there is something to try before you point this at ' +
+              'real data. Use <b>Database</b> on the left to connect your own \u2014 ' +
+              'the sample disappears when you do.</div>'
+            : '<div class="intro-what"><b>Nothing is loaded yet.</b> Use ' +
+              '<b>Database</b> in the panel on the left to connect one: a ' +
+              'connection string, a JDBC URL, an Oracle wallet, or host and ' +
+              'port. Nothing leaves this machine. Want a look first? Restart ' +
+              'with <code>schemagate studio --demo</code>.</div>';
+        }
+      }
       $("mProvider").value = st.provider || "none";
       $("mModel").value = st.model || "";
       $("mRerank").checked = !!st.rerank;
@@ -585,7 +630,10 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       state.answerOn = !!st.answer;
     }
 
-    fetch(API+"/settings").then(r=>r.json()).then(paintSettings).catch(()=>{});
+    let lastSettings = null;
+    window.__paintPanels = () => { if (lastSettings) paintSettings(lastSettings); };
+    fetch(API+"/settings").then(r=>r.json())
+      .then(st => { lastSettings = st; paintSettings(st); }).catch(()=>{});
 
     // ---- connecting to a database, and running read-only SQL --------------
     function renderRows(into, meta, out){
@@ -676,6 +724,9 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       // them up.
       for (const id of ["cUrl","cPassword","cWalletPw"]) $(id).value = "";
       $("connState").textContent = out.dialect + " · " + out.objects + " objects";
+      const mt2 = $("modeText");
+      if (mt2) mt2.textContent = "connected to your database";
+      if ($("intro")) $("intro").hidden = true;
       let msg = "Reflected " + out.objects + " object(s)";
       if (out.schemas && out.schemas.length) msg += " from " + out.schemas.join(", ");
       const g = out.grants;
@@ -821,7 +872,11 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
   $("newRole").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){state.roles.add(v); e.target.value=""; renderRoles(); run();} }});
   $("ai").addEventListener("change",e=>{ state.ai=e.target.checked; run(); });
   $("copy").onclick=async()=>{ try{ await navigator.clipboard.writeText($("ddl").textContent); $("copy").textContent="Copied"; setTimeout(()=>$("copy").textContent="Copy DDL",1200);}catch(e){} };
-  if (API){ $("mode").innerHTML='<span>connected to your database</span>'; }
+  // The header used to say "connected to your database" for anything served
+  // by the Python backend, including the sample schema -- so the demo
+  // announced itself as the user's own data. It now follows the server's
+  // answer, and paintSettings keeps it current.
+  if (API){ $("mode").innerHTML='<span id="modeText">no database connected</span>'; }
   renderRail(); renderExamples();
   $("q").value = SCHEMAS[state.schema].questions[0] || "";
   run();

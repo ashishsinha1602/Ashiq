@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.1.18
+
+- **Fixed: `schemagate studio` no longer opens on someone else's tables.**
+  A bare Studio loaded the bundled 42-object sample, and the header said
+  "connected to your database" over it -- the string was written in once for
+  any page served by the backend, without asking whether a database was
+  connected. So the command you run to point the tool at your own data
+  answered with invented tables, labelled as yours. The only clue was
+  recognising that `sales_order` was not a table you had.
+
+  Now nothing loads unless it was asked for. `schemagate studio` opens on an
+  empty **Your database** tab with the Connect panel and instructions, and the
+  header follows the server's answer: "no database connected", "demo schema --
+  not your data", or "connected to your database".
+
+- **Added: the demo is a second tab rather than a replacement.** The live
+  catalog used to overwrite the bundled one, which left a Studio with nothing
+  connected showing only the sample and no way back to it afterwards. There
+  are two tabs now: **Your database**, which talks to this process, and
+  **Demo schema**, which runs the same in-browser sample the public page does.
+  Selection is routed per tab -- the demo never asks the backend about its
+  tables, which would either error or, worse, match something real in the
+  database you are connected to.
+
+  The panels that talk to the server -- Connect, Run SQL, model, AI catalog --
+  appear only on the live tab. "Run SQL" on the demo tab would have run
+  against the live engine while the screen showed invented tables.
+
+- **Added: `schemagate studio --demo`** opens on the sample schema for anyone
+  who wants a look before connecting anything.
+
+761 tests.
+
 ## 0.1.17
 
 - **Changed: `schemagate studio` connects to databases without a flag.**

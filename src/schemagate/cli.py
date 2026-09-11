@@ -208,7 +208,8 @@ def cmd_studio(args) -> int:
                        config=args.config,
                        restrict_from_grants=args.restrict_from_grants,
                        sample_values=args.values,
-                       allow_remote_connect=args.allow_connect)
+                       allow_remote_connect=args.allow_connect,
+                       demo=args.demo)
 
 
 def cmd_describe(args) -> int:
@@ -399,6 +400,11 @@ def build_parser() -> argparse.ArgumentParser:
     studio.add_argument("--no-connect", dest="allow_connect",
                         action="store_false",
                         help="turn the Connect panel off, even on localhost")
+    studio.add_argument("--demo", action="store_true",
+                        help="open on the bundled 42-object sample schema "
+                             "instead of an empty page. Without --url or "
+                             "--demo the Studio starts with nothing loaded "
+                             "and waits for you to connect")
     studio.set_defaults(func=cmd_studio)
 
     describe = sub.add_parser(

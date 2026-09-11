@@ -75,8 +75,12 @@ def test_the_model_panels_are_hidden_without_a_server():
     something the page cannot do."""
     s = page()
     assert 'id="modelPanel" hidden' in s and 'id="catPanel" hidden' in s
-    assert re.search(r'for \(const id of \["modelPanel","catPanel"\]\) \$\(id\)\.hidden = false',
-                     s)
+    # They are unhidden by paintSettings rather than at the top of the API
+    # block, because with two tabs "a server is present" stopped being the
+    # whole question -- these belong to the live tab, not to the demo one.
+    assert re.search(r'\$\("modelPanel"\)\.hidden = !live', s)
+    assert re.search(r'\$\("catPanel"\)\.hidden = !live', s)
+    assert re.search(r'const live = state\.schema === "live"', s)
 
 
 def test_the_template_and_the_shipped_page_agree():

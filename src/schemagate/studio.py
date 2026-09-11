@@ -61,6 +61,11 @@ class StudioState:
         self.allow_connect = False
         self.restrict_from_grants = False
         self.sample_values = False
+        #: True only for the bundled sample schema. An engine alone cannot say
+        #: what it points at -- the demo has one too -- and the header calling
+        #: invented tables "your database" is the confusion this exists to
+        #: stop.
+        self.is_demo = False
 
     def schemas_json(self) -> Dict[str, Any]:
         """The shape the page expects: docs are not needed server-side, but
@@ -285,6 +290,7 @@ class StudioState:
         cat.index()
         self.catalog = cat
         self.engine = engine
+        self.is_demo = False
         self.title = "Your database"
         self.blurb = (f"{len(cat._docs)} objects reflected from "
                       f"{engine.dialect.name}. Nothing is catalogued yet.")
@@ -354,10 +360,22 @@ class StudioState:
 
 def _handler(state: StudioState):
     page = _PAGE.read_text("utf-8")
-    # swap the bundled schemas for the live one and point the page at the API
+    # The live catalog goes in front of the bundled sample rather than over
+    # the top of it. Replacing it outright left one tab, so a Studio with
+    # nothing connected had only invented tables to show and looked like it
+    # was already pointed at something. Two tabs keep them apart: "Your
+    # database" is this process talking to a real engine, "Demo schema" is the
+    # same sample the public page runs, entirely in the browser.
     start = page.index('<script id="schemas" type="application/json">') + len('<script id="schemas" type="application/json">')
     end = page.index("</script>", start)
-    page = (page[:start] + json.dumps(state.schemas_json(), ensure_ascii=False).replace("</", "<\\/")
+    bundled = json.loads(page[start:end])
+    payload = dict(state.schemas_json())
+    demo = bundled.get("commerce")
+    if demo is not None:
+        demo = dict(demo)
+        demo["title"] = "Demo schema"
+        payload["commerce"] = demo
+    page = (page[:start] + json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
             + page[end:])
     page = page.replace("<script>\n(function(){", '<script>window.SCHEMAGATE_API="/api";\n(function(){', 1)
     body = page.encode("utf-8")
@@ -389,7 +407,8 @@ def _handler(state: StudioState):
             elif self.path == "/api/settings":
                 out = state.describe_settings()
                 out["allow_connect"] = state.allow_connect
-                out["connected"] = state.engine is not None
+                out["connected"] = state.engine is not None and not state.is_demo
+                out["demo"] = state.is_demo
                 self._json(200, out)
             else:
                 self._json(404, {"error": "not found"})
@@ -458,7 +477,8 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
          open_browser: bool = True, include=None, exclude=None,
          config: Optional[str] = None, restrict_from_grants: bool = False,
          sample_values: bool = False,
-         allow_remote_connect: Optional[bool] = None) -> int:
+         allow_remote_connect: Optional[bool] = None,
+         demo: bool = False) -> int:
     engine = None
     if url:
         from sqlalchemy import create_engine
@@ -475,7 +495,7 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         title = "Your database"
         blurb = f"{len(cat._docs)} objects reflected. Hints, restrictions and descriptions come from --config."
         questions: List[str] = []
-    else:
+    elif demo:
         from sqlalchemy import create_engine
         from .demo_schema import GOLDEN, HINTS, create_demo_db
         demo_url = create_demo_db()
@@ -484,9 +504,25 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         for table, text in HINTS.items():
             cat.hint(table, text)
         cat.restrict("hr_compensation", ["payroll"])
-        title, blurb = "Demo schema", "42 objects. Pass --url to run this against your own database."
+        title, blurb = "Demo schema", "42 objects, invented. Connect a database to replace them."
         questions = [q for q, _ in GOLDEN]
+    else:
+        # Nothing was asked for, so nothing is loaded. The page opens on its
+        # Connect panel rather than on a schema nobody asked to see: a demo
+        # standing in for the user's database is how someone ends up reading
+        # invented table names as their own, and the header saying "connected"
+        # over borrowed tables is worse than an empty page. `--demo` still
+        # brings the sample schema up for anyone who wants a look first.
+        cat = Catalog(name="studio")
+        cat.index()
+        # Named for what the tab is for, not for what it currently holds:
+        # "No database" sits next to "Demo schema" as though it were a second
+        # sample. The blurb carries the state instead.
+        title = "Your database"
+        blurb = "Nothing connected yet. Use the Database panel on the left."
+        questions = []
     state = StudioState(cat, title, blurb, questions, engine=engine)
+    state.is_demo = bool(demo and not url)
     # On loopback, connecting needs no permission: the only person who can
     # reach the page is someone already sitting at a shell on this machine,
     # and they can open a database without asking the Studio to do it. The
