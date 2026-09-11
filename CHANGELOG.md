@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.1.34
+
+- **Fixed: the Studio looked like it had lost a connection it still had.** The
+  page was built once, when the server started, and those bytes were served to
+  every request for the life of the process. Connecting updated the server but
+  could not update the page, so refreshing the browser re-served the startup
+  snapshot: a rail reading "Nothing connected yet" and an empty object list,
+  while the header said "connected to your database" and `/api/settings`
+  agreed. Nothing had been lost. The page is rendered per request now.
+
+- **Added: `--remember`, and a "Remember this connection" checkbox.** The
+  connection lived in the server process and nowhere else, so every Ctrl+C
+  cost a wallet directory and two passwords. It can now be written to
+  `~/.schemagate/connection.json` and replayed on the next start. What is
+  stored is the connect request, not a resolved URL, because a URL cannot hold
+  the wallet fields -- the case that hurts most to retype. Off unless asked
+  for, since that file holds a database password; the file is opened `0600` at
+  creation, an AI provider key is never included, and `--forget` deletes it.
+
+- **Fixed: an idle pooled connection was handed out as though it were live.**
+  Neither `create_engine` call set `pool_pre_ping`, so a connection an
+  Autonomous Database had closed for being idle went to the next question and
+  reported a database that was up as unreachable. Now `pool_pre_ping` with a
+  30-minute recycle.
+
+- **Changed: the AI catalog survives a small local model.** The prompt assumed
+  a frontier one. A 1.5B instruct model returns "Sure! Here is the
+  description:", or a markdown bullet, or the object name echoed as the
+  subject, or -- most costly -- drops the everyday-words half that is the
+  whole reason descriptions help business-phrased questions. None of those is
+  an error; each is a string that gets stored, so the catalog looks complete
+  while retrieval quietly gets worse. Two worked examples in the prompt, a
+  repair pass, and one retry that says what was wrong with the last reply.
+  The retry is on by default for `local:` providers and off for billed ones,
+  where it would roughly double the cost of cataloguing a schema.
+
+- **Fixed: everyday words that were just column names are dropped.** They are
+  compared against the object's own identifier tokens, on the same
+  tokenisation the ban list is built from -- otherwise `ord_id` slips past a
+  set holding `ord` and `id` separately. Such a word adds nothing the column
+  names did not already index, and crowds out one that would have helped.
+
+- **Fixed: CI on Python 3.9.** Two tests imported `tomllib`, which is 3.11+,
+  while the package supports 3.9. They assert things about pyproject's extras,
+  which do not vary by interpreter, so they are skipped below 3.11.
+
 ## 0.1.33
 
 - **Changed: connecting asks for the whole schema at once.** Reflection made
