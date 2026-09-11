@@ -42,6 +42,14 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 /* baseline alignment puts text on a line together; the mark is a box and
    wants centring, so the row centres and the wordmark keeps its own baseline
    against the sub-label. */
+#toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;
+  background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:8px;
+  font-size:13.5px;font-weight:500;box-shadow:0 8px 28px rgba(12,16,24,.28);
+  max-width:min(620px,92vw);text-align:center}
+#toast.bad{background:var(--restrict);color:#fff}
+@media (prefers-reduced-motion:no-preference){#toast{animation:toastin .16s ease-out}}
+@keyframes toastin{from{opacity:0;transform:translateX(-50%) translateY(-6px)}}
+
 .iconbtn{background:none;border:1px solid transparent;border-radius:var(--r);color:var(--muted);
   cursor:pointer;padding:5px 7px;display:inline-flex;align-items:center;justify-content:center;
   font-size:17px;line-height:1}
@@ -212,6 +220,7 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
   <div class="right" id="mode"><span>demo · runs in your browser · no database connected</span> <code>pip install schemagate</code></div>
 </div>
 
+<div id="toast" hidden role="status" aria-live="polite"></div>
 <div id="settingsScrim" hidden></div>
 <aside id="settingsDrawer" hidden aria-label="settings">
   <header>
@@ -485,6 +494,19 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
   let state = { schema: keys.includes("live") ? "live"
                       : (keys.includes("warehouse") ? "warehouse" : keys[0]),
                 roles: new Set(), ai: false, cats: {} };
+
+  // Saving and connecting both used to finish by changing a word in a panel
+  // you were no longer looking at. A confirmation has to appear where the eye
+  // already is, and say what happened rather than that something did.
+  let toastTimer = null;
+  function toast(text, bad){
+    const t = $("toast"); if (!t) return;
+    t.textContent = text;
+    t.classList.toggle("bad", !!bad);
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 6000 : 3200);
+  }
 
   function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
@@ -973,6 +995,8 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       $("connState").textContent = out.dialect + " · " + out.objects + " objects";
       const mt2 = $("modeText");
       if (mt2) mt2.textContent = "connected to your database";
+      state.hasCatalog = true;
+      toast("Connected \u2014 " + out.objects + " objects from " + out.dialect);
       if ($("intro")) $("intro").hidden = true;
       // Ask the question once, here, where it has an answer: the catalog now
       // exists and describing it is the obvious next step. Buried in a rail
@@ -1028,11 +1052,18 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       const key = $("mKey").value;
       if (key) body.api_key = key;      // blank means "keep the one you have"
       try {
-        paintSettings(await post("/settings", body));
+        const st = await post("/settings", body);
+        lastSettings = st;
+        paintSettings(st);
+        const hadKey = !!key;
         $("mKey").value = "";
+        const on = st.provider && st.provider !== "none" && st.model;
         note("mNote", "Saved.");
+        toast(on ? ("Saved \u2014 " + st.provider + " / " + st.model +
+                    (hadKey ? ", key stored for this session" : ""))
+                 : "Saved \u2014 no model configured");
         run();
-      } catch(e){ note("mNote", e.message, true); }
+      } catch(e){ note("mNote", e.message, true); toast("Could not save: " + e.message, true); }
     };
 
     $("catRun").onclick = async () => {
@@ -1049,8 +1080,30 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
              "Paste this into any chat, then paste the JSON reply back.");
         return;
       }
+      const skipped = out.objects - out.written;
       note("catNote", "Wrote " + out.written + " description(s) of " + out.objects +
-                      ". Now ask a question above.");
+                      (skipped > 0 ? " \u2014 " + skipped + " already had a database comment." : ".") +
+                      " Now ask a question above.");
+      toast("Catalogued: " + out.written + " description" +
+            (out.written === 1 ? "" : "s") + " written" +
+            (skipped > 0 ? ", " + skipped + " already had one" : ""));
+      // Show some of it. Writing 36 descriptions and displaying none of them
+      // asks you to take it on faith until a question happens to select one.
+      if (out.sample && out.sample.length) {
+        const rows = out.sample.map(x =>
+          '<div style="margin:0 0 8px"><code style="font-size:12px">' + esc(x.name) +
+          '</code><div class="muted" style="font-size:12.5px;line-height:1.45">' +
+          esc(x.description) + '</div></div>').join("");
+        $("objs").innerHTML =
+          '<p class="muted" style="margin:0 0 10px;font-size:12.5px">' +
+          'What the model wrote (first ' + out.sample.length + '):</p>' + rows +
+          '<p class="muted" style="margin:10px 0 0;font-size:12.5px">' +
+          'Ask a question above to see these in context.</p>';
+        $("ddl").innerHTML =
+          '<span class="c">-- ask a question to see the DDL these descriptions ride on</span>';
+        const q = $("q"); if (q) q.focus();
+        return;
+      }
       showEmptyState();
       run();
     };

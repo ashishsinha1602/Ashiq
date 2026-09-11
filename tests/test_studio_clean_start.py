@@ -302,3 +302,31 @@ def test_the_panels_are_moved_not_copied():
     assert html.count('id="whoPanel"') == 1
     assert html.count('id="principal"') == 1
     assert html.count('id="modelPanel"') == 1
+
+
+# ---- saying that something happened -------------------------------------
+
+def test_saving_and_connecting_confirm_where_the_eye_is():
+    """Both used to finish by changing a word in a panel you were no longer
+    looking at -- and after the settings moved into a drawer, one you might
+    have closed."""
+    html = _served_page(_state())
+    assert 'id="toast"' in html and 'role="status"' in html and 'aria-live="polite"' in html
+    assert "function toast(text, bad)" in html
+    assert 'toast("Connected \\u2014 " + out.objects' in html
+    assert 'toast(on ? ("Saved \\u2014 "' in html
+
+
+def test_the_catalogue_shows_what_it_wrote():
+    """Writing 36 descriptions and displaying none of them asks you to take it
+    on faith until a question happens to select one."""
+    html = _served_page(_state())
+    assert "What the model wrote (first " in html
+    assert "out.sample && out.sample.length" in html
+
+
+def test_the_skipped_count_is_explained_not_left_as_arithmetic():
+    """"36 of 43" reads as seven failures. They are objects that already had a
+    database comment, which describe() skips on purpose."""
+    html = _served_page(_state())
+    assert "already had a database comment" in html

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.32
+
+- **Added: saving, connecting and cataloguing say so.** All three finished by
+  changing a word in a panel you were no longer looking at -- and once the
+  settings moved into a drawer, one you may have closed. Each now raises a
+  confirmation that names what happened: which provider and model were saved
+  and whether a key was stored, how many objects were connected and from
+  which dialect, how many descriptions were written.
+
+- **Added: cataloguing shows what it wrote.** It reported a count and
+  displayed none of the result, so the only way to see whether the
+  descriptions were any good was to ask a question that happened to select
+  one. The first few now appear directly.
+
+- **Fixed: "36 of 43" read as seven failures.** They are objects that already
+  carry a database comment, which `describe(only_missing=True)` skips on
+  purpose so you do not pay for them twice. The message says that now.
+
+815 tests.
+
 ## 0.1.31
 
 - **Fixed: a connected Studio insisting nothing was connected.** The page
