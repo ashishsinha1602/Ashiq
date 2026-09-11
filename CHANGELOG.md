@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.30
+
+- **Added: a wallet password that does not open the wallet is said so, before
+  connecting.** This is the most expensive failure on this path because of how
+  it surfaces. The driver reads the wallet, cannot decrypt `ewallet.pem`, and
+  so never presents a client certificate. TLS completes anyway. The database,
+  requiring mutual TLS, receives no certificate and hangs up. What comes back
+  is `DPY-4011: the database or network closed the connection` -- which points
+  at the network, and the network is fine. Hours go into firewalls, proxies
+  and access control lists while the answer is a password.
+
+  `ewallet.pem` is now decrypted before the connection is attempted, and a
+  mismatch says what it is: every wallet download is sealed with the password
+  typed into that dialog, it is not the database password, and it does not
+  carry across downloads -- both files being called `Wallet_DBNAME.zip`.
+
+812 tests.
+
 ## 0.1.29
 
 - **Fixed: connecting and cataloguing both ended on a blank screen.** A

@@ -218,6 +218,8 @@ def oracle_wallet(wallet: str, alias: str, user: Optional[str] = None,
         raise ConnectError(f"no TNS alias {alias!r} in this wallet -- "
                            f"it has: {', '.join(known)}")
 
+    check_wallet_password(path, wallet_password)
+
     args: Dict[str, Any] = {"config_dir": path, "wallet_location": path,
                             "dsn": alias}
     if wallet_password:
@@ -227,6 +229,67 @@ def oracle_wallet(wallet: str, alias: str, user: Optional[str] = None,
     if password:
         args["password"] = password
     return "oracle+oracledb://@", args
+
+
+def check_wallet_password(wallet_dir: str, wallet_password: Optional[str]) -> None:
+    """Fail now, with the reason, rather than later without it.
+
+    A wallet password that does not match *this* wallet is the single most
+    expensive failure on this path, because of how it surfaces. The driver
+    reads the wallet, cannot decrypt `ewallet.pem`, and so never presents a
+    client certificate. TLS still completes. The database -- which requires
+    mutual TLS -- gets no certificate and hangs up. What comes back is
+    `DPY-4011: the database or network closed the connection`, which points at
+    the network, and the network is fine. Hours go into firewalls and proxies
+    and access control lists while the answer is four characters of password.
+
+    Every wallet download is sealed with the password typed into that dialog.
+    It is not the database password and it does not carry across downloads, so
+    a wallet re-downloaded yesterday will not open with the password from the
+    one before it -- and both files are called `Wallet_DBNAME.zip`.
+
+    Silent when it cannot tell, which is rare: `oracledb` itself depends on
+    `cryptography`, so anyone in a position to use a wallet has it. A wallet
+    with no `ewallet.pem` is one downloaded without a password -- a different
+    problem, with its own message further down.
+    """
+    import os
+
+    pem = os.path.join(wallet_dir, "ewallet.pem")
+    if not os.path.isfile(pem):
+        return
+    try:
+        from cryptography.hazmat.primitives.serialization import (
+            load_pem_private_key,
+        )
+    except ImportError:
+        return
+
+    try:
+        data = open(pem, "rb").read()
+    except OSError:
+        return
+
+    try:
+        load_pem_private_key(data, password=(wallet_password or "").encode() or None)
+    except TypeError:
+        # encrypted, and no password was given at all
+        raise ConnectError(
+            "this wallet's ewallet.pem is encrypted and no wallet password was "
+            "given. It is the password typed into the OCI download dialog, not "
+            "the database password."
+        ) from None
+    except ValueError:
+        raise ConnectError(
+            "the wallet password does not open this wallet. Every download is "
+            "sealed with the password typed into that dialog -- it is not the "
+            "database password, and it does not carry over from an earlier "
+            "download of the same wallet. Use the password this wallet was "
+            "downloaded with, or download a fresh one and use that password."
+        ) from None
+    except Exception:                                     # noqa: BLE001
+        # Never fail a connection over a precheck that itself went wrong.
+        return
 
 
 def tns_aliases(wallet_dir: str) -> "list[str]":
