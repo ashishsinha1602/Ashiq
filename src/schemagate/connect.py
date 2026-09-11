@@ -376,3 +376,43 @@ def recipe(url: str, connect_args: Optional[Mapping[str, Any]] = None,
 
     studio = f'schemagate studio --url "{safe_url}"{flags}'
     return {"cli": cli, "python": py, "studio": studio}
+
+
+#: Error codes worth showing: an Oracle/driver code names the actual failure
+#: and contains no credentials. `DPY-6005` is "cannot connect", `ORA-12154` is
+#: an unresolved alias, `ORA-01017` is a bad password -- three completely
+#: different problems that all reach a user as "OperationalError" otherwise.
+_CODE_RE = re.compile(r"\b((?:ORA|DPY|DPI|TNS|IAM)-\d{4,5})\b")
+
+
+def safe_error(exc: BaseException, *secrets: Optional[str]) -> str:
+    """A connection error with the driver's code kept and the secrets removed.
+
+    Driver messages quote the connect string they were handed, which carries a
+    password, so the whole message was being dropped and only the exception
+    class shown. That is unusable: "OperationalError" cannot tell a blocked
+    port from a wrong password. The code can, and a code is not a secret.
+
+    The first line only, secrets masked, and the code hoisted to the front so
+    it survives truncation.
+    """
+    text = str(exc).strip()
+    for sec in secrets:
+        if sec:
+            text = text.replace(sec, "***")
+    # SQLAlchemy prefixes the driver's own message with the exception class in
+    # parentheses -- "(oracledb.exceptions.OperationalError) DPY-6005: ..." --
+    # which pushes the useful half out of a narrow field and makes the code
+    # appear twice once it is hoisted.
+    text = re.sub(r"^\((?:[A-Za-z_][\w.]*\.)?\w*(?:Error|Exception)\)\s*", "", text)
+    first = text.split("\n")[0][:300]
+    codes = _CODE_RE.findall(first) or _CODE_RE.findall(text)
+    if not first:
+        return type(exc).__name__
+    if codes and not _CODE_RE.match(first):
+        # the code is further down the message; hoist it so it survives the
+        # width of a form field
+        return f"{', '.join(dict.fromkeys(codes))}: {first}"
+    if codes:
+        return first
+    return f"{type(exc).__name__}: {first}"

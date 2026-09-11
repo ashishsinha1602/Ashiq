@@ -243,7 +243,7 @@ class StudioState:
         from sqlalchemy import create_engine
 
         from .catalog import Catalog
-        from .connect import ConnectError, driver_hint, recipe, resolve
+        from .connect import ConnectError, driver_hint, recipe, resolve, safe_error
 
         # A SQLAlchemy URL, a JDBC string, or the wallet fields -- whichever
         # the person actually has. `connect_args` is not optional: an
@@ -267,9 +267,18 @@ class StudioState:
             return {"error": f"driver not installed ({e.name})" +
                              (f" -- pip install '{hint}'" if hint else "")}
         except Exception as e:                            # noqa: BLE001
-            # Never the message: driver errors quote the URL they were given,
-            # and a URL carries a password.
-            return {"error": f"could not connect: {type(e).__name__}"}
+            # Driver messages quote the connect string they were handed, and
+            # that carries a password -- which is why this used to return the
+            # exception class alone. But "OperationalError" cannot tell a
+            # blocked port from a wrong password from an alias that does not
+            # resolve, and those need completely different things done about
+            # them. So: the driver's code and message, with the secrets this
+            # request supplied masked out of it.
+            secrets = [str(connect_args.get("password") or ""),
+                       str(connect_args.get("wallet_password") or ""),
+                       str(body.get("password") or ""),
+                       str(body.get("wallet_password") or "")]
+            return {"error": "could not connect -- " + safe_error(e, *secrets)}
 
         report = None
         if want_grants:

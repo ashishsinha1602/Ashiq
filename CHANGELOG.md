@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.20
+
+- **Fixed: a failed connection now says what failed.** Driver messages quote
+  the connect string they were handed, and a connect string carries a
+  password, so the whole message was dropped and only the exception class
+  shown. What reached the user was "OperationalError" -- the same word for a
+  blocked port, a wrong password, and an alias that does not resolve. Three
+  problems with nothing in common except that you cannot tell which one you
+  have.
+
+  The driver's code is the diagnosis and is not a secret. `DPY-6005` is
+  "cannot connect", `ORA-01017` is a bad password, `ORA-12154` is an alias
+  that did not resolve. The Studio now reports the code and the message with
+  every secret from that request masked out of it, the SQLAlchemy class
+  prefix stripped, and the code hoisted to the front so it survives the width
+  of a form field.
+
+  Verified against a live failure rather than a constructed one: an
+  unreachable Oracle now reads `could not connect -- DPY-6005: cannot connect
+  to database`, and a PostgreSQL URL carrying a password returns the refusal
+  without the password in it.
+
+780 tests.
+
 ## 0.1.19
 
 - **Fixed: reading sample values no longer runs without a time limit.**
