@@ -410,3 +410,22 @@ def test_cataloguing_after_connecting_describes_the_new_database(api, tmp_path):
     prompt = call("/api/describe", {})["paste_prompt"]
     assert "invoice_line" in prompt
     assert "crm_customer" not in prompt, "still describing the demo schema"
+
+
+def test_the_oci_sdk_is_available_but_not_in_the_default_everything_install():
+    """It is what lets cataloguing run through OCI Generative AI with no API
+    key, so it has to be installable -- but on its own it is 488 MB and 17,505
+    modules, against 217 MB for every driver, every model SDK and MCP put
+    together. In `[all]` it would make the usual install eight times heavier
+    for a service most users never call. `[all,oci]` is one word away."""
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    if not pyproject.is_file():
+        import pytest
+        pytest.skip("not an installed-from-source tree")
+    extras = tomllib.loads(pyproject.read_text())["project"]["optional-dependencies"]
+
+    assert any(p.startswith("oci") for p in extras["oci"])
+    assert not any(p.startswith("oci>") for p in extras["all"])

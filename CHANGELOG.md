@@ -38,6 +38,15 @@
   Everything stays on the machine that runs it: the server is local, the page
   is local, and nothing is written to disk.
 
+- **Documented: `pip install "schemagate[all,oci]"`.** The OCI SDK is what
+  lets cataloguing run through OCI Generative AI with no API key -- the
+  instance principal path the Resource Manager stack uses. It is not in
+  `[all]` and the reason is a measurement rather than a preference: on its own
+  it is 488 MB and 17,505 Python modules, against 217 MB for every database
+  driver, every model SDK and MCP combined. Folding it in would make the
+  default install eight times heavier for a service most users never call, so
+  it stays one word away.
+
 743 tests.
 
 ## 0.1.15

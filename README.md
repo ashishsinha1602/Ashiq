@@ -378,9 +378,19 @@ reconnect — a temporary directory gives you a connection that works once.
 Same thing from the Studio, with a dropdown instead of a dict:
 
 ```bash
-pip install "schemagate[all]"      # every driver in one go
+pip install "schemagate[all]"          # every driver, the model SDKs, MCP
 schemagate studio --allow-connect
 ```
+
+On Oracle Cloud, add the OCI SDK so cataloguing can go through OCI Generative
+AI with no API key at all:
+
+```bash
+pip install "schemagate[all,oci]"
+```
+
+It is a separate word because it is a separate size: the OCI SDK is 488 MB and
+17,505 modules, against 217 MB for everything else together.
 
 | you have | pick |
 |---|---|
