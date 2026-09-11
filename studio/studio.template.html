@@ -571,7 +571,8 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
   }
 
   async function run(){
-    const q=$("q").value.trim(); if(!q) return;
+    const q=$("q").value.trim();
+    if(!q){ showEmptyState(); return; }
     $("error").hidden=true;
     const principal=$("principal").value.trim();
     let out;
@@ -613,6 +614,24 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       boot.replace(/^from schemagate import Catalog\b.*$/m, "from schemagate import Catalog, Principal") +
       "\n\nsel = cat.select(" + question + ",\n                 principal=" + who + ")\n" +
       "print(sel.prompt_fragment())";
+  }
+
+  // Connecting and cataloguing both end with a catalog and nothing on screen:
+  // blank panes, four dashes, and no sign that the next move is to type a
+  // question. Say so, and put the cursor where the answer comes from.
+  function showEmptyState(){
+    const n = (SCHEMAS[state.schema] && SCHEMAS[state.schema].total) || 0;
+    $("objs").innerHTML =
+      '<p class="muted" style="padding:14px 2px;margin:0;font-size:13px">' +
+      'Ask a question above and the tables that answer it appear here &mdash; ' +
+      'the few that reach the model, out of everything in the schema.</p>';
+    $("ddl").innerHTML =
+      '<span class="c">-- the DDL for those tables, ready to paste into a prompt</span>';
+    for (const id of ["sSel","sTok","sSaved","sHid"]) {
+      const el = $(id); if (el) el.innerHTML = "&ndash;";
+    }
+    const q = $("q");
+    if (q) { q.focus(); }
   }
 
   function render(out, q, principal){
@@ -704,8 +723,14 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
       const needsConnect = live && st.allow_connect && !st.connected && !st.demo;
       const slot = $("connectSlot"), panel = $("connectPanel");
       if (panel) {
-        if (needsConnect && panel.parentNode !== slot) slot.appendChild(panel);
-        else if (!needsConnect && panel.parentNode === slot) railHome.insertBefore(panel, railAfter);
+        try {
+          if (needsConnect && panel.parentNode !== slot) slot.appendChild(panel);
+          else if (!needsConnect && panel.parentNode === slot) {
+            if (railAfter && railAfter.parentNode === railHome)
+              railHome.insertBefore(panel, railAfter);
+            else railHome.appendChild(panel);
+          }
+        } catch (e) { railHome.appendChild(panel); }
         panel.hidden = false;
       }
       $("connectHome").hidden = !needsConnect;
@@ -786,10 +811,19 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
     }
     $("mProvider").addEventListener("change", paintProviderHints);
 
-    // where the connect panel sits in the rail, so moving it out and back is
-    // not a guess about ordering
+    // Where the connect panel sits in the rail. An anchor left in its place,
+    // not a reference to the next sibling: the sibling was #recipePanel,
+    // which the settings drawer then moved out of the rail, so putting the
+    // form back asked the rail to insert before a node that was no longer its
+    // child -- "Failed to execute 'insertBefore' on 'Node'". An empty
+    // placeholder cannot be moved by anything else.
     const railHome = $("connectPanel") ? $("connectPanel").parentNode : null;
-    const railAfter = $("connectPanel") ? $("connectPanel").nextElementSibling : null;
+    let railAfter = null;
+    if (railHome) {
+      railAfter = document.createElement("span");
+      railAfter.hidden = true;
+      railHome.insertBefore(railAfter, $("connectPanel").nextSibling);
+    }
 
     async function leaveModelChoice(){
       $("modelChoice").hidden = true;
@@ -801,6 +835,7 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
         lastSettings = await (await fetch(API+"/settings")).json();
         paintSettings(lastSettings);
       } catch(e){}
+      showEmptyState();
       run();
     }
     $("mcSkip").onclick = leaveModelChoice;
@@ -1007,7 +1042,9 @@ schemagate studio --url postgresql://localhost/app</pre><p>Same page, your schem
              "Paste this into any chat, then paste the JSON reply back.");
         return;
       }
-      note("catNote", "Wrote " + out.written + " description(s) of " + out.objects + ".");
+      note("catNote", "Wrote " + out.written + " description(s) of " + out.objects +
+                      ". Now ask a question above.");
+      showEmptyState();
       run();
     };
 

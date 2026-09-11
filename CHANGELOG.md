@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.29
+
+- **Fixed: connecting and cataloguing both ended on a blank screen.** A
+  catalog would load, 29 descriptions would be written, and the page showed
+  two empty panes and four dashes with no sign that the next move was to type
+  a question. It now says what those panes are for, puts the cursor in the
+  question box, and the cataloguing message ends with "Now ask a question
+  above."
+
+- **Fixed: `Failed to execute 'insertBefore' on 'Node'` when returning the
+  connect form to the rail.** The form was put back "before the element that
+  used to follow it" -- which was the recipe panel, which the settings drawer
+  had since moved out of the rail, so the rail was asked to insert before a
+  node that was no longer its child. It now leaves an anchor of its own in
+  place, and falls back to appending rather than throwing.
+
+804 tests.
+
 ## 0.1.28
 
 - **Changed: a blocked port says it is a blocked port.** `DPY-6005` and
