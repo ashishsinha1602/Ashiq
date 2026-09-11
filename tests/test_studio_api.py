@@ -247,3 +247,83 @@ def test_main_waits_in_short_slices_and_closes_the_socket():
     assert "Event().wait(" not in code, "the un-interruptible wait is back"
     assert "thread.join(0.5)" in code
     assert "server_close()" in code
+
+
+# --- connecting to a database from the page --------------------------------
+
+def test_connecting_is_refused_unless_the_server_allowed_it(api):
+    """The one thing on this page that reaches outside the process.
+
+    Without this, anyone who can reach the Studio can hand it a URL and have
+    the server connect on their behalf -- to a host only the server can see,
+    with whatever credentials they typed. A page bound to 0.0.0.0 would be a
+    URL box on the internet. So the person who started the server decides,
+    not the person looking at it.
+    """
+    call, state = api
+    assert state.allow_connect is False, "must be off unless asked for"
+    out = call("/api/connect", {"url": "sqlite:///anything.db"})
+    assert "error" in out and "allow-remote-connect" in out["error"]
+
+
+def test_a_failed_connection_does_not_echo_the_url_back(api):
+    """A SQLAlchemy URL carries a password, and driver errors quote the URL
+    they were given. Returning that puts the password in the page, in the
+    browser's network log, and in any screenshot of either."""
+    call, state = api
+    state.allow_connect = True
+    out = call("/api/connect",
+               {"url": "postgresql+psycopg://user:hunter2@127.0.0.1:1/nope"})
+    assert "error" in out
+    assert "hunter2" not in out["error"] and "@" not in out["error"]
+
+
+def test_connecting_replaces_the_catalog(api, tmp_path):
+    import sqlite3
+    db = tmp_path / "other.db"
+    con = sqlite3.connect(db)
+    con.executescript("CREATE TABLE widget (id INTEGER PRIMARY KEY, sku TEXT);")
+    con.commit(); con.close()
+
+    call, state = api
+    state.allow_connect = True
+    out = call("/api/connect", {"url": f"sqlite:///{db}"})
+    assert out["objects"] == 1 and out["dialect"] == "sqlite"
+    names = [o["name"] for o in call("/api/select", {"question": "widgets"})["objects"]]
+    assert names == ["main.widget"], names          # qualified, as the API reports
+
+
+def test_the_page_is_told_whether_connecting_is_even_possible(api):
+    """Showing a Connect box that the endpoint will always refuse is a button
+    that fails every time."""
+    call, state = api
+    assert call("/api/settings")["allow_connect"] is False
+    state.allow_connect = True
+    assert call("/api/settings")["allow_connect"] is True
+
+
+# --- running SQL from the page ---------------------------------------------
+
+def test_run_sql_returns_rows(api):
+    out = api[0]("/api/run-sql",
+                 {"sql": "SELECT display_name FROM core_party ORDER BY id LIMIT 2"})
+    assert out["columns"] == ["display_name"] and len(out["rows"]) == 2
+
+
+@pytest.mark.parametrize("sql", [
+    "DROP TABLE core_party",
+    "UPDATE core_party SET display_name = 'x'",
+    "SELECT 1; DROP TABLE core_party",
+    "SELECT 1 -- \n; DELETE FROM core_party",
+])
+def test_run_sql_refuses_anything_that_is_not_a_single_read(api, sql):
+    """Same guard as `--sql`, not a second copy of it: this endpoint calls
+    `answer.run_sql`, which checks again at the point the text reaches the
+    database."""
+    assert "refused" in api[0]("/api/run-sql", {"sql": sql}).get("error", "")
+
+
+def test_run_sql_without_a_database_says_so_rather_than_failing(api):
+    call, state = api
+    state.engine = None
+    assert call("/api/run-sql", {"sql": "SELECT 1"})["error"] == "no database connected"

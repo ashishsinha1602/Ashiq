@@ -169,6 +169,30 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <div class="roles" id="roles"></div>
       <input id="newRole" placeholder="add a role and press Enter" aria-label="add role" style="font-size:12.5px">
     </section>
+    <section id="connectPanel" hidden>
+      <h2>Database <span class="label" id="connState">demo</span></h2>
+      <p class="blurb" style="margin:0 0 6px">A SQLAlchemy URL. Only the schema is
+      read — names, types and foreign keys. Nothing here is stored.</p>
+      <input id="cUrl" class="mono" placeholder="postgresql+psycopg://user:pw@host/db"
+             aria-label="database url" style="width:100%">
+      <input id="cSchemas" class="mono" placeholder="schemas, comma separated (optional)"
+             aria-label="schemas" style="margin-top:6px;width:100%">
+      <label style="margin-top:6px;display:block"><input type="checkbox" id="cGrants">
+        Take visibility from the database's GRANTs</label>
+      <label style="display:block"><input type="checkbox" id="cValues">
+        Read values of short, non-personal columns</label>
+      <button id="cGo" style="margin-top:8px;width:100%">Connect</button>
+      <div id="cNote" class="blurb" style="margin-top:6px"></div>
+    </section>
+    <section id="sqlPanel" hidden>
+      <h2>Run SQL</h2>
+      <p class="blurb" style="margin:0 0 6px">Read-only. Anything that is not a single
+      SELECT or WITH is refused before it reaches the database.</p>
+      <textarea id="sqlText" class="mono" rows="3" placeholder="SELECT ..."
+                aria-label="sql" style="width:100%;font-size:11px"></textarea>
+      <button id="sqlGo" style="margin-top:6px;width:100%">Run</button>
+      <div id="sqlNote" class="blurb" style="margin-top:6px"></div>
+    </section>
     <section id="modelPanel" hidden>
       <h2>Model <span class="label" id="modelState">off</span></h2>
       <p class="blurb" style="margin:0 0 6px">Selection never uses a model. This is for
@@ -270,6 +294,12 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
         <header><h3>What the model receives</h3><button id="copy" style="font-size:12px;padding:3px 9px">Copy DDL</button></header>
         <pre class="ddl" id="ddl"></pre>
       </div>
+    </div>
+
+    <div class="pane" id="sqlPane" hidden style="padding:12px 14px;gap:8px">
+      <header style="padding:0"><h3 style="margin:0;font-size:13px;font-weight:600">SQL result</h3>
+        <span class="meta" id="sqlMeta"></span></header>
+      <div id="sqlRows" style="overflow:auto"></div>
     </div>
 
     <div class="pane" id="answerPane" hidden style="padding:12px 14px;gap:8px">
@@ -1257,6 +1287,12 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
     }
 
     function paintSettings(st){
+      // Connecting reaches outside the process, so the server decides whether
+      // the box exists at all -- showing it when the endpoint will refuse is
+      // just a button that always fails.
+      $("connectPanel").hidden = !st.allow_connect;
+      $("sqlPanel").hidden = !st.connected;
+      if (st.connected) $("connState").textContent = "connected";
       $("mProvider").value = st.provider || "none";
       $("mModel").value = st.model || "";
       $("mRerank").checked = !!st.rerank;
@@ -1269,6 +1305,72 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
     }
 
     fetch(API+"/settings").then(r=>r.json()).then(paintSettings).catch(()=>{});
+
+    // ---- connecting to a database, and running read-only SQL --------------
+    function renderRows(into, meta, out){
+      $(meta).textContent = out.error || ((out.rows||[]).length + " row" +
+        ((out.rows||[]).length===1?"":"s"));
+      const host = $(into); host.innerHTML = "";
+      const cols = out.columns || [];
+      if (out.error || !cols.length) return;
+      const t = document.createElement("table");
+      t.style.cssText = "border-collapse:collapse;font-size:12.5px;width:100%";
+      const hd = t.insertRow();
+      for (const c of cols){
+        const th = document.createElement("th"); th.textContent = c;
+        th.style.cssText = "text-align:left;padding:4px 8px;border-bottom:1px solid var(--line-2);white-space:nowrap";
+        hd.appendChild(th);
+      }
+      for (const r of (out.rows||[])){
+        const tr = t.insertRow();
+        for (const v of r){
+          const td = tr.insertCell(); td.textContent = v === null ? "" : v;
+          td.style.cssText = "padding:4px 8px;border-bottom:1px solid var(--line);white-space:nowrap";
+        }
+      }
+      host.appendChild(t);
+    }
+
+    $("cGo").onclick = async () => {
+      const url = $("cUrl").value.trim();
+      if (!url) return note("cNote", "Paste a SQLAlchemy URL.", true);
+      note("cNote", "Connecting...");
+      let out;
+      try { out = await post("/connect", {
+              url,
+              schemas: $("cSchemas").value.split(",").map(x=>x.trim()).filter(Boolean),
+              restrict_from_grants: $("cGrants").checked,
+              sample_values: $("cValues").checked}); }
+      catch(e){ return note("cNote", e.message, true); }
+      if (out.error) return note("cNote", out.error, true);
+
+      // The URL carries a password. Do not leave it in the box.
+      $("cUrl").value = "";
+      $("connState").textContent = out.dialect + " · " + out.objects + " objects";
+      let msg = "Reflected " + out.objects + " object(s)";
+      if (out.schemas && out.schemas.length) msg += " from " + out.schemas.join(", ");
+      const g = out.grants;
+      if (g && g.error) msg += ". GRANTs: " + g.error;
+      else if (g) msg += ". GRANTs: " + g.restricted + " restricted, " + g.public +
+                         " public, " + g.unmatched + " left untouched" +
+                         (g.roles_expanded ? ", " + g.roles_expanded + " role(s) expanded" : "");
+      note("cNote", msg + ".");
+      $("sqlPanel").hidden = false;
+      run();
+    };
+
+    $("sqlGo").onclick = async () => {
+      const sql = $("sqlText").value.trim();
+      if (!sql) return note("sqlNote", "Nothing to run.", true);
+      note("sqlNote", "");
+      $("sqlPane").hidden = false;
+      let out;
+      try { out = await post("/run-sql", {sql}); }
+      catch(e){ return note("sqlNote", e.message, true); }
+      if (out.error) note("sqlNote", out.error, true);
+      renderRows("sqlRows", "sqlMeta", out);
+    };
+
 
     $("mSave").onclick = async () => {
       const body = {provider:$("mProvider").value, model:$("mModel").value.trim(),

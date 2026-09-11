@@ -2,8 +2,25 @@
 
 ## 0.1.14
 
-A Windows bug that made the Studio unquittable, a leak in `--values`, and two
+Connect to a database from the Studio, plus a Windows bug that made the Studio unquittable, a leak in `--values`, and two
 things in the repo that were quietly lying.
+
+- **Added: connect from the page.** `POST /api/connect` reflects a database
+  into the running Studio, optionally taking visibility from its GRANTs and
+  reading column values; `POST /api/run-sql` runs one read-only statement
+  through the same guard as `--sql`. A Connect panel and a Run SQL box drive
+  both, so pointing Studio at a database no longer means restarting it with a
+  different `--url`.
+
+  Connecting is **off** unless the server was started with
+  `--allow-remote-connect`. It is the one thing on the page that reaches
+  outside the process: with it on, anyone who can reach the Studio can make
+  the server connect anywhere it can see, using whatever credentials they
+  type. A failed connection reports only the exception type, because driver
+  errors quote the URL they were handed and a URL carries a password -- and
+  the page clears the URL box on success for the same reason.
+
+  `schemagate studio` also takes `--restrict-from-grants` and `--values`.
 
 - **Fixed: Ctrl+C did not stop the Studio on Windows.** `main()` waited with
   `threading.Event().wait(3600)`. Python runs a signal handler only between
@@ -57,7 +74,10 @@ things in the repo that were quietly lying.
   implementation moved into the package; `scripts/certify_dialect.py` still
   works and now calls it.
 
-677 tests. Guards and render verified against live PostgreSQL 16.
+687 tests. Guards, render, Connect and Run SQL all verified against a
+live PostgreSQL 16 -- Connect driven through the browser DOM: 219 objects
+reflected, 218 restricted by GRANTs, a nested role expanded, four rows back
+from a SELECT and a DROP refused.
 
 ## 0.1.13
 

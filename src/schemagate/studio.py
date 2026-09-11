@@ -53,6 +53,14 @@ class StudioState:
         self.engine = engine
         self.settings: Dict[str, Any] = {}
         self.provider_error: Optional[str] = None
+        #: Connecting to a database is the one thing on this page that reaches
+        #: outside the process, so it is refused unless the person who started
+        #: the server said otherwise. A Studio bound to 0.0.0.0 with this open
+        #: is a URL box on the internet that will connect anywhere and read a
+        #: schema back -- including to hosts only this machine can see.
+        self.allow_connect = False
+        self.restrict_from_grants = False
+        self.sample_values = False
 
     def schemas_json(self) -> Dict[str, Any]:
         """The shape the page expects: docs are not needed server-side, but
@@ -214,6 +222,78 @@ class StudioState:
         self.catalog.index()
         return {"written": written, "objects": len(self.catalog._docs)}
 
+    def connect(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Reflect a database into this running Studio.
+
+        Refused unless the server was started with --allow-remote-connect.
+        Without that, anyone who can reach the page can hand it a URL and have
+        the server connect on their behalf -- to a host only the server can
+        see, with whatever credentials they put in the string. The page is a
+        local tool by default and this keeps it one.
+        """
+        if not self.allow_connect:
+            return {"error": "connecting from the page is off. Restart with "
+                             "`schemagate studio --allow-remote-connect`, or "
+                             "pass --url when you start it."}
+        url = str(body.get("url") or "").strip()
+        if not url:
+            return {"error": "no url"}
+
+        from sqlalchemy import create_engine
+
+        from .catalog import Catalog
+        schemas = [s for s in (body.get("schemas") or []) if s] or None
+        want_grants = bool(body.get("restrict_from_grants", self.restrict_from_grants))
+        want_values = bool(body.get("sample_values", self.sample_values))
+        try:
+            engine = create_engine(url)
+            cat = Catalog(name="studio").bootstrap(
+                engine, schemas=schemas, sample_values=want_values)
+        except Exception as e:                            # noqa: BLE001
+            # The message can carry the URL, and the URL can carry a password.
+            return {"error": f"could not connect: {type(e).__name__}"}
+
+        report = None
+        if want_grants:
+            from .grants import restrict_from_grants
+            try:
+                rep = restrict_from_grants(cat, engine, report=True)
+                report = {"dialect": rep.dialect, "seen": rep.objects_seen,
+                          "restricted": rep.objects_restricted,
+                          "public": rep.objects_public,
+                          "unmatched": len(rep.objects_unmatched),
+                          "roles_expanded": rep.roles_expanded,
+                          "warnings": rep.warnings}
+            except NotImplementedError as e:
+                report = {"error": str(e)}
+            except Exception as e:                        # noqa: BLE001
+                report = {"error": f"{type(e).__name__}: {e}"}
+
+        cat.index()
+        self.catalog = cat
+        self.engine = engine
+        self.title = "Your database"
+        self.blurb = f"{len(cat._docs)} objects reflected from {engine.dialect.name}."
+        return {"objects": len(cat._docs), "dialect": engine.dialect.name,
+                "schemas": sorted({d.schema for d in cat._docs.values() if d.schema}),
+                "grants": report, "values": want_values}
+
+    def run_sql(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Run one read-only statement, through the same guard as `--sql`."""
+        from .answer import UnsafeSQL, run_sql as _run
+
+        if self.engine is None:
+            return {"error": "no database connected"}
+        try:
+            cols, rows = _run(self.engine, str(body.get("sql") or ""),
+                              limit=int(body.get("limit") or 50))
+        except UnsafeSQL as e:
+            return {"error": f"refused: {e}"}
+        except Exception as e:                            # noqa: BLE001
+            return {"error": f"{type(e).__name__}: {e}"}
+        return {"columns": list(cols),
+                "rows": [[None if v is None else str(v) for v in r] for r in rows]}
+
     def select(self, body: Dict[str, Any]) -> Dict[str, Any]:
         cat = self.catalog
         question = str(body.get("question") or "").strip()[:2000]
@@ -277,13 +357,17 @@ def _handler(state: StudioState):
             elif self.path == "/api/health":
                 self._json(200, {"status": "ok", "objects": len(state.catalog._docs)})
             elif self.path == "/api/settings":
-                self._json(200, state.describe_settings())
+                out = state.describe_settings()
+                out["allow_connect"] = state.allow_connect
+                out["connected"] = state.engine is not None
+                self._json(200, out)
             else:
                 self._json(404, {"error": "not found"})
 
         def do_POST(self):
             if self.path not in ("/api/select", "/api/answer", "/api/settings",
-                                 "/api/describe", "/api/apply-descriptions"):
+                                 "/api/describe", "/api/apply-descriptions",
+                                 "/api/connect", "/api/run-sql"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -298,6 +382,10 @@ def _handler(state: StudioState):
                     return self._json(200, state.describe(payload))
                 if self.path == "/api/apply-descriptions":
                     return self._json(200, state.apply_descriptions(payload))
+                if self.path == "/api/connect":
+                    return self._json(200, state.connect(payload))
+                if self.path == "/api/run-sql":
+                    return self._json(200, state.run_sql(payload))
                 return self._json(200, state.select(payload))
             except IdentityError as e:
                 return self._json(400, {"error": str(e)})
@@ -338,12 +426,18 @@ def serve(state: StudioState, host: str = "127.0.0.1", port: int = 8770,
 
 def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
          open_browser: bool = True, include=None, exclude=None,
-         config: Optional[str] = None) -> int:
+         config: Optional[str] = None, restrict_from_grants: bool = False,
+         sample_values: bool = False, allow_remote_connect: bool = False) -> int:
     engine = None
     if url:
         from sqlalchemy import create_engine
         engine = create_engine(url)
-        cat = Catalog(name="studio").bootstrap(engine, include=include, exclude=exclude)
+        cat = Catalog(name="studio").bootstrap(engine, include=include,
+                                               exclude=exclude,
+                                               sample_values=sample_values)
+        if restrict_from_grants:
+            from .grants import restrict_from_grants as _rfg
+            print(_rfg(cat, engine, report=True), file=sys.stderr)
         if config:
             from . import config as _config
             _config.apply(cat, _config.load(config))
@@ -362,6 +456,9 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         title, blurb = "Demo schema", "42 objects. Pass --url to run this against your own database."
         questions = [q for q, _ in GOLDEN]
     state = StudioState(cat, title, blurb, questions, engine=engine)
+    state.allow_connect = allow_remote_connect
+    state.restrict_from_grants = restrict_from_grants
+    state.sample_values = sample_values
     server = serve(state, host, port, open_browser)
 
     # Wait in short slices rather than one long one. Python runs a signal

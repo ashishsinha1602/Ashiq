@@ -205,7 +205,10 @@ def cmd_studio(args) -> int:
     return studio_main(url=args.url, host=args.host, port=args.port,
                        open_browser=not args.no_browser,
                        include=args.include or None, exclude=args.exclude or None,
-                       config=args.config)
+                       config=args.config,
+                       restrict_from_grants=args.restrict_from_grants,
+                       sample_values=args.values,
+                       allow_remote_connect=args.allow_remote_connect)
 
 
 def cmd_describe(args) -> int:
@@ -374,6 +377,17 @@ def build_parser() -> argparse.ArgumentParser:
     studio.add_argument("--exclude", action="append", metavar="PATTERN")
     studio.add_argument("--config", metavar="JSON",
                         help="restrict / hint / describe blocks (see schemagate.config)")
+    studio.add_argument("--restrict-from-grants", action="store_true",
+                        help="set object visibility from the database's own GRANTs")
+    studio.add_argument("--values", action="store_true",
+                        help="read the distinct values of short, non-personal "
+                             "columns so the model does not guess whether a "
+                             "status reads 'denied' or 'DENIED'")
+    studio.add_argument("--allow-remote-connect", action="store_true",
+                        help="let the page connect to a database you type into "
+                             "it. Off by default: with it on, anyone who can "
+                             "reach the page can make this server connect "
+                             "anywhere it can see")
     studio.set_defaults(func=cmd_studio)
 
     describe = sub.add_parser(
