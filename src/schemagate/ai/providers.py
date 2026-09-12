@@ -119,20 +119,37 @@ class AnthropicProvider:
         self._client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=max_retries)
 
     def complete(self, system: str, prompt: str, max_tokens: int = 1024) -> str:
+        # Whether *this* call sent it, not whether the next one would. The
+        # describer runs four calls at once: the first to be rejected clears
+        # the flag and retries, and the other three then failed this guard and
+        # raised instead of retrying. On claude-sonnet-5 that was exactly three
+        # objects left undescribed out of 42, every run, for no visible reason.
+        sent_temperature = self._send_temperature
         kwargs = dict(model=self.model, max_tokens=max_tokens, system=system,
                       messages=[{"role": "user", "content": prompt}])
-        if self._send_temperature:
+        if sent_temperature:
             kwargs["temperature"] = _TEMPERATURE
         try:
             msg = self._client.messages.create(**kwargs)
         except Exception as e:
-            if self._send_temperature and "temperature" in str(e):
+            if sent_temperature and "temperature" in str(e):
                 # This model does not take it. Remember, and answer anyway --
                 # a deprecated parameter must not cost the user their answer.
                 self._send_temperature = False
                 return self.complete(system, prompt, max_tokens)
             raise ProviderError(f"{self.name}: {e}") from e
-        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        text = "".join(b.text for b in msg.content
+                       if getattr(b, "type", "") == "text")
+        # A reasoning model can spend the whole budget before it says anything.
+        # Silence and "I was cut off" are different problems with different
+        # fixes, and reporting the second as the first sent me looking at the
+        # model when the answer was one number in a call site.
+        if not text and getattr(msg, "stop_reason", "") == "max_tokens":
+            raise ProviderError(
+                f"{self.name}: hit max_tokens ({max_tokens}) before writing "
+                f"any text -- the reply was all reasoning. Ask again with a "
+                f"larger max_tokens.")
+        return text
 
 
 # --------------------------------------------------------------------------
