@@ -163,6 +163,9 @@
   function qname(d) { return d.schema ? `${d.schema}.${d.name}` : d.name; }
   const NAME_WEIGHT = 1.0, PROSE_WEIGHT = 1.0, NAMED_BOOST = 4.0;
   const COVERAGE_MIN_IDF = 2.0, COVERAGE_MAX = 3;
+  // How many distinct objects must point at something before the schema is
+  // telling us it is a dimension. Mirrors catalog.py's _DIMENSION_IN_DEGREE.
+  const DIMENSION_IN_DEGREE = 2;
   function nameText(d) {
     return [d.schema || "", d.name || "", (d.name || "").replace(/_/g, " ")].filter(Boolean).join(" ");
   }
@@ -245,6 +248,7 @@
       for (const d of docs) this.docs.set(qname(d), Object.assign({ columns: [], foreign_keys: [], roles: null }, d));
       this.shadowSuffixes = opts.shadowSuffixes || SHADOW_SUFFIXES;
       this.shadowPrefixes = opts.shadowPrefixes || SHADOW_PREFIXES;
+      this.dims = null;
       this.stale = true;
     }
     hint(table, text) { for (const [q, d] of this.docs) if (q === table || d.name === table) { d.hint = text; this.stale = true; return; } throw new Error(`${table} not in catalog`); }
@@ -260,9 +264,33 @@
       this.bm25Name = new BM25(this.order.map((q) => nameText(this.docs.get(q))));
       this.bm25Prose = new BM25(this.order.map((q) => proseText(this.docs.get(q))));
       this.shadows = this._findShadows();
+      this.dims = null;           // recomputed on next request
       this.vecs = new Map(); const vs = this.embedder.embed(texts);
       this.order.forEach((q, i) => this.vecs.set(q, vs[i]));
       this.stale = false; return this;
+    }
+    // Objects the rest of the schema is *about*, and how many point at them.
+    // Read off the join graph: two or more referrers and the schema is calling
+    // it a dimension. Derived, never declared -- catalog.py's dimensions().
+    dimensions() {
+      if (this.stale || this.dims === null) {
+        const counts = new Map();
+        for (const [dq, doc] of this.docs) {
+          const seen = new Set();
+          for (const fk of (doc.foreign_keys || [])) {
+            const ref = (fk.ref_table || "").toLowerCase();
+            if (!ref || seen.has(ref)) continue;
+            seen.add(ref);
+            for (const [q, d] of this.docs)
+              if ((d.name || "").toLowerCase() === ref && q !== dq) {
+                counts.set(q, (counts.get(q) || 0) + 1); break;
+              }
+          }
+        }
+        this.dims = new Map();
+        for (const [q, n] of counts) if (n >= DIMENSION_IN_DEGREE) this.dims.set(q, n);
+      }
+      return this.dims;
     }
     _findShadows() {
       const stemsOf = (n) => { const out = [n]; for (const p of LAYER_PREFIXES) if (n.startsWith(p) && n.length > p.length) { out.push(n.slice(p.length)); break; } const i = n.indexOf("_"); if (i > 0) { const tail = n.slice(i + 1); if (tail.length >= 4 && !out.includes(tail)) out.push(tail); } return out; };
@@ -371,12 +399,18 @@
               && (this.bm25Name.idf.get(t) || 0) >= COVERAGE_MIN_IDF
               && !covered.has(t) && !coveredStems.has(stemToken(t))
               && !uncovered.includes(t)) uncovered.push(t);
+        const dims = this.dimensions();
         for (const token of uncovered.slice(0, COVERAGE_MAX)) {
-          let best = null;
+          // Among the objects carrying this word, prefer the one the schema
+          // itself treats as the thing -- the one other objects point at.
+          let best = null, fallback = null;
           for (const [q, sv] of fused) {
             if (taken.has(q)) continue;
-            if (tokenize(nameText(this.docs.get(q))).includes(token)) { best = [q, sv]; break; }
+            if (!tokenize(nameText(this.docs.get(q))).includes(token)) continue;
+            if (fallback === null) fallback = [q, sv];   // `fused` is sorted
+            if (dims.has(q)) { best = [q, sv]; break; }
           }
+          best = best || fallback;
           if (!best) continue;
           if (chosen.length >= topK) {
             let dropped = false;

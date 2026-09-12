@@ -197,6 +197,7 @@ class Catalog:
         self._order: List[str] = []
         self._bm25: Optional[_BM25] = None
         self._shadows: Dict[str, str] = {}      # shadow qname -> base qname
+        self._dims: Optional[Dict[str, int]] = None
         self._stale = True
 
     # ---------------- build ----------------
@@ -454,6 +455,38 @@ class Catalog:
             self._stale = True
         return added
 
+    #: How many distinct objects must point at something before the schema is
+    #: telling us it is a dimension. Two is enough to mean "shared", and low
+    #: enough to catch a small schema; the rank is what uses this, not a
+    #: filter, so a wrong guess costs a position rather than an object.
+    _DIMENSION_IN_DEGREE = 2
+
+    def dimensions(self) -> Dict[str, int]:
+        """Objects the rest of the schema is *about*, and how many point at them.
+
+        Read off the join graph -- declared edges and the ones inferred from
+        the dictionary. An object that two or more others reference is what a
+        warehouse would call a dimension and an application calls a lookup:
+        `tenants`, `users`, `companies`, `countries`. It is derived, never
+        declared, so it works on a schema nobody modelled.
+        """
+        if self._stale or self._dims is None:
+            counts: Dict[str, int] = {}
+            for doc in self._docs.values():
+                seen = set()
+                for fk in doc.foreign_keys:
+                    ref = (fk.ref_table or "").lower()
+                    if not ref or ref in seen:
+                        continue
+                    seen.add(ref)
+                    for q, d in self._docs.items():
+                        if (d.name or "").lower() == ref and q != doc.qname:
+                            counts[q] = counts.get(q, 0) + 1
+                            break
+            self._dims = {q: n for q, n in counts.items()
+                          if n >= self._DIMENSION_IN_DEGREE}
+        return dict(self._dims)
+
     def index(self) -> "Catalog":
         store_dim = getattr(self.store, "dim", None)
         if store_dim is not None and store_dim != self.embedder.dim:
@@ -493,6 +526,7 @@ class Catalog:
         # "no better than before cataloguing" instead of "worse".
         self._bm25_prose = _BM25([_prose_text(self._docs[q]) for q in self._order])
         self._shadows = self._find_shadows()
+        self._dims = None                       # recomputed on next request
         vecs = self.embedder.embed(texts)
         self.store.purge(self._ns)
         for qname, vec in zip(self._order, vecs):
@@ -774,6 +808,7 @@ class Catalog:
         # So after ranking, each informative word the question used that no
         # chosen object carries in its name gets the best object that does.
         # Bounded, and only ever additive -- it cannot displace a ranked pick.
+        dims = self.dimensions()
         uncovered = []
         if self._bm25_name is not None and self._bm25_name.idf:
             covered = set()
@@ -792,13 +827,22 @@ class Catalog:
                         and t not in uncovered):
                     uncovered.append(t)
         for token in uncovered[:_COVERAGE_MAX]:
-            best = None
+            # Among the objects carrying this word, prefer the one the schema
+            # itself treats as the thing -- the one other objects point at.
+            # Ranking alone gave "…and the tenant name" a dashboard view over
+            # `tenants`, and the model could not resolve a tenant from it.
+            best = fallback = None
             for q, sc_val in ranked:
                 if q in taken:
                     continue
-                if token in tokenize(_name_text(self._docs[q])):
+                if token not in tokenize(_name_text(self._docs[q])):
+                    continue
+                if fallback is None:
+                    fallback = (q, sc_val)     # `ranked` is already sorted
+                if q in dims:
                     best = (q, sc_val)
-                    break                      # `ranked` is already sorted
+                    break
+            best = best or fallback
             if best is None:
                 continue
             # Inside the budget, not beyond it: drop the weakest ranked pick
