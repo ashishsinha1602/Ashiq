@@ -574,11 +574,19 @@ class Catalog:
             if q in found:
                 continue
             m = self._STANDALONE_SHADOW.search(d.name or "")
-            if m:
+            if m and m.start() > 0:
                 # No base to point at: the stem is recorded so shadows() still
                 # says what it is a copy of, and the penalty below treats a
                 # base that is not in the catalog as "always demote".
-                found[q] = (d.name or "")[:m.start()] or d.name
+                #
+                # `m.start() > 0` because the suffix has to be a suffix *of*
+                # something. A table named exactly `_backup` leaves an empty
+                # stem, and the old fallback then mapped it to its own name --
+                # an object recorded as a copy of itself, demoted for
+                # shadowing itself, and reported that way by shadows().
+                # Found by the property test, not by a schema: nobody writes
+                # that name on purpose, which is exactly why nothing caught it.
+                found[q] = (d.name or "")[:m.start()]
         return found
 
     def _find_shadows_by_base(self) -> Dict[str, str]:

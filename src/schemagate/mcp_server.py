@@ -22,6 +22,26 @@ Identity: every tool takes ``principal`` and ``roles``. The server does not
 guess who is asking -- if the client omits them, the caller is treated as
 anonymous and sees only unrestricted objects. Fail closed.
 
+Where the trust boundary is
+---------------------------
+Read this before exposing the server on a port. **The principal and roles are
+asserted by the client, and this server believes them.** There is no
+authentication here: no token, no session, no signature. Fail-closed protects
+the caller who omits a role, not the one who invents it -- anyone who can
+reach the transport can pass ``roles=["payroll"]`` and read what that role may
+read. Since ``run_query`` returns rows rather than schema, that is data.
+
+So it is safe exactly where the transport is: over stdio, where the only
+caller is the desktop client on your own machine; or over HTTP **behind
+something that authenticates the user and fills in the principal itself** --
+a gateway, a proxy, your own service. Do not put the HTTP transport on a
+network you do not control and rely on ``principal`` to keep people apart.
+It is a scoping mechanism, not a lock.
+
+The OCI stack narrows it to a CIDR you name and refuses ``0.0.0.0/0``, which
+is a network control rather than an identity one. A shared secret is not yet
+implemented.
+
 Restrictions and hints come from ``SCHEMAGATE_CATALOG_CONFIG``, a JSON file::
 
     {"restrict": {"hr_compensation": ["payroll"]},
@@ -45,6 +65,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -56,6 +77,12 @@ from .identity import IdentityError, Principal
 log = logging.getLogger("schemagate.mcp")
 
 _CATALOG: Optional[Catalog] = None
+#: The URL the catalog was reflected from, kept so `run_query` has something
+#: to execute against. Reflection disposes its engine on purpose -- the index
+#: lives in memory and holds nothing open -- so execution builds its own,
+#: lazily, and only if someone actually runs a query.
+_URL: Optional[str] = None
+_ENGINE: Any = None
 _LOCK = threading.Lock()
 _STATE: Dict[str, Any] = {
     "started_at": None, "url": None, "config": None,
@@ -67,6 +94,13 @@ _STATE: Dict[str, Any] = {
 MAX_QUESTION_CHARS = 2000
 MAX_TOP_K = 50
 MAX_ROLES = 100
+#: Rows a single `run_query` may return. A model asking for a whole table
+#: should get a page of it and be told there is more, not fill the context.
+MAX_ROWS = 200
+DEFAULT_ROWS = 50
+#: Characters of SQL accepted. Generous for a real query, small enough that
+#: nobody posts a novel through the tool.
+MAX_SQL_CHARS = 20000
 
 
 def _apply_config(cat: Catalog, config_path: Optional[str]) -> None:
@@ -79,7 +113,9 @@ def _apply_config(cat: Catalog, config_path: Optional[str]) -> None:
 def _reflect(url: str, config_path: Optional[str]) -> Catalog:
     if url == "demo":
         from .demo_schema import HINTS, create_demo_db
-        cat = Catalog(name="demo").bootstrap(create_demo_db())
+        demo_url = create_demo_db()
+        cat = Catalog(name="demo").bootstrap(demo_url)
+        cat._demo_url = demo_url                 # so run_query has a target
         for table, text in HINTS.items():
             cat.hint(table, text)
         cat.restrict("hr_compensation", ["payroll"])
@@ -120,6 +156,8 @@ def build_catalog(url: Optional[str] = None, config_path: Optional[str] = None,
         config_path = config_path or os.environ.get("SCHEMAGATE_CATALOG_CONFIG")
         cat = _reflect(url, config_path)
         _CATALOG = cat
+        globals()["_URL"] = cat._demo_url if url == "demo" else url
+        globals()["_ENGINE"] = None
         _STATE.update(url=_redact(url), config=config_path,
                       last_refresh_at=time.time(), last_refresh_ok=True,
                       last_error=None)
@@ -134,6 +172,71 @@ def _redact(url: str) -> str:
         user = creds.split(":", 1)[0]
         return f"{scheme}://{user}:***@{host}"
     return url
+
+
+def _engine():
+    """The engine used to run queries, built on first use and kept pooled."""
+    global _ENGINE
+    with _LOCK:
+        if _ENGINE is None:
+            if not _URL:
+                raise RuntimeError(
+                    "this server has no database URL to run queries against "
+                    "(the catalog was supplied directly)")
+            from .introspect import engine_from_url
+            _ENGINE = engine_from_url(_URL, pool_pre_ping=True, pool_recycle=1800)
+        return _ENGINE
+
+
+#: `FROM x`, `JOIN x` -- the only two places a base table can be named.
+_REFERENCED = re.compile(r"\b(?:from|join)\s+([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*|\"[^\"]+\"(?:\.\"[^\"]+\")*)",
+                         re.I)
+#: `WITH name AS (`, and the `, name AS (` that follow it.
+_CTE = re.compile(r"(?:\bwith\b|,)\s*([A-Za-z_][\w$]*)\s+as\s*\(", re.I)
+
+
+def _referenced_tables(sql: str) -> List[str]:
+    """Base tables the statement reads, with CTE and subquery aliases removed."""
+    body = re.sub(r"--[^\n]*", " ", sql)
+    body = re.sub(r"/\*.*?\*/", " ", body, flags=re.S)
+    body = re.sub(r"'(?:[^']|'')*'", "''", body)
+    ctes = {c.lower() for c in _CTE.findall(body)}
+    out, seen = [], set()
+    for raw in _REFERENCED.findall(body):
+        name = raw.replace('"', "").strip()
+        if not name or name.lower() in ctes or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append(name)
+    return out
+
+
+def _check_scope(cat: Catalog, sql: str, who: Optional[Principal]) -> Optional[str]:
+    """Refuse SQL that reads anything this caller may not see.
+
+    This is the whole point of the library, so it is enforced here and not
+    left to the model: `select_schema` withholding a table means nothing if
+    the next tool will run `SELECT * FROM` it anyway. An agent that guesses a
+    name, or a prompt-injected one that is told to, gets the same answer.
+
+    Fail closed. A table that does not resolve to an object this principal can
+    see is refused, whether it is restricted, misspelled, or something the
+    catalog never reflected -- because from here those look identical, and
+    the safe reading of "I do not recognise this" is no.
+    """
+    visible = {}
+    for doc in cat.objects():
+        if not cat._visible(doc, who):
+            continue
+        visible[(doc.name or "").lower()] = doc
+        visible[doc.qname.lower()] = doc
+    unknown = [t for t in _referenced_tables(sql)
+               if t.lower() not in visible
+               and t.lower().split(".")[-1] not in visible]
+    if unknown:
+        return ("not available to this caller: %s. Call select_schema and use "
+                "only the objects it returns." % ", ".join(sorted(unknown)))
+    return None
 
 
 def _catalog() -> Catalog:
@@ -254,6 +357,129 @@ def describe_object(name: str, principal: Optional[str] = None,
 
 
 @_guard
+def run_query(sql: str, principal: Optional[str] = None,
+              roles: Optional[List[str]] = None,
+              max_rows: int = DEFAULT_ROWS) -> Dict[str, Any]:
+    """Run one read-only SELECT and return the rows.
+
+    This is the half that was missing. `select_schema` hands back the DDL and
+    the client's own model writes the SQL -- and then there was nothing to
+    execute it with, so the answer stopped at "here is the query you could
+    run". No API key is involved: the model that wrote the SQL is the one
+    already talking to you.
+
+    Three things are checked before the database sees it. It must be a single
+    statement; it must be a read (`check_read_only`, which refuses writes and
+    anything hiding a second statement in a comment or a literal); and every
+    table it names must be one this principal may see. That last check is why
+    withholding a table from `select_schema` means something.
+    """
+    from .answer import UnsafeSQL, check_read_only, run_sql
+
+    sql = str(sql or "").strip()
+    if not sql:
+        return {"error": "sql is empty"}
+    if len(sql) > MAX_SQL_CHARS:
+        return {"error": f"sql is too long ({len(sql)} chars; max {MAX_SQL_CHARS})"}
+    try:
+        max_rows = max(1, min(int(max_rows), MAX_ROWS))
+    except (TypeError, ValueError):
+        max_rows = DEFAULT_ROWS
+
+    who = _principal(principal, roles)
+    try:
+        sql = check_read_only(sql)
+    except UnsafeSQL as e:
+        return {"error": f"refused: {e}"}
+
+    cat = _catalog()
+    denied = _check_scope(cat, sql, who)
+    if denied:
+        return {"error": denied}
+
+    # One extra row, so "there are more" is a fact rather than a guess at the
+    # boundary -- asking for 50 and getting 50 says nothing on its own.
+    try:
+        cols, rows = run_sql(_engine(), sql, limit=max_rows + 1)
+    except Exception as e:                               # noqa: BLE001
+        # Hand the database's own words back. The generic guard would say
+        # "OperationalError", and the caller here is a model whose next move
+        # is to fix the query -- "no such column: name" *is* the fix, and
+        # withholding it only costs another round trip. Safe to return: the
+        # scope check has already run, so this can only describe objects this
+        # caller may see, in SQL it wrote itself.
+        msg = str(getattr(e, "orig", e)).strip().splitlines()
+        return {"error": "the database rejected this query: %s"
+                         % (msg[0] if msg else type(e).__name__),
+                "sql": sql}
+    truncated = len(rows) > max_rows
+    rows = rows[:max_rows]
+    return {
+        "sql": sql,
+        "columns": cols,
+        "rows": [list(r) for r in rows],
+        "row_count": len(rows),
+        "truncated": truncated,
+        "principal": who.subject if who else None,
+    }
+
+
+@_guard
+def answer(question: str, principal: Optional[str] = None,
+           roles: Optional[List[str]] = None, top_k: int = 6,
+           max_rows: int = DEFAULT_ROWS) -> Dict[str, Any]:
+    """Question in, rows out -- selection, SQL and execution in one call.
+
+    Only useful when this server has its own model configured
+    (`SCHEMAGATE_MCP_PROVIDER` and `SCHEMAGATE_MCP_MODEL`, key from the
+    usual environment variable). Most MCP clients should not want it: the
+    client *is* a model, and it will write better SQL from `select_schema`
+    than a second one bolted on here. It exists for the agent that has no
+    model of its own.
+
+    With nothing configured this does not fail -- it returns the selection
+    and says to write the SQL and call `run_query`, which is the same loop
+    with one fewer model in it.
+    """
+    question = str(question or "").strip()
+    if not question:
+        return {"error": "question is empty"}
+    picked = select_schema(question, principal=principal, roles=roles,
+                           top_k=top_k)
+    if "error" in picked:
+        return picked
+
+    name = os.environ.get("SCHEMAGATE_MCP_PROVIDER")
+    model = os.environ.get("SCHEMAGATE_MCP_MODEL")
+    if not name or not model:
+        return dict(picked, sql=None, rows=None,
+                    next="no model is configured on this server: write the "
+                         "SELECT yourself from prompt_fragment, then call "
+                         "run_query with it. Set SCHEMAGATE_MCP_PROVIDER and "
+                         "SCHEMAGATE_MCP_MODEL to have the server write it.")
+
+    from .ai import providers as _p
+    from .answer import UnsafeSQL, generate_sql
+    classes = {"anthropic": _p.AnthropicProvider, "openai": _p.OpenAIProvider,
+               "gemini": _p.GeminiProvider, "oci": _p.OCIGenAIProvider,
+               "local": _p.LocalProvider}
+    cls = classes.get(name.lower())
+    if cls is None:
+        return dict(picked, error=f"unknown provider {name!r}")
+    try:
+        sql = generate_sql(cls(model=model), question,
+                           picked.get("prompt_fragment", ""),
+                           dialect=picked.get("dialect", ""))
+    except UnsafeSQL as e:
+        return dict(picked, sql=None, rows=None, refused=str(e))
+
+    out = run_query(sql, principal=principal, roles=roles, max_rows=max_rows)
+    if "error" in out:
+        return dict(picked, sql=sql, rows=None, error=out["error"])
+    return dict(picked, **out)
+
+
+@_guard
 def refresh_catalog() -> Dict[str, Any]:
     """Re-reflect the database and swap the index in, atomically.
 
@@ -304,10 +530,14 @@ def health() -> Dict[str, Any]:
 # --- server wiring ---------------------------------------------------------
 
 _INSTRUCTIONS = (
-    "Schema selection for SQL generation. Call select_schema with the "
-    "user's question and, whenever you know it, their identity "
+    "Schema selection and read-only query execution. Call select_schema with "
+    "the user's question and, whenever you know it, their identity "
     "(principal like 'okta:jdoe' and roles). Write SQL only against the "
-    "DDL returned; anything not returned is not available to this caller.")
+    "DDL returned; anything not returned is not available to this caller. "
+    "Then call run_query with that SQL and the same principal and roles to "
+    "get the rows -- it accepts one read-only SELECT, refuses writes, and "
+    "refuses any table this caller may not see. Pass the identity to both: "
+    "run_query scopes on what it is given, not on the earlier call.")
 
 
 def _server_class():
@@ -347,7 +577,7 @@ def create_server(catalog: Optional[Catalog] = None):
             kwargs["port"] = int(port)
     app = cls("schemagate", **kwargs)
     for tool in (select_schema, list_objects, describe_object,
-                 refresh_catalog, health):
+                 run_query, answer, refresh_catalog, health):
         app.tool()(tool)
     return app
 

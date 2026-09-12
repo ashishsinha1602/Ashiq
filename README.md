@@ -694,6 +694,15 @@ pytest tests/test_dialects.py -v
 
 ## Using it from an agent
 
+> **The MCP server trusts the identity it is handed.** `principal` and `roles`
+> come from the client and are not authenticated -- there is no token and no
+> session. Anyone who can reach the transport can claim a role and read what
+> that role may read, and since `run_query` returns rows, that is data, not
+> just schema. Run it over stdio (the caller is your own desktop client), or
+> over HTTP behind something that authenticates the user and sets the
+> principal for them. It is a scoping mechanism, not a lock.
+
+
 If you already have an agent that writes SQL, the fastest way in is to let it
 call schemagate as a tool rather than wiring the library into your code.
 
