@@ -76,6 +76,31 @@ def _fold(token: str) -> str:
                    if not unicodedata.combining(c))
 
 
+def expand_joins(tokens: List[str], vocab=None, max_len: int = 14) -> List[str]:
+    """Add the joined form of each adjacent pair of short words.
+
+    People write product names as they say them -- "my convo", "sign up",
+    "e mail" -- and identifiers write them as one token: `myconvo`,
+    `signup`, `email`. Neither side is wrong, and no description fixes it,
+    because the description is written by a model that never heard the
+    product name. So the *question* also carries `myconvo`, `signup`,
+    `email`. Query side only: documents are left exactly as they were, so
+    the index does not grow and nothing already matching changes rank.
+    """
+    out = list(tokens)
+    for a, b in zip(tokens, tokens[1:]):
+        if not (a.isalpha() and b.isalpha() and len(a) + len(b) <= max_len):
+            continue
+        joined = a + b
+        # With a vocabulary, only joins the schema actually contains are
+        # kept: `myconvo` stays because an identifier says it, `whichmy` goes.
+        # That is what lets the joined form be fed to the vector side too
+        # without stuffing the query with noise.
+        if vocab is None or joined in vocab:
+            out.append(joined)
+    return out
+
+
 def tokenize(text: str) -> List[str]:
     """Split identifiers into comparable tokens.
 

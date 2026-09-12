@@ -559,7 +559,7 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
           <span class="chip on" data-kind="">all</span>
           <span class="chip" data-kind="table">tables</span>
           <span class="chip" data-kind="view">views</span>
-          <input id="objFilter" placeholder="filter objects\u2026" aria-label="filter objects" autocomplete="off">
+          <input id="objFilter" placeholder="filter objects&hellip;" aria-label="filter objects" autocomplete="off">
         </div></header>
       <div id="objList"></div>
     </div>
@@ -1466,7 +1466,25 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
     for (const [t,text] of Object.entries(spec.hints)){
       const d=document.createElement("div"); d.className="hint";
       d.innerHTML=`<code>${esc(t)}</code>`; const ta=document.createElement("textarea"); ta.value=text; ta.rows=Math.max(2, Math.ceil(text.length/36));
-      ta.onchange=()=>{ spec.hints[t]=ta.value; invalidate(); run(); }; d.appendChild(ta); h.appendChild(d);
+      ta.onchange=async()=>{ spec.hints[t]=ta.value; if (API && window.__saveHint) await window.__saveHint(t, ta.value); invalidate(); run(); }; d.appendChild(ta); h.appendChild(d);
+    }
+    if (API) {
+      // Add a hint: an object name and the words people actually use for it.
+      const add = document.createElement("div"); add.className = "hint";
+      add.innerHTML = '<input id="hintName" class="mono" placeholder="object, e.g. public.nylas_campaigns" list="hintNames" style="width:100%">' +
+        '<datalist id="hintNames"></datalist>' +
+        '<textarea id="hintText" rows="2" placeholder="what people call it: MyConvo campaigns, personal-inbox sends…" style="width:100%;margin-top:4px"></textarea>' +
+        '<button id="hintAdd" style="margin-top:4px;width:100%">Add hint</button>';
+      h.appendChild(add);
+      const dl = add.querySelector("#hintNames");
+      for (const o of (window.__objRows || [])) { const op = document.createElement("option"); op.value = o.name; dl.appendChild(op); }
+      add.querySelector("#hintAdd").onclick = async () => {
+        const n = add.querySelector("#hintName").value.trim(), t = add.querySelector("#hintText").value.trim();
+        if (!n || !t) return;
+        const r = await window.__saveHint(n, t);
+        if (r && r.error) return toast(r.error);
+        spec.hints = r.hints || spec.hints; renderRail(); invalidate(); run();
+      };
     }
     renderRoles(); renderTabs();
   }
@@ -2285,7 +2303,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
   async function loadObjects(){
     if (!API) return;
     let out; try { out = await (await fetch(API + "/objects")).json(); } catch(e){ return; }
-    objState.rows = out.objects || [];
+    objState.rows = out.objects || []; window.__objRows = objState.rows;
     const b = $("browser"); if (b) b.hidden = !objState.rows.length;
     paintObjects();
   }
@@ -2295,6 +2313,10 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
     objState.kind = c.dataset.kind; paintObjects();
   };
   window.__loadObjects = loadObjects;
+  window.__saveHint = async (name, text) => {
+    try { return await post("/hints", {action: text ? "set" : "clear", name, text}); }
+    catch (e) { toast(e.message); return {error: e.message}; }
+  };
   loadObjects();
 
   window.__loadConnections = loadConnections; window.__loadModels = loadModels;
