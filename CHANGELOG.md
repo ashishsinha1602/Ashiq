@@ -1,6 +1,57 @@
 # Changelog
 
-## 0.1.35
+## 0.1.36
+
+0.1.35 shipped only the first two entries below (row spacing, and the answer
+kept in view). Everything else in this section was meant for it and landed
+here.
+
+- **Fixed: `postgres://` was rejected.** SQLAlchemy dropped that alias in
+  1.4, but it is what Heroku, Render, Railway, Supabase and the RDS console
+  hand out, and what ends up in a `DATABASE_URL`. Pasting it failed with
+  `Can't load plugin: sqlalchemy.dialects:postgres`, which names a plugin and
+  reads like a missing driver rather than one wrong word. Bare platform
+  schemes are mapped to their SQLAlchemy dialect, driver included:
+  `postgres`/`postgresql` -> `postgresql+psycopg`, `mysql` -> `mysql+pymysql`,
+  `sqlserver`/`mssql` -> `mssql+pyodbc`, `oracle` -> `oracle+oracledb`. A
+  URL that already names a driver is left alone.
+
+- **Changed: a clear message for the legacy SQL Server ODBC driver.** The
+  "SQL Server" driver that ships with Windows cannot bind the parameters the
+  mssql dialect's reflection uses, and fails with `HY104 Invalid precision
+  value (0)` against `INFORMATION_SCHEMA` -- which reads like a broken
+  database. It now says it is the driver, and names the one to install.
+
+- **Fixed: a remembered connection blocked startup.** Replaying it ran before
+  the server started listening, so for the thirty seconds an Autonomous
+  Database takes to reflect, the browser got a refused connection -- which
+  looks like a Studio that failed to start. It replays on a background thread;
+  the port answers in under a second and reports `connecting` meanwhile.
+
+- **Added: Re-catalogue all, and Resync schema.** The first rewrites every
+  description; the second re-reflects the database and keeps the descriptions
+  you have, carrying them across by qualified name. Both were previously only
+  reachable by reconnecting from scratch -- for a wallet, a directory and two
+  passwords. Resync reports what it kept, restored and lost, and counts a
+  description that came back from a database comment as kept, not lost.
+
+- **Fixed: the demo's "Example AI descriptions" toggle showed on a live
+  database.** It was hidden by the connect handler only, so a page loaded
+  against a server already connected -- a replayed connection, or a refresh --
+  showed a control announcing "no model is called on this page" over the
+  user's own tables.
+
+- **Changed: the model choice after connecting leads with the API key.** The
+  local model was the primary button, sold as free with no mention that it
+  downloads about 3 GB, runs on the CPU, and that a 1.5B model writes
+  noticeably weaker descriptions. It is the second option and says so.
+
+- **Changed: the rail says what is true about descriptions.** "Nothing is
+  catalogued yet" over seven Oracle table comments now reads "7 already carry
+  a description."
+
+- **Docs: every subcommand and flag in the README**, plus the environment
+  variables.
 
 - **Fixed: a question that returned rows looked unanswered.** The Answer pane
   renders below the two result panes, and those panes size to their content --
