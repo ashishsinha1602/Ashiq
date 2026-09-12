@@ -338,6 +338,8 @@ class SchemaDescriber:
         if strict_format is None:
             strict_format = str(getattr(provider, "name", "")).startswith("local:")
         self.strict_format = bool(strict_format)
+        #: Replaceable per instance: the Studio appends a team glossary.
+        self.system_prompt = SYSTEM_PROMPT
         self.cache_path = pathlib.Path(cache_path) if cache_path else None
         self.max_columns = max_columns
         self.workers = max(1, int(workers))
@@ -378,7 +380,7 @@ class SchemaDescriber:
             return self._cache[key]
         rendered = _render(doc, self.max_columns)
         try:
-            raw = self.provider.complete(SYSTEM_PROMPT, rendered,
+            raw = self.provider.complete(self.system_prompt, rendered,
                                          max_tokens=self.max_tokens)
         except ProviderError:
             self.failures.append(doc.qname)
@@ -399,7 +401,7 @@ class SchemaDescriber:
         if not is_usable(text, doc, require_aliases=self.strict_format):
             try:
                 retry = self.provider.complete(
-                    SYSTEM_PROMPT,
+                    self.system_prompt,
                     rendered + "\n\nYour previous reply was:\n" +
                     " ".join((raw or "").split())[:400] + "\n\n" + _REPAIR,
                     max_tokens=max(self.max_tokens, 512))

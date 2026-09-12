@@ -23,6 +23,8 @@
 
   const RRF_K = 60;
   const SHADOW_PENALTY = 0.5;
+  const STANDALONE_SHADOW = /_(?:bak|bkp|backup)(?:_?\d{4}_?\d{2}_?\d{2}|_\d{6,8})?$/i;
+  const PARTITION = /_(?:p\d+|\d{4}(?:_?\d{2}){0,2}|y\d{4}(?:m\d{2})?(?:d\d{2})?)$/i;
   const SHADOW_SUFFIXES = ["_bkp", "_backup", "_bak", "_old", "_tmp", "_temp", "_new", "_copy",
     "_archive", "_arch", "_hist", "_stg", "_staging", "_v1", "_v2", "_v3",
     "_prev", "_orig"];
@@ -42,6 +44,29 @@
     for (const [a, b] of FOLD) tok = tok.split(a).join(b);
     return tok.normalize("NFKD").replace(/\p{M}/gu, "");
   }
+  // Ports of embedder.expand_joins and catalog._stem / _BOOST_STOP. The
+  // Python side is the source of truth; tests/test_js_parity.py asserts the
+  // two rank identically on the same fixtures, which is what caught this
+  // file being left behind when the scoring changed.
+  const BOOST_STOP = new Set("of by as at in on to for and or per the a an is are was".split(" "));
+  function stemToken(t) {
+    if (t.length > 4 && t.endsWith("ies")) return t.slice(0, -3) + "y";
+    if (t.length > 4 && t.endsWith("es") && !t.endsWith("ses")) return t.slice(0, -2);
+    if (t.length > 3 && t.endsWith("s") && !t.endsWith("ss")) return t.slice(0, -1);
+    return t;
+  }
+  function expandJoins(tokens, vocab, maxLen = 14) {
+    const out = tokens.slice();
+    for (let i = 0; i + 1 < tokens.length; i++) {
+      const a = tokens[i], b = tokens[i + 1];
+      if (!/^[a-z]+$/.test(a) || !/^[a-z]+$/.test(b)) continue;
+      if (a.length + b.length > maxLen) continue;
+      const joined = a + b;
+      if (!vocab || vocab.has(joined)) out.push(joined);
+    }
+    return out;
+  }
+
   function tokenize(text) {
     text = text.replace(/(?<=[a-z0-9])(?=[A-Z])/g, " ");
     const out = [];
@@ -171,7 +196,7 @@
       this.idf = new Map(); for (const [t, c] of df) this.idf.set(t, Math.log(1 + (n - c + 0.5) / (c + 0.5)));
     }
     scores(query) {
-      const q = tokenize(query);
+      const q = expandJoins(tokenize(query), this.idf);
       return this.tf.map((tf, i) => {
         let s = 0.0;
         for (const t of q) {
@@ -237,6 +262,21 @@
           if (base && base !== q) { shadows.set(q, base); break; }
         }
       }
+      // A backup is a backup with or without its original still present, and
+      // a partition is a copy of its parent. Same rules as catalog.py.
+      if (this.shadowSuffixes.length) {
+        for (const [q, d] of this.docs) {
+          if (shadows.has(q)) continue;
+          const name = (d.name || "").toLowerCase(), sch = d.schema || null;
+          const m = STANDALONE_SHADOW.exec(name);
+          if (m) { shadows.set(q, name.slice(0, m.index) || name); continue; }
+          const p = PARTITION.exec(name);
+          if (p) {
+            const parent = (bySchema.get(sch) || new Map()).get(name.slice(0, p.index));
+            if (parent && parent !== q && !shadows.has(parent)) shadows.set(q, parent);
+          }
+        }
+      }
       return shadows;
     }
     _visible(d, who) { if (!d.roles || !d.roles.length) return true; if (!who) return false; return d.roles.some((r) => who.roles.has(r)); }
@@ -246,7 +286,10 @@
       if (this.stale || !this.order) this.index();
       const allowed = this.order.filter((q) => this._visible(this.docs.get(q), who));
       const allowedSet = new Set(allowed);
-      const qvec = this.embedder.embed([question])[0];
+      const vocab = this.bm25 ? this.bm25.idf : null;
+      const baseToks = tokenize(question);
+      const joins = expandJoins(baseToks, vocab).filter((t) => !baseToks.includes(t));
+      const qvec = this.embedder.embed([question + (joins.length ? " " + joins.join(" ") : "")])[0];
       const hits = this.order.map((q) => ({ q, d: cosineDistance(qvec, this.vecs.get(q)) })).filter((h) => h.d <= 2.0);
       hits.sort((a, b) => a.d - b.d);   // stable, like Python's sort
       const vecRank = new Map(); hits.filter((h) => allowedSet.has(h.q)).forEach((h, i) => vecRank.set(h.q, i));
@@ -254,14 +297,29 @@
       const lexPairs = this.order.map((q, i) => [q, bm[i]]).filter(([q, s]) => allowedSet.has(q) && s > 0);
       lexPairs.sort((a, b) => b[1] - a[1]);
       const lexRank = new Map(); lexPairs.forEach(([q], i) => lexRank.set(q, i));
-      const qTokens = tokenize(question);
+      const qTokens = expandJoins(tokenize(question), vocab);
+      const qStems = new Set(qTokens.filter((t) => t.length > 2 && !BOOST_STOP.has(t)).map(stemToken));
+      let maxIdf = 0.0;
+      if (this.bm25) for (const v of this.bm25.idf.values()) if (v > maxIdf) maxIdf = v;
       const namedIn = (d) => { const nm = tokenize(d.name); if (!nm.length || nm.length > qTokens.length) return false; for (let i = 0; i + nm.length <= qTokens.length; i++) { let ok = true; for (let j = 0; j < nm.length; j++) if (qTokens[i + j] !== nm[j]) { ok = false; break; } if (ok) return true; } return false; };
       const fused = [];
       for (const q of allowed) {
         let s = 0.0;
         if (vecRank.has(q)) s += vw / (RRF_K + vecRank.get(q) + 1);
         if (lexRank.has(q)) s += lw / (RRF_K + lexRank.get(q) + 1);
-        if (s && this.shadows.has(q) && allowedSet.has(this.shadows.get(q)) && !namedIn(this.docs.get(q))) s *= SHADOW_PENALTY;
+        if (s && this.shadows.has(q)
+            && (allowedSet.has(this.shadows.get(q)) || !this.docs.has(this.shadows.get(q)))
+            && !namedIn(this.docs.get(q))) s *= SHADOW_PENALTY;
+        if (s && this.bm25 && maxIdf > 0) {
+          const nameToks = new Set(tokenize(this.docs.get(q).name || "")
+            .filter((t) => t.length > 2 && !BOOST_STOP.has(t)).map(stemToken));
+          let hit = 0.0;
+          for (const t of qStems) if (nameToks.has(t)) hit += this.bm25.idf.get(t) || 0.0;
+          if (hit) {
+            s *= 1.0 + 0.5 * Math.min(1.0, hit / maxIdf);
+            if (qStems.has(stemToken((this.docs.get(q).name || "").toLowerCase()))) s *= 1.2;
+          }
+        }
         if (s) fused.push([q, s]);
       }
       fused.sort((a, b) => b[1] - a[1]);

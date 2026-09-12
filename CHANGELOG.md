@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.1.37
+
+- **Added: saved connections and saved models.** A Studio gets pointed at dev,
+  then a replica, then a warehouse, and switching meant retyping a wallet
+  directory and two passwords every time. Any number of each is now saved by
+  name in `~/.schemagate/store.json` (0600), with a switcher in the header
+  naming the database you are on and listing the rest one click away, and a
+  tabbed Settings drawer -- Connections, Model, Who is asking, CLI -- with the
+  saved lists on top. A saved model keeps its API key, so a restart no longer
+  asks for it again.
+
+- **Added: a schema browser.** Connecting to 1,245 objects used to show the
+  word "connected" and an empty box. Every reflected object is now listed with
+  its kind, column count and description, filterable, click to inspect --
+  between the stat strip and the answer, capped and scrolling inside itself.
+
+- **Fixed: retrieval found the wrong table on a large schema.** Three faults,
+  each general:
+
+  - A rare question word that appears in an object's *name* was under-weighted
+    by rank fusion. `myconvo` occurs in 5 names out of 1,245, matched exactly,
+    and its table still sat seventh behind six that merely said "campaign".
+    Names now carry an IDF-weighted boost, stemmed so "positions" meets
+    `position` and stopworded so "of" cannot hand it to
+    `ref_chart_of_accounts`.
+  - People write product names as they say them -- "my convo", "sign up".
+    Identifiers write them as one token. Questions now also carry the joined
+    form of adjacent pairs, filtered against the index vocabulary so `myconvo`
+    survives and `whichmy` does not, on both the lexical and vector sides.
+  - Backups and partitions out-ranked the tables they copy, carrying identical
+    columns in a shorter document. `_bak`/`_bkp`/`_backup` are demoted even
+    when the original is gone; `contacts_p0217` and `events_2026_07` are
+    demoted when their parent is present.
+
+  Measured on a live 1,245-object schema with no hints: "which my convo
+  campaign worked the best" went from a refusal to an answer, "which users
+  signed up in the last 30 days" from zero rows against `ai_reporter_users` to
+  rows from `users`, "who are my top customers by total invoiced amount" from
+  zero rows to fifty.
+
+- **Added: a glossary, and hints that persist.** Two places for the words a
+  schema cannot know. A hint is one object in your words; a glossary entry is
+  one *word*, prepended to the cataloguing prompt so descriptions use your
+  vocabulary and expanded into questions that mention it. Both stored per
+  database, applied on every connect and resync.
+
+- **Changed: a refusal gets one wider retry.** "The selected tables cannot
+  answer this" nearly always means the right table was ninth and top_k was six.
+
+- **Added: the Studio on the OCI stack.** On the instance's loopback, reached
+  over the SSH you already have (`terraform output studio`). Not public: the
+  Studio has no login, and anyone who could reach it could read the schema.
+
+- **Docs: a Quick start** -- install, connect, catalogue, ask -- and what to do
+  when a question picks the wrong table.
+
 ## 0.1.36
 
 0.1.35 shipped only the first two entries below (row spacing, and the answer

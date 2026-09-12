@@ -46,6 +46,7 @@ write_files:
       SCHEMAGATE_ADB_DISPLAY_NAME=${adb_display_name}
       SCHEMAGATE_ADB_PASSWORD='${adb_admin_password}'
       SCHEMAGATE_VERSION=${schemagate_version}
+      SCHEMAGATE_STUDIO_PORT=${studio_port}
   - path: /etc/schemagate/catalog.json
     content: |
       {"restrict": {}, "hint": {}, "describe": {}}
@@ -299,6 +300,32 @@ write_files:
       User=opc
       [Install]
       WantedBy=multi-user.target
+  - path: /etc/systemd/system/schemagate-studio.service
+    content: |
+      [Unit]
+      Description=schemagate Studio
+      After=network-online.target schemagate-resolve-db.service
+      Wants=network-online.target schemagate-resolve-db.service
+      [Service]
+      EnvironmentFile=/etc/schemagate.env
+      # 127.0.0.1, deliberately. The Studio has no login: anyone who can reach
+      # it can read the whole schema, and -- were connecting left on -- hand it
+      # a URL and have this instance open a database only it can see. Bound to
+      # loopback it is reachable exactly by whoever can already SSH in:
+      #     ssh -L 8770:127.0.0.1:8770 opc@<ip>
+      # then http://127.0.0.1:8770 in your own browser. `--no-connect` is
+      # belt and braces: the default already refuses off-loopback binds, and
+      # this says so out loud for anyone who edits the address.
+      ExecStart=/bin/sh -c 'exec /opt/schemagate/bin/schemagate studio \
+        --url "$SCHEMAGATE_DATABASE_URL" \
+        --host 127.0.0.1 --port "$SCHEMAGATE_STUDIO_PORT" \
+        --no-browser --no-connect \
+        --config /etc/schemagate/catalog.json'
+      Restart=always
+      RestartSec=5
+      User=opc
+      [Install]
+      WantedBy=multi-user.target
 runcmd:
   # The database lookup goes first, not last. Oracle takes several minutes to
   # provision an Autonomous Database, and none of that has to wait for pip:
@@ -322,6 +349,7 @@ runcmd:
   # the whole install running alongside it. --no-block so a database that is
   # still provisioning does not hold cloud-init open.
   - systemctl enable schemagate
+  - systemctl enable schemagate-studio
   - systemctl start --no-block schemagate
   # Then cataloguing, behind the endpoint -- its retry loop would otherwise
   # hold the MCP server down for twelve minutes waiting on IAM propagation.

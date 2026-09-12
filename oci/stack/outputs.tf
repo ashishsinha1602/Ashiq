@@ -6,6 +6,10 @@ output "mcp_url" {
 output "ssh" {
   value = "ssh opc@${oci_core_public_ip.mcp.ip_address}"
 }
+output "studio" {
+  description = "The Studio runs on the instance's loopback. Tunnel to it, then open http://127.0.0.1:${var.studio_port}"
+  value       = "ssh -L ${var.studio_port}:127.0.0.1:${var.studio_port} opc@${oci_core_public_ip.mcp.ip_address}"
+}
 output "next_step" {
   value = "pip install schemagate  •  https://pypi.org/project/schemagate/"
 }

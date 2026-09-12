@@ -45,6 +45,33 @@ _CONNECT_SAMPLE_BUDGET = 10.0
 
 
 
+def _label_url(spec):
+    """A URL to name a saved spec by, resolved the same way connect() does."""
+    try:
+        from .connect import resolve
+        url, _ = resolve(spec if spec.get("kind") else str(spec.get("url") or ""))
+        return url
+    except Exception:                                    # noqa: BLE001
+        return str(spec.get("url") or "")
+
+
+def _label_dialect(spec):
+    kind = str(spec.get("kind") or "url").lower()
+    if kind in ("wallet", "oracle-wallet", "ords"):
+        return "oracle"
+    if kind in ("url", "jdbc"):
+        head = _label_url(spec).partition("://")[0].partition("+")[0]
+        return head or "database"
+    return kind
+
+
+def _same_target(a, b):
+    """Same database, ignoring the fields that are not about *where*."""
+    keys = ("kind", "url", "jdbc", "wallet", "alias", "host", "port",
+            "database", "service_name", "user", "schema")
+    return all(str(a.get(k) or "") == str(b.get(k) or "") for k in keys)
+
+
 def _describe_connection(url: str, body: Dict[str, Any], dialect: str) -> str:
     """`appdevdb on devrdsproxy.proxy-... as devadmin` -- never the password."""
     try:
@@ -208,8 +235,33 @@ class StudioState:
         try:
             picked["sql"] = generate_sql(provider, question, fragment, dialect)
         except UnsafeSQL as e:
-            picked["answer_error"] = f"refused the generated SQL: {e}"
-            return picked
+            # "The selected tables cannot answer this" is nearly always
+            # selection, not the model: the right table was ninth and top_k
+            # was six. Widen once before reporting it -- on the question that
+            # motivated this the answer was there at fifteen.
+            # Any first refusal -- "cannot answer", "returned nothing" -- gets
+            # one wider go. Both mean the same thing here: the table it
+            # needed was not in the six it was shown.
+            k = int(body.get("top_k") or 6)
+            if k < 15:
+                wider = self.select(dict(body, top_k=max(15, 2 * k)))
+                if "error" not in wider:
+                    try:
+                        wider["sql"] = generate_sql(provider, question, wider["ddl"], dialect)
+                        wider["widened_to"] = max(15, 2 * k)
+                        picked = wider
+                    except UnsafeSQL as e2:
+                        picked["answer_error"] = f"refused the generated SQL: {e2}"
+                        return picked
+                    except Exception as e2:               # noqa: BLE001
+                        picked["answer_error"] = f"{type(e2).__name__}: {e2}"
+                        return picked
+                else:
+                    picked["answer_error"] = f"refused the generated SQL: {e}"
+                    return picked
+            else:
+                picked["answer_error"] = f"refused the generated SQL: {e}"
+                return picked
         except Exception as e:                            # noqa: BLE001
             picked["answer_error"] = f"{type(e).__name__}: {e}"
             return picked
@@ -271,11 +323,16 @@ class StudioState:
                     "error": self.provider_error} if prompt else {
                     "paste_prompt": "", "pending": 0, "error": self.provider_error}
 
-        from .ai import SchemaDescriber
+        from .ai import SchemaDescriber, describe as _d
+        g = self._glossary()
+        system = _d.SYSTEM_PROMPT
+        if g:
+            system += ("\n\nThis team's own vocabulary -- use these words where they apply:\n" +
+                       "\n".join(f"- {t}: {m}" for t, m in g.items()))
         try:
-            written = cat.describe(
-                SchemaDescriber(provider, cache_path=self._description_cache()),
-                only_missing=only_missing)
+            describer = SchemaDescriber(provider, cache_path=self._description_cache())
+            describer.system_prompt = system
+            written = cat.describe(describer, only_missing=only_missing)
         except Exception as e:                            # noqa: BLE001
             return {"error": f"{type(e).__name__}: {e}"}
         cat.index()
@@ -354,6 +411,169 @@ class StudioState:
                         "cat.index()"),
                     "studio": "# connect from the page: Database -> Oracle over HTTPS (ORDS)",
                 }}
+
+    def _hints_path(self) -> Optional[str]:
+        if not self.connection_label:
+            return None
+        import hashlib
+        from . import remember
+        key = hashlib.sha256(self.connection_label.encode("utf-8")).hexdigest()[:16]
+        return str(remember.path().parent / "hints" / (key + ".json"))
+
+    def _load_hints(self) -> int:
+        """Apply this database's saved hints to the catalog. Returns how many."""
+        p = self._hints_path()
+        if not p:
+            return 0
+        try:
+            saved = json.loads(pathlib.Path(p).read_text("utf-8"))
+        except (OSError, ValueError):
+            return 0
+        n = 0
+        for name, text in (saved or {}).items():
+            if name in self.catalog._docs and text:
+                self.catalog.hint(name, text)
+                n += 1
+        if n:
+            self.catalog.index()
+        return n
+
+    def _save_hints(self) -> None:
+        p = self._hints_path()
+        if not p:
+            return
+        hints = {q: d.hint for q, d in self.catalog._docs.items() if d.hint}
+        try:
+            pathlib.Path(p).parent.mkdir(parents=True, exist_ok=True)
+            pathlib.Path(p).write_text(json.dumps(hints, indent=2, sort_keys=True), "utf-8")
+        except OSError:
+            pass
+
+    def _glossary_path(self) -> Optional[str]:
+        p = self._hints_path()
+        return p.replace("hints", "glossary", 1) if p else None
+
+    def _glossary(self) -> Dict[str, str]:
+        p = self._glossary_path()
+        if not p:
+            return {}
+        try:
+            g = json.loads(pathlib.Path(p).read_text("utf-8"))
+            return {str(k).strip(): str(v).strip() for k, v in (g or {}).items() if k and v}
+        except (OSError, ValueError):
+            return {}
+
+    def glossary(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Product vocabulary: term -> what it means in this schema.
+
+        Per-table hints fix one table. A glossary fixes a *word*: "MyConvo"
+        means personal-inbox campaigns, "customer" means a row in contacts,
+        "NextGen" means bulk sends. It is applied in two places -- the
+        describe prompt, so every description the model writes uses the
+        team's words; and the question, so a term in a question also carries
+        its meaning into retrieval. Stored per database next to hints.
+        """
+        g = self._glossary()
+        action = str(body.get("action") or "list")
+        term = str(body.get("term") or "").strip()
+        if action == "set" and term and body.get("meaning"):
+            g[term] = str(body["meaning"]).strip()
+        elif action == "clear" and term:
+            g.pop(term, None)
+        if action in ("set", "clear"):
+            p = self._glossary_path()
+            if p:
+                try:
+                    pathlib.Path(p).parent.mkdir(parents=True, exist_ok=True)
+                    pathlib.Path(p).write_text(json.dumps(g, indent=2, sort_keys=True), "utf-8")
+                except OSError:
+                    pass
+        return {"glossary": g}
+
+    def _expand_question(self, question: str) -> str:
+        """Append the meaning of every glossary term the question mentions."""
+        g = self._glossary()
+        if not g:
+            return question
+        low = question.lower()
+        extra = [m for t, m in g.items()
+                 if t.lower() in low or t.lower().replace(" ", "") in low.replace(" ", "")]
+        return question + (" " + " ".join(extra) if extra else "")
+
+    def hints(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Human vocabulary for this database. The cheapest accuracy lever.
+
+        'MyConvo' is what a product calls the thing the schema calls
+        `nylas_campaigns`; no model will guess that, and no amount of
+        cataloguing recovers it. A hint is indexed text that outranks any
+        generated description, and now it is stored per database and applied
+        on every connect and resync, instead of living in the page and dying
+        with it.
+        """
+        action = str(body.get("action") or "list")
+        name = str(body.get("name") or "").strip()
+        if action in ("set", "clear"):
+            if name not in self.catalog._docs:
+                return {"error": "no object named %r" % name}
+            self.catalog.hint(name, str(body.get("text") or "") if action == "set" else "")
+            self.catalog.index()
+            self._save_hints()
+        return {"hints": {q: d.hint for q, d in self.catalog._docs.items() if d.hint}}
+
+    def connections(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Saved connections: list, connect to one by name, or forget one."""
+        from . import remember
+        action = str(body.get("action") or "list")
+        name = str(body.get("name") or "")
+        if action == "connect":
+            spec = remember.get_connection(name)
+            if not spec:
+                return {"error": "no saved connection named %r" % name}
+            out = self.connect(dict(spec, name=name))
+            if out.get("error"):
+                return out
+        elif action == "forget":
+            remember.forget_connection(name)
+        elif action == "save" and self.last_connect:
+            remember.save_connection(name or self.connection_label, self.last_connect)
+        rows = []
+        for c in remember.list_connections():
+            spec = c.get("spec") or {}
+            rows.append({"name": c.get("name"),
+                         "kind": spec.get("kind") or "url",
+                         "label": _describe_connection(
+                             _label_url(spec), spec, _label_dialect(spec)),
+                         "current": bool(self.last_connect)
+                                    and _same_target(spec, self.last_connect)})
+        return {"connections": rows,
+                "current": self.connection_label if self.connected else ""}
+
+    def models(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Saved models: list, use one by name, save the current one, forget one."""
+        from . import remember
+        action = str(body.get("action") or "list")
+        name = str(body.get("name") or "")
+        if action == "use":
+            cfg = remember.get_model(name)
+            if not cfg:
+                return {"error": "no saved model named %r" % name}
+            self.settings.update(cfg)
+        elif action == "save":
+            cfg = {k: body.get(k, self.settings.get(k))
+                   for k in ("provider", "model", "api_key", "rerank", "answer")}
+            auto = "%s:%s" % (cfg.get("provider"), cfg.get("model"))
+            if not remember.save_model(name or auto, cfg):
+                return {"error": "a model needs a provider and a model id"}
+            self.settings.update({k: v for k, v in cfg.items() if v not in (None, "")})
+        elif action == "forget":
+            remember.forget_model(name)
+        cur = (self.settings.get("provider"), self.settings.get("model"))
+        rows = [{"name": m.get("name"), "provider": m.get("provider"),
+                 "model": m.get("model"), "has_key": bool(m.get("api_key")),
+                 "answer": bool(m.get("answer")), "rerank": bool(m.get("rerank")),
+                 "current": (m.get("provider"), m.get("model")) == cur}
+                for m in remember.list_models()]
+        return {"models": rows, "settings": self.describe_settings()}
 
     def resync(self) -> Dict[str, Any]:
         """Re-reflect the same database, keeping the descriptions.
@@ -542,10 +762,11 @@ class StudioState:
         # this sits after the bootstrap rather than beside the form handler.
         self.last_connect = dict(body)
         self.connection_label = _describe_connection(url, body, engine.dialect.name)
+        self._load_hints()
         from . import remember
-        self.remembered = remember.save(
-            body, allow=self.remember_connection or bool(body.get("remember"))
-        ) is not None
+        want = self.remember_connection or bool(body.get("remember"))
+        self.remembered = bool(want and remember.save_connection(
+            str(body.get("name") or self.connection_label), body))
         self.title = "Your database"
         # Say what is actually true. Oracle and PostgreSQL both carry table
         # comments, so a fresh reflection often arrives already part-described
@@ -582,6 +803,7 @@ class StudioState:
         if not question:
             return {"error": "question is empty"}
         top_k = max(1, min(int(body.get("top_k") or 6), 50))
+        question = self._expand_question(question)
         who = None
         if body.get("principal"):
             who = Principal(str(body["principal"]),
@@ -672,6 +894,16 @@ def _handler(state: StudioState):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif self.path == "/api/objects":
+                # The whole catalog, for the browser. Metadata only -- the
+                # same promise select() makes -- and no DDL, which is what
+                # keeps 1,245 objects to a couple of hundred kilobytes.
+                docs = state.catalog._docs.values()
+                self._json(200, {"total": len(state.catalog._docs), "objects": [
+                    {"name": d.qname, "kind": str(d.kind or "").lower(),
+                     "schema": d.schema or "", "columns": len(d.columns),
+                     "description": (d.hint or d.description or "").split(" | ")[0]}
+                    for d in sorted(docs, key=lambda d: (str(d.schema or ""), d.name))]})
             elif self.path == "/api/health":
                 self._json(200, {"status": "ok", "objects": len(state.catalog._docs)})
             elif self.path == "/api/settings":
@@ -700,7 +932,9 @@ def _handler(state: StudioState):
         def do_POST(self):
             if self.path not in ("/api/select", "/api/answer", "/api/settings",
                                  "/api/describe", "/api/apply-descriptions",
-                                 "/api/connect", "/api/resync"):
+                                 "/api/connect", "/api/resync",
+                                 "/api/connections", "/api/models", "/api/hints",
+                                 "/api/glossary"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -717,6 +951,14 @@ def _handler(state: StudioState):
                     return self._json(200, state.apply_descriptions(payload))
                 if self.path == "/api/resync":
                     return self._json(200, state.resync())
+                if self.path == "/api/connections":
+                    return self._json(200, state.connections(payload))
+                if self.path == "/api/hints":
+                    return self._json(200, state.hints(payload))
+                if self.path == "/api/glossary":
+                    return self._json(200, state.glossary(payload))
+                if self.path == "/api/models":
+                    return self._json(200, state.models(payload))
                 if self.path == "/api/connect":
                     return self._json(200, state.connect(payload))
                 return self._json(200, state.select(payload))
@@ -848,7 +1090,11 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
     saved = None
     if not url and not demo and state.allow_connect:
         from . import remember
-        saved = remember.load()
+        saved = remember.default_connection()
+        # And the model: a key saved once should not be typed again either.
+        model = remember.default_model()
+        if model:
+            state.settings.update(model)
 
     server = serve(state, host, port, open_browser)
 

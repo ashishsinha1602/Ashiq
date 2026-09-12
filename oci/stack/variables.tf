@@ -117,6 +117,12 @@ variable "ssh_cidr" {
     error_message = "Refusing 0.0.0.0/0 for SSH."
   }
 }
+variable "studio_port" {
+  description = "Port the Studio listens on, on the instance's loopback. Reach it with: ssh -L 8770:127.0.0.1:8770 opc@<ip>"
+  type        = number
+  default     = 8770
+}
+
 variable "mcp_port" {
   type    = number
   default = 8765

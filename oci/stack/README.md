@@ -186,3 +186,32 @@ the VM (`ssh opc@<ip>`); the service restarts on change:
 `sudo systemctl restart schemagate`. Narrow `allowed_cidr` before pointing
 anything real at it — the endpoint has no auth of its own; identity comes from
 the `principal` each call passes.
+
+## The Studio on this instance
+
+The stack runs two things: the MCP server, on the port you chose, reachable
+from anywhere your security list allows; and the Studio, on the instance's
+**loopback only**.
+
+That asymmetry is deliberate. The Studio has no login. Anyone who could reach
+it could read your whole schema, and — if connecting from the page were left
+on — hand it a URL and have the instance open a database only it can see. So
+it listens on 127.0.0.1 and you bring it to your own browser over the SSH you
+already have:
+
+```bash
+ssh -L 8770:127.0.0.1:8770 opc@<instance ip>     # terraform output studio
+```
+
+Then open <http://127.0.0.1:8770>. It is already pointed at the database the
+stack provisioned; nothing to connect.
+
+```bash
+sudo systemctl status schemagate-studio          # is it up
+sudo journalctl -u schemagate-studio -f          # what it is doing
+```
+
+Change the port with the `studio_port` variable (Advanced, in Resource
+Manager). Opening it to the internet is not a supported configuration: bind it
+elsewhere and `--no-connect` still refuses page-driven connects, but the
+schema itself would be public.

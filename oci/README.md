@@ -51,3 +51,13 @@ of it. It has not been applied end to end yet; the Cloud Shell route has.
 The Oracle dialect and the native `VECTOR` store are certified live on Oracle AI
 Database 26ai — `scripts/certify_dialect.py` and `SCHEMAGATE_ORACLE_DSN` in
 TESTING.md.
+
+## The Studio
+
+The stack also runs the Studio, on the instance's loopback. Tunnel to it:
+
+```bash
+ssh -L 8770:127.0.0.1:8770 opc@<instance ip>
+```
+
+then open <http://127.0.0.1:8770>. See `stack/README.md` for why it is not public.

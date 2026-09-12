@@ -8,11 +8,12 @@ names -- the single biggest cause of unrunnable generated SQL.
 """
 from __future__ import annotations
 
+import re
 import math
 from collections import Counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
-from .embedder import Embedder, HashingEmbedder, tokenize
+from .embedder import Embedder, HashingEmbedder, tokenize, expand_joins
 from .identity import Principal
 from .models import ObjectDoc, Scored, Selection, allowed
 from .stores.memory import MemoryStore
@@ -53,6 +54,21 @@ _LAYER_PREFIXES = ("dim_", "fact_", "fct_", "f_", "d_", "v_", "vw_", "view_",
                    "bridge_", "br_", "tbl_", "t_", "agg_", "mv_")
 
 
+#: Words that appear inside identifiers as glue, never as meaning.
+_BOOST_STOP = frozenset("of by as at in on to for and or per the a an is are was".split())
+
+
+def _stem(t: str) -> str:
+    """Just enough to let a plural meet its singular. Not a stemmer."""
+    if len(t) > 4 and t.endswith("ies"):
+        return t[:-3] + "y"
+    if len(t) > 4 and t.endswith("es") and not t.endswith("ses"):
+        return t[:-2]
+    if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
+        return t[:-1]
+    return t
+
+
 def _named_in(question_tokens: List[str], doc: ObjectDoc) -> bool:
     """True if the question spells out this object's name.
 
@@ -85,7 +101,7 @@ class _BM25:
         self.idf = {t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()}
 
     def scores(self, query: str) -> List[float]:
-        q = tokenize(query)
+        q = expand_joins(tokenize(query), vocab=self.idf)
         out = []
         for i, tf in enumerate(self.tf):
             s = 0.0
@@ -282,7 +298,54 @@ class Catalog:
         self._stale = False
         return self
 
+    #: The few suffixes that mean "a backup" with no room for doubt, with or
+    #: without a date stamp, and with or without the original still in the
+    #: schema. Deliberately NOT `_old`, `_copy`, `_archive`, `_prev`: a lone
+    #: `account_old` is often a real table (the tests say so), and those keep
+    #: needing a base. But `ecm_template_link_bak_20260722` is never the table
+    #: anyone wants, and with its original gone it out-ranked the live tables
+    #: on a 1,245-object schema because its columns matched the question just
+    #: as well. Honours `shadow_suffixes=()` like the base rule does.
+    _STANDALONE_SHADOW = re.compile(
+        r"_(?:bak|bkp|backup)(?:_?\d{4}_?\d{2}_?\d{2}|_\d{6,8})?$", re.I)
+
+    #: Table partitions: `contacts_p0217`, `events_2026_07`, `sales_y2025m03`.
+    #: Postgres and Oracle both expose them as ordinary tables, and each one
+    #: carries the parent's exact columns in a shorter document -- so on a
+    #: partitioned schema the partitions out-rank the parent for every
+    #: question that names it. Demoted only when the parent is present in
+    #: the same schema, like every other suffix rule.
+    _PARTITION = re.compile(
+        r"_(?:p\d+|\d{4}(?:_?\d{2}){0,2}|y\d{4}(?:m\d{2})?(?:d\d{2})?)$", re.I)
+
     def _find_shadows(self) -> Dict[str, str]:
+        found = self._find_shadows_by_base()
+        if not self.shadow_suffixes:
+            return found
+        by_schema: Dict[tuple, str] = {}
+        for q, d in self._docs.items():
+            by_schema[(d.schema, (d.name or "").lower())] = q
+        for q, d in self._docs.items():
+            if q in found:
+                continue
+            m = self._PARTITION.search((d.name or "").lower())
+            if not m:
+                continue
+            parent = by_schema.get((d.schema, (d.name or "").lower()[:m.start()]))
+            if parent and parent != q and parent not in found:
+                found[q] = parent
+        for q, d in self._docs.items():
+            if q in found:
+                continue
+            m = self._STANDALONE_SHADOW.search(d.name or "")
+            if m:
+                # No base to point at: the stem is recorded so shadows() still
+                # says what it is a copy of, and the penalty below treats a
+                # base that is not in the catalog as "always demote".
+                found[q] = (d.name or "")[:m.start()] or d.name
+        return found
+
+    def _find_shadows_by_base(self) -> Dict[str, str]:
         """Map each backup/staging-style object to the real object it shadows.
 
         Two patterns, both requiring the real object to exist:
@@ -384,7 +447,14 @@ class Catalog:
         allowed = [q for q in self._order if self._visible(self._docs[q], principal)]
         allowed_set = set(allowed)
 
-        qvec = self.embedder.embed([question])[0]
+        # The joined forms confirmed against the index vocabulary go to the
+        # vector side as well. Without this `myconvo` scored on BM25 alone and
+        # rank fusion let a table that merely said "campaign" win.
+        _vocab = self._bm25.idf if self._bm25 is not None else None
+        _max_idf = max(self._bm25.idf.values()) if (self._bm25 is not None and self._bm25.idf) else 0.0
+        _base = tokenize(question)
+        _joins = [t for t in expand_joins(_base, vocab=_vocab) if t not in _base]
+        qvec = self.embedder.embed([question + (" " + " ".join(_joins) if _joins else "")])[0]
         vec_hits = self.store.search(self._ns, qvec, k=len(self._order) or 1,
                                      max_distance=2.0)
         vec_rank = {h["qname"]: i for i, h in enumerate(
@@ -401,7 +471,8 @@ class Catalog:
             return {q: i for i, (q, _) in enumerate(pairs)}
 
         lex_rank = _rank(self._bm25)
-        q_tokens = tokenize(question)
+        q_tokens = expand_joins(tokenize(question), vocab=_vocab)
+        _q_stems = {_stem(t) for t in q_tokens if len(t) > 2 and t not in _BOOST_STOP}
 
         fused: Dict[str, float] = {}
         for q in allowed:
@@ -415,9 +486,31 @@ class Catalog:
             # Demote it -- only while the object it shadows is visible to
             # this caller, so scoping can never make a shadow vanish along
             # with its base.
-            if (s and q in self._shadows and self._shadows[q] in allowed_set
+            if (s and q in self._shadows
+                    and (self._shadows[q] in allowed_set
+                         or self._shadows[q] not in self._docs)
                     and not _named_in(q_tokens, self._docs[q])):
                 s *= SHADOW_PENALTY
+            # A rare question word that is *in the object's name* is the
+            # strongest signal there is, and rank fusion under-weights it:
+            # `myconvo` appears in 5 names out of 1,245, matched the question
+            # exactly, and the table still sat seventh behind six that merely
+            # said "campaign". Weighted by IDF so a word in every other name
+            # earns nothing, capped so it reorders the neighbourhood rather
+            # than the page, and a little more when the whole name is the
+            # word -- "users" should find `users` before `ai_reporter_users`.
+            if s and self._bm25 is not None and _max_idf > 0:
+                # Stemmed lightly so "positions" meets `position`, and never
+                # on filler: "of" is in two names out of forty, which made it
+                # the rarest word in "end of day positions" and handed the
+                # boost to `ref_chart_of_accounts`.
+                name_toks = {_stem(t) for t in tokenize(self._docs[q].name or "")
+                             if len(t) > 2 and t not in _BOOST_STOP}
+                hit = sum(self._bm25.idf.get(t, 0.0) for t in _q_stems & name_toks)
+                if hit:
+                    s *= 1.0 + 0.5 * min(1.0, hit / _max_idf)
+                    if _stem((self._docs[q].name or "").lower()) in _q_stems:
+                        s *= 1.2
             if s:
                 fused[q] = s
 

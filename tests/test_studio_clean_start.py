@@ -281,7 +281,13 @@ def test_identity_and_model_are_configuration_not_screen_furniture():
     The working screen is a question and its answer."""
     html = _served_page(_state())
     assert 'id="settingsDrawer"' in html and 'id="settingsBtn"' in html
-    assert 'for (const id of ["whoPanel", "modelPanel", "recipePanel"])' in html
+    # The drawer is tabbed now, and connecting moved into it alongside the
+    # rest of the configuration -- so the list it moves is data, not a
+    # literal. What must stay true is that each of these panels is moved into
+    # the drawer body rather than left in the rail.
+    assert "const TABS = [" in html
+    for panel in ("connectPanel", "modelPanel", "whoPanel", "recipePanel"):
+        assert f'["{panel}"' in html or f'["{panel}",' in html or f'"{panel}"' in html, panel
     assert "body.appendChild(el)" in html
 
 
