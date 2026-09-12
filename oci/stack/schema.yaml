@@ -14,7 +14,7 @@ variableGroups:
   - title: Instance
     variables: [ssh_public_key, instance_shape, instance_ocpus, instance_memory_gbs, availability_domain, allowed_cidr, ssh_cidr, mcp_port]
   - title: Advanced
-    variables: [schemagate_version]
+    variables: [schemagate_version, studio_port]
 variables:
   schemagate_version:
     type: string
@@ -88,6 +88,14 @@ variables:
     required: false
     dependsOn: { compartmentId: "${compartment_ocid}" }
   mcp_port: { type: number, title: MCP port, default: 8765 }
+  studio_port:
+    type: number
+    title: Studio port (loopback only)
+    description: >-
+      The Studio has no login, so it listens on the instance's loopback only.
+      Reach it with: ssh -L 8770:127.0.0.1:8770 opc@<instance ip>
+    default: 8770
 outputs:
   mcp_url: { title: MCP endpoint, type: link }
   catalogued_with: { title: Cataloguing, type: string }
+  studio: { title: Studio (SSH tunnel), type: string }

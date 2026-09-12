@@ -183,6 +183,46 @@ pip install 'schemagate[anthropic]'    'schemagate[openai]'      'schemagate[gem
 pip install 'schemagate[huggingface]'
 ```
 
+## Quick start
+
+```bash
+pip install schemagate            # add an extra for your driver, below
+schemagate studio                 # opens http://127.0.0.1:8770
+```
+
+Then, in the page:
+
+1. **Connect.** Paste a URL — `postgres://…`, `postgresql://…`, `mysql://…`,
+   `oracle://…` and a JDBC string all work, as does the wallet form for an
+   Autonomous Database. Tick **Save this connection** and give it a name and
+   the next start reconnects on its own.
+2. **Catalogue.** *Settings → Model* → pick a provider, paste a key, **Save
+   model** (it is saved, so a restart does not ask again). Then **Catalogue
+   this database** in the rail. One sentence per object, cached to disk, so a
+   second run costs nothing.
+3. **Ask.** Type a question in your own words. You get the objects that answer
+   it, the DDL a model would receive, the SQL, and the rows.
+
+Drivers come as extras — `schemagate[postgres]`, `[oracle]`, `[mysql]`,
+`[mssql]`, or `schemagate[all]` for the lot:
+
+```bash
+pip install 'schemagate[postgres]'
+```
+
+### When a question picks the wrong table
+
+Two levers, both per database and both applied on every reconnect:
+
+* **Hints** (rail → Hints): one object, in your words. *"MyConvo campaigns:
+  personal-inbox sends from a user's own mailbox."*
+* **Glossary** (`POST /api/glossary`): one *word*, everywhere. A term here is
+  fed to the cataloguing prompt, so every description uses your vocabulary,
+  and expanded into questions that mention it.
+
+A hint beats a generated description everywhere, and neither needs
+re-cataloguing.
+
 ## Commands
 
 Every subcommand, and what it is for. `schemagate <command> --help` prints the
