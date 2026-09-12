@@ -322,8 +322,11 @@
         for (const [q, d] of this.docs) {
           if (shadows.has(q)) continue;
           const name = (d.name || "").toLowerCase(), sch = d.schema || null;
+          // m.index > 0: the suffix must be a suffix *of* something. A table
+          // named exactly `_backup` has an empty stem and used to be recorded
+          // as a copy of itself. Same rule as catalog.py.
           const m = STANDALONE_SHADOW.exec(name);
-          if (m) { shadows.set(q, name.slice(0, m.index) || name); continue; }
+          if (m && m.index > 0) { shadows.set(q, name.slice(0, m.index)); continue; }
           const p = PARTITION.exec(name);
           if (p) {
             const parent = (bySchema.get(sch) || new Map()).get(name.slice(0, p.index));
