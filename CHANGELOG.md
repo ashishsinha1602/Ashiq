@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.35
+## 0.1.36
+
+0.1.35 shipped only the first two entries below (row spacing, and the answer
+kept in view). Everything else in this section was meant for it and landed
+here.
 
 - **Fixed: `postgres://` was rejected.** SQLAlchemy dropped that alias in
   1.4, but it is what Heroku, Render, Railway, Supabase and the RDS console
