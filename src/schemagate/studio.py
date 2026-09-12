@@ -452,6 +452,18 @@ class StudioState:
             # same machine can almost always reach Database Actions on 443,
             # so say which door is open instead of leaving someone to
             # re-check a wallet that was never the problem.
+            # The ancient "SQL Server" driver still shipped with Windows binds
+            # parameters in a way the mssql dialect's reflection queries trip
+            # over, and it surfaces as HY104 / "Invalid precision value (0)"
+            # against INFORMATION_SCHEMA -- which reads like a broken database
+            # rather than a driver that is twenty years past its use. It is
+            # also what someone gets by default, because it is the only one
+            # present until Microsoft's is installed deliberately.
+            if "HY104" in msg or "Invalid precision value" in msg:
+                msg += ("  |  This is the ODBC driver, not the database. The "
+                        "legacy 'SQL Server' driver cannot reflect a schema. "
+                        "Install 'ODBC Driver 18 for SQL Server' from Microsoft "
+                        "and set Driver to it.")
             if ("DPY-6005" in msg or "DPY-4011" in msg) and "oracle" in url.lower():
                 msg += ("  |  This is the network, not the wallet: nothing "
                         "reached port 1522. If Database Actions opens in your "

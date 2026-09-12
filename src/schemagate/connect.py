@@ -26,6 +26,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import parse_qsl, quote_plus, urlsplit
 
 __all__ = ["resolve", "from_jdbc", "oracle_wallet", "recipe", "redact",
+           "normalise_scheme",
            "SUPPORTED", "ConnectError"]
 
 #: What the Studio form offers. Each is a real driver that has to be installed
@@ -309,6 +310,37 @@ def tns_aliases(wallet_dir: str) -> "list[str]":
 # the one entry point
 # --------------------------------------------------------------------------
 
+#: Scheme aliases that are not SQLAlchemy dialects but are what people are
+#: given. `postgres://` is the big one: it is what Heroku, Render, Railway,
+#: Supabase and the AWS RDS console all hand out, and what ends up in a
+#: `DATABASE_URL`. SQLAlchemy dropped the alias in 1.4, so pasting the URL
+#: your platform gave you fails with `Can't load plugin:
+#: sqlalchemy.dialects:postgres` -- which names a plugin, and reads like a
+#: missing driver rather than one wrong character. Translating it is exactly
+#: what this module is for.
+_SCHEME_ALIASES = {
+    "postgres": "postgresql+psycopg",
+    "postgresql": "postgresql+psycopg",
+    "mysql": "mysql+pymysql",
+    "mariadb": "mysql+pymysql",
+    "sqlserver": "mssql+pyodbc",
+    "mssql": "mssql+pyodbc",
+    "oracle": "oracle+oracledb",
+}
+
+
+def normalise_scheme(url: str) -> str:
+    """Map a platform's scheme onto a SQLAlchemy one, driver and all.
+
+    Only the bare schemes are touched. Anything that already names a driver
+    (`postgresql+asyncpg://`) is the caller being specific, and is left alone.
+    """
+    head, sep, rest = url.partition("://")
+    if not sep or "+" in head:
+        return url
+    return _SCHEME_ALIASES.get(head.lower(), head) + "://" + rest
+
+
 def resolve(spec: "str | Mapping[str, Any]") -> Tuple[str, Dict[str, Any]]:
     """``(url, connect_args)`` from a URL, a JDBC string, or a form."""
     if isinstance(spec, str):
@@ -322,7 +354,7 @@ def resolve(spec: "str | Mapping[str, Any]") -> Tuple[str, Dict[str, Any]]:
                 "not a connection string. Use a SQLAlchemy URL "
                 "(postgresql+psycopg://...), a JDBC URL (jdbc:oracle:thin:@...), "
                 "or the wallet fields.")
-        return raw, {}
+        return normalise_scheme(raw), {}
 
     kind = str(spec.get("kind") or "url").lower()
     user = spec.get("user") or None

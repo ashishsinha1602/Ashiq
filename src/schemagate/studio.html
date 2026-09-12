@@ -1628,6 +1628,14 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       $("connectPanel").hidden = !live || !st.allow_connect;
       $("modelPanel").hidden = !live;
       $("catPanel").hidden = !live;
+      // "Example AI descriptions" is the browser demo's before/after toggle:
+      // pre-written text, no model, and it says so. It was hidden inside the
+      // connect handler only, so a page loaded against a server that was
+      // already connected -- a remembered connection replayed at startup, or
+      // simply a refresh -- showed a live database a control that announces
+      // "no model is called on this page" and toggles invented descriptions
+      // over the user's own tables.
+      if (isLive) $("aiswitch").hidden = true;
       if ($("recipePanel") && !live) $("recipePanel").hidden = true;
       $("connState").textContent = isLive ? "connected"
                                 : (st.demo ? "demo" : "not connected");
