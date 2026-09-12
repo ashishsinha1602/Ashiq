@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.38
+## 0.1.39
 
 - **Fixed: cataloguing made retrieval worse on a large schema.** Every
   description repeats the domain's words, so on 1,245 objects "contact" fell
