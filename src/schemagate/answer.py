@@ -28,17 +28,49 @@ __all__ = ["UnsafeSQL", "check_read_only", "sql_prompt", "generate_sql", "run_sq
 SYSTEM = (
     "You write SQL and nothing else. You are given the only tables you may "
     "use. Answer with one SELECT statement, no prose, no code fences, no "
-    "trailing semicolon. Use only the tables and columns shown. If they "
-    "cannot answer the question, reply with exactly: INSUFFICIENT"
+    "trailing semicolon. Use only the tables and columns shown. "
+    # Without this the model answered from one table and called the rest
+    # insufficient, with the join tables sitting in the prompt. "One
+    # statement" constrains statements, not complexity: a CTE, a window
+    # function and a five-table join are all still one SELECT.
+    "One statement does not mean one table: join as many of the tables shown "
+    "as the question needs, and use CTEs (WITH), window functions, subqueries "
+    "and aggregates freely. "
+    # The DDL marks the edges the database does not enforce. They are still
+    # the intended join, and saying so is what stopped "the contacts of
+    # xmagnet" being refused with `contacts` and `tenants` both in the prompt.
+    "The -- FK lines give you the joins. A line marked inferred was read from "
+    "the column name rather than a declared constraint; it is still the "
+    "intended join, so use it. "
+    # Asked to rank suppliers by the stock they supply, against a schema whose
+    # product table has no supplier column at all, the model wrote a confident
+    # three-table query joining on a column it made up. The database caught
+    # that one; a hallucinated column that happens to exist would not be
+    # caught by anything, and would answer the wrong question quietly.
+    "Never invent a column, a table or a join. Every column you name must "
+    "appear above, under the table you attach it to. If the tables shown do "
+    "not contain the link the question needs, that is not a question you can "
+    "answer. "
+    "If the tables genuinely cannot answer the question, reply with exactly: "
+    "INSUFFICIENT"
 )
 
 #: Anything that is not a single read. Checked as whole words so a column
 #: named `updated_at` or a table named `deleted_rows` is not mistaken for a
 #: statement -- the first version of this rejected `SELECT updated_at ...`.
 _FORBIDDEN = re.compile(
-    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|"
-    r"attach|detach|pragma|vacuum|replace|merge|call|execute|commit|"
-    r"rollback|savepoint)\b",
+    r"\b(?:insert|update|delete|drop|alter|create|truncate|grant|revoke|"
+    r"attach|detach|pragma|vacuum|merge|call|execute|commit|"
+    r"rollback|savepoint)\b"
+    # REPLACE is the one word in this list that is also an ordinary scalar
+    # function, in every dialect: REPLACE(email, '@old', '@new'). Refusing it
+    # stopped the model normalising a string inside a join or a GROUP BY --
+    # exactly the sort of query someone wants complex SQL for. As a statement
+    # it reads `REPLACE INTO t ...` or `REPLACE t ...`, where a table name
+    # follows and never an open bracket, so the bracket separates the two.
+    # (Those two forms are already refused a line earlier for not starting
+    # with SELECT or WITH; this keeps the word barred in the middle as well.)
+    r"|\breplace\b(?!\s*\()",
     re.I,
 )
 
@@ -108,8 +140,21 @@ def sql_prompt(question: str, fragment: str, dialect: str = "") -> str:
 _ASK_ATTEMPTS = 3
 
 
+#: Room for the reply, and for whatever the model does before the reply.
+#:
+#: 500 was sized for the SQL alone, and that is not what the budget pays for
+#: any more. claude-sonnet-5 answers with a `thinking` block first: on a hard
+#: nine-table question it spent all 500 tokens thinking, returned no text at
+#: all, and `check_read_only` reported "the model returned nothing" -- which
+#: reads as a broken model rather than a budget. The same question with 1,500
+#: finished in 822. The failure is silent, it only hits the complicated
+#: questions, and the tokens are charged either way, so the budget is set
+#: where a long query plus its reasoning fits.
+_SQL_TOKENS = 2000
+
+
 def generate_sql(provider, question: str, fragment: str,
-                 dialect: str = "", max_tokens: int = 500,
+                 dialect: str = "", max_tokens: int = _SQL_TOKENS,
                  attempts: int = _ASK_ATTEMPTS) -> str:
     """Ask a provider for one SELECT. Raises ``UnsafeSQL`` if it is not one.
 

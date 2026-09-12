@@ -70,7 +70,7 @@ def test_guard_is_wired_up_and_actually_fails_on_a_hit():
 
 def test_no_personal_contact_details_in_metadata():
     """An email in packaging metadata becomes permanently public on PyPI."""
-    pyproject = (ROOT / "pyproject.toml").read_text()
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", pyproject), \
         "an email address would be published in the PyPI metadata"
 
@@ -87,7 +87,7 @@ FIXTURE_SOURCES = {
 @pytest.mark.parametrize("fixture", sorted(FIXTURE_SOURCES))
 def test_fixture_schemas_declare_themselves_synthetic(fixture):
     """Every benchmark schema must be invented, not copied from anywhere."""
-    text = FIXTURE_SOURCES[fixture].read_text().lower()
+    text = FIXTURE_SOURCES[fixture].read_text(encoding="utf-8").lower()
     assert "synthetic" in text or "invented" in text, \
         f"{fixture} must state that it is synthetic"
 

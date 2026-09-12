@@ -34,7 +34,7 @@ from schemagate.embedder import HashingEmbedder, tokenize  # noqa: E402
 @pytest.fixture(scope="module")
 def schemas():
     subprocess.run([sys.executable, str(STUDIO / "export_schemas.py")],
-                   check=True, capture_output=True)
+                   check=True, capture_output=True)   # bytes: never decoded
     return json.loads((STUDIO / "schemas.json").read_text("utf-8"))
 
 
@@ -90,12 +90,13 @@ def _cases(schemas):
 
 def test_js_port_ranks_identically(schemas):
     cases = _cases(schemas)
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                     encoding="utf-8") as fh:
         json.dump(cases, fh)
         cases_path = fh.name
     out = subprocess.run([NODE, str(STUDIO / "parity_runner.js"),
                           str(STUDIO / "schemas.json"), cases_path],
-                         capture_output=True, text=True, check=True, cwd=STUDIO)
+                         capture_output=True, encoding="utf-8", check=True, cwd=STUDIO)
     js = json.loads(out.stdout)
     by_id = {r["id"]: r for r in js["results"]}
 
@@ -123,24 +124,26 @@ def test_js_port_ranks_identically(schemas):
 
 
 def test_js_tokenizer_matches(schemas):
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                     encoding="utf-8") as fh:
         json.dump([], fh)
         empty = fh.name
     out = subprocess.run([NODE, str(STUDIO / "parity_runner.js"),
                           str(STUDIO / "schemas.json"), empty],
-                         capture_output=True, text=True, check=True, cwd=STUDIO)
+                         capture_output=True, encoding="utf-8", check=True, cwd=STUDIO)
     js = json.loads(out.stdout)
     for text, tokens in js["tokenize"].items():
         assert tokenize(text) == tokens, text
 
 
 def test_js_embedder_matches(schemas):
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False,
+                                     encoding="utf-8") as fh:
         json.dump([], fh)
         empty = fh.name
     out = subprocess.run([NODE, str(STUDIO / "parity_runner.js"),
                           str(STUDIO / "schemas.json"), empty],
-                         capture_output=True, text=True, check=True, cwd=STUDIO)
+                         capture_output=True, encoding="utf-8", check=True, cwd=STUDIO)
     js = json.loads(out.stdout)
     py = HashingEmbedder(64).embed(["customer order line items", "売上明細 金額"])
     for a, b in zip(py, js["embed"]):

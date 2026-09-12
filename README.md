@@ -183,6 +183,13 @@ pip install 'schemagate[anthropic]'    'schemagate[openai]'      'schemagate[gem
 pip install 'schemagate[huggingface]'
 ```
 
+`huggingface` is the no-key, nothing-leaves-the-machine path, and it is the
+one extra that is heavy: about 2 GB of wheels plus a 3.1 GB model download the
+first time you use it. It is deliberately kept out of `schemagate[all]`.
+[docs/local-models.md](docs/local-models.md) has the whole story — the
+downloads, the 91-second model load, what it is good at and where it is worse
+than a hosted model.
+
 ## Quick start
 
 ```bash
@@ -417,6 +424,29 @@ The prompt is metadata only — names, types, comments, foreign keys, never rows
 and `select`, `studio` and the MCP server (`SCHEMAGATE_CATALOG_CONFIG`) all
 read it. From Python it's the same idea: `cat.describe_prompt()` and
 `cat.describe({"v_stock_shortfall": "Items below their reorder level."})`.
+
+### With a local model, and no key at all
+
+```bash
+pip install 'schemagate[huggingface]'
+schemagate describe --url postgresql://localhost/app                     --provider local --model Qwen/Qwen2.5-1.5B-Instruct                     --cache .schemagate-cache.json
+```
+
+or, in the Studio, *Settings → Model* → **Local (transformers)**. No key
+field appears, because there is no key.
+
+```python
+from schemagate.ai import SchemaDescriber, LocalProvider
+cat.describe(SchemaDescriber(LocalProvider(), cache_path=".schemagate-cache.json"))
+```
+
+Writing one sentence per table is a small enough job that a 1.5B model does it
+acceptably. Writing multi-table SQL is not, and the Studio uses the same
+provider for both — so if you have a key, catalogue locally but answer with
+the key. Read [docs/local-models.md](docs/local-models.md) before you turn it
+on: it covers the two downloads, the 91-second load, the ~6 GB of RAM, the
+caching that makes the second run free, and why a weak model's bad description
+can no longer bury the object it describes.
 
 ### With your own key
 

@@ -3,6 +3,7 @@
 Each of these failed before the fix and would have shipped silently.
 """
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -27,9 +28,14 @@ _PROBE = textwrap.dedent("""
 def _embed_in_fresh_process(seed):
     out = subprocess.run(
         [sys.executable, "-c", _PROBE],
-        capture_output=True, text=True, check=True,
-        env={"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": seed,
-             "PYTHONPATH": ":".join(sys.path)},
+        capture_output=True, encoding="utf-8", check=True,
+        # os.pathsep, not ":" -- and the real PATH. A hardcoded "/usr/bin:/bin"
+        # with colon-joined PYTHONPATH leaves the child on Windows unable to
+        # find either the interpreter's DLLs or the package, so this asserted
+        # nothing there: it failed to start, and the failure read as a
+        # CalledProcessError about hash seeds.
+        env={**os.environ, "PYTHONHASHSEED": seed,
+             "PYTHONPATH": os.pathsep.join(sys.path)},
     )
     return json.loads(out.stdout)
 
