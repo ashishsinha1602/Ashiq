@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.38
+
+- **Fixed: `schemagate.__version__` was four releases stale.** It was a
+  hand-written constant and nothing checked it, so `pip show` said 0.1.37
+  while the attribute said 0.1.33 -- and a bug report quoting the attribute
+  sends you reading the wrong code. It is read from the installed
+  distribution now.
+
 ## 0.1.37
 
 - **Added: saved connections and saved models.** A Studio gets pointed at dev,
