@@ -54,6 +54,110 @@ def test_malformed_principal_is_an_error_not_a_crash(served):
     assert "error" in out and "namespaced" in out["error"]
 
 
+# --- run_query: the half that turns a selection into an answer ------------
+#
+# select_schema withholding a table means nothing if the next tool will run
+# `SELECT * FROM` it anyway, so every one of these is about that.
+
+@pytest.fixture
+def runnable(cat, db_url, monkeypatch):
+    """The commerce fixture with a restriction, and a database to query."""
+    cat.restrict("hr_compensation", ["payroll"])
+    mcp_server.build_catalog(catalog=cat)
+    monkeypatch.setattr(mcp_server, "_URL", db_url, raising=False)
+    monkeypatch.setattr(mcp_server, "_ENGINE", None, raising=False)
+    return cat
+
+
+def test_run_query_returns_rows(runnable):
+    out = mcp_server.run_query("SELECT id FROM crm_customer", max_rows=3)
+    assert out["columns"] == ["id"]
+    assert out["row_count"] <= 3
+    assert out["truncated"] in (True, False)
+
+
+def test_run_query_refuses_a_table_the_caller_may_not_see(runnable):
+    out = mcp_server.run_query("SELECT * FROM hr_compensation")
+    assert "not available to this caller" in out["error"]
+    assert "hr_compensation" in out["error"]
+
+
+def test_run_query_allows_it_with_the_role(runnable):
+    out = mcp_server.run_query("SELECT * FROM hr_compensation",
+                               principal="okta:hr", roles=["payroll"])
+    assert "error" not in out, out
+
+
+def test_a_restricted_table_cannot_hide_in_a_join(runnable):
+    out = mcp_server.run_query(
+        "SELECT * FROM crm_customer c JOIN hr_compensation h ON 1=1")
+    assert "not available to this caller" in out["error"]
+
+
+def test_a_restricted_table_cannot_hide_in_a_cte(runnable):
+    out = mcp_server.run_query(
+        "WITH x AS (SELECT * FROM hr_compensation) SELECT * FROM x")
+    assert "not available to this caller" in out["error"]
+
+
+def test_scope_is_taken_from_this_call_not_the_previous_one(runnable):
+    """An earlier authorised select_schema must not authorise a later query."""
+    mcp_server.select_schema("salary by employee", top_k=10,
+                             principal="okta:hr", roles=["payroll"])
+    out = mcp_server.run_query("SELECT * FROM hr_compensation")
+    assert "not available to this caller" in out["error"]
+
+
+@pytest.mark.parametrize("sql", [
+    "DELETE FROM crm_customer",
+    "UPDATE crm_customer SET id = 1",
+    "DROP TABLE crm_customer",
+    "SELECT 1 FROM crm_customer; DROP TABLE crm_customer",
+    "SELECT 1 FROM crm_customer -- \nUPDATE crm_customer SET id = 1",
+])
+def test_run_query_refuses_anything_that_is_not_a_read(runnable, sql):
+    out = mcp_server.run_query(sql)
+    assert "error" in out, sql
+
+
+def test_an_unknown_table_is_refused_rather_than_attempted(runnable):
+    """Fail closed: restricted, misspelled and never-reflected look alike."""
+    out = mcp_server.run_query("SELECT * FROM no_such_table")
+    assert "not available to this caller" in out["error"]
+
+
+def test_the_database_error_comes_back_so_the_model_can_fix_it(runnable):
+    out = mcp_server.run_query("SELECT nope FROM crm_customer")
+    assert "the database rejected this query" in out["error"]
+    assert "nope" in out["error"]
+
+
+def test_row_cap_is_enforced_and_truncation_is_reported(runnable):
+    out = mcp_server.run_query("SELECT id FROM crm_customer", max_rows=1)
+    assert out["row_count"] <= 1
+    assert isinstance(out["truncated"], bool)
+
+
+@pytest.mark.parametrize("bad", [None, "", "   "])
+def test_run_query_survives_empty_sql(runnable, bad):
+    assert "error" in mcp_server.run_query(bad)
+
+
+def test_answer_without_a_model_hands_back_the_selection(runnable, monkeypatch):
+    monkeypatch.delenv("SCHEMAGATE_MCP_PROVIDER", raising=False)
+    monkeypatch.delenv("SCHEMAGATE_MCP_MODEL", raising=False)
+    out = mcp_server.answer("revenue by month")
+    assert out["sql"] is None
+    assert "run_query" in out["next"]
+    assert out["objects"]
+
+
+def test_referenced_tables_ignores_ctes_and_keeps_qualified_names():
+    found = mcp_server._referenced_tables(
+        'WITH t AS (SELECT 1 FROM a) SELECT * FROM t JOIN main.b ON 1=1')
+    assert "a" in found and "main.b" in found and "t" not in found
+
+
 def test_list_objects_is_scoped(served):
     anon = mcp_server.list_objects()
     hr = mcp_server.list_objects(principal="okta:hr", roles=["payroll"])
