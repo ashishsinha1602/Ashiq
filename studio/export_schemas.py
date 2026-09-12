@@ -61,5 +61,9 @@ for key, spec in SCHEMAS.items():
     restrict = {t: r for t, r in spec["restrict"].items() if t in names or t in cat._docs}
     out[key] = {"title": spec["title"], "blurb": spec["blurb"], "docs": [doc_json(d) for d in cat._docs.values()],
                 "hints": hints, "restrict": restrict, "questions": spec["questions"], "golden": spec["golden"]}
-json.dump(out, open(os.path.join(os.path.dirname(__file__), "schemas.json"), "w"), ensure_ascii=False)
+# ensure_ascii=False writes real accents, so the encoding cannot be left to
+# the platform: Windows defaults to cp1252 and this crashed there.
+with open(os.path.join(os.path.dirname(__file__), "schemas.json"), "w",
+          encoding="utf-8") as fh:
+    json.dump(out, fh, ensure_ascii=False)
 print({k: len(v["docs"]) for k, v in out.items()})

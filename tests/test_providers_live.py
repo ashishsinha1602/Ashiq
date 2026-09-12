@@ -89,7 +89,14 @@ def test_describer_lands_descriptions_on_the_catalog(provider):
     assert n == len(cat)
     described = [d for d in cat.objects() if d.description]
     assert len(described) == len(cat), f"{provider.name}: {len(described)}/{len(cat)} described"
-    assert all(len(d.description.split()) <= 40 for d in described)
+    # The sentence, not the alias tail. A description is "one sentence |
+    # alias, alias, ..." and the aliases are the half that makes everyday
+    # words findable, so counting them against a one-sentence budget punishes
+    # the model for doing the thing that was asked of it.
+    for d in described:
+        sentence = d.description.split("|", 1)[0]
+        assert len(sentence.split()) <= 40, f"{provider.name}: {d.description!r}"
+        assert "|" in d.description, f"{provider.name}: no aliases in {d.description!r}"
 
 
 def test_descriptions_improve_business_language_recall(provider):
