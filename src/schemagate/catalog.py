@@ -13,7 +13,8 @@ import math
 from collections import Counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
-from .embedder import Embedder, HashingEmbedder, tokenize, expand_joins
+from .embedder import (Embedder, HashingEmbedder, tokenize, expand_joins,
+                       expand_acronyms)
 from .identity import Principal
 from .models import ObjectDoc, Scored, Selection, allowed
 from .stores.memory import MemoryStore
@@ -39,6 +40,62 @@ DEFAULT_SHADOW_SUFFIXES = (
 #: below its base when they would otherwise tie, and not enough to hide it
 #: from a question that names it outright ("the v2 claim line table").
 SHADOW_PENALTY = 0.5
+
+#: How much the name field counts for in fusion, against 1.0 for the body and
+#: 1.0 for vectors. Equal: a question that names an object should reach it on
+#: the name alone, and a question that describes one should still reach it on
+#: the description alone.
+NAME_WEIGHT = 1.0
+
+#: What it is worth for the question to spell an object's name out. Naming a
+#: thing is the strongest evidence a question can carry -- stronger than any
+#: similarity -- and rank fusion cannot express that on its own: RRF turns
+#: every score into 1/(60+rank), so the object the user actually named
+#: arrives a hair above the ones that merely share a word with it, and the
+#: other two channels can out-vote it. "show the contacts of xmagnet" put
+#: `contacts_audit` and `auto_warmup_contacts` ahead of `contacts`.
+#:
+#: Deliberately multiplicative on an already-fused score, so it orders the
+#: named objects among themselves rather than flattening them, and so an
+#: object that is named but otherwise irrelevant still cannot beat one that
+#: is named AND matches.
+NAMED_BOOST = 4.0
+
+#: A question word has to be informative before its absence is worth a slot.
+#: Measured against the name field, where the domain's own nouns stay rare:
+#: "tenant" is in 30 names of 1,245, "the" is in none. Low enough to catch a
+#: common-ish entity, high enough that filler never buys a table.
+_COVERAGE_MIN_IDF = 2.0
+
+#: At most this many added for coverage, so a long question cannot quietly
+#: double the prompt it was meant to keep small.
+_COVERAGE_MAX = 3
+
+
+#: What a description is worth, against 1.0 for the name and 1.0 for the body.
+#: Below them on purpose: a description is generated, it is the part most
+#: likely to be wrong or generic, and it should be able to help a question
+#: that uses no schema words without being able to overturn a question that
+#: names an object outright.
+#: Equal to the others. An earlier version starved this channel to keep bad
+#: descriptions from doing damage; that was the wrong lever and it cost
+#: "per member per month cost" -> v_pmpm. Isolation is what contains a weak
+#: catalogue -- prose can only ever win the prose channel -- so the weight can
+#: be honest about how useful a good description is.
+PROSE_WEIGHT = 1.0
+
+
+def _prose_text(doc) -> str:
+    """Everything written *about* the object: hint, description, comments."""
+    parts = [doc.hint or "", doc.description or ""]
+    parts.extend(c.comment or "" for c in doc.columns)
+    return " ".join(x for x in parts if x)
+
+
+def _name_text(doc) -> str:
+    """Just the identifiers: schema, name, and the name split on underscores."""
+    return " ".join(x for x in (doc.schema or "", doc.name or "",
+                                (doc.name or "").replace("_", " ")) if x)
 
 #: Prefixes that mark a staging or scratch copy of some other object. An
 #: object is a shadow only when another, non-shadow object shares its stem
@@ -90,7 +147,14 @@ class _BM25:
 
     def __init__(self, docs: Sequence[str], k1: float = 1.4, b: float = 0.72):
         self.k1, self.b = k1, b
-        self.docs = [tokenize(d) for d in docs]
+        # Stemmed, both sides. A question says "how many claims"; the object
+        # says "one row per claim". Without this they are different words and
+        # the match never happens -- which is not a quirk of one schema, it is
+        # every plural anyone types: contacts/contact, orders/order,
+        # users/user. Only the lexical layer stems; `tokenize` itself is left
+        # alone because the embedder's vectors are a published, pinned
+        # guarantee and changing them would break every stored index.
+        self.docs = [[_stem(t) for t in tokenize(d)] for d in docs]
         self.len = [len(d) for d in self.docs]
         self.avg = (sum(self.len) / len(self.len)) if self.len else 0.0
         self.tf = [Counter(d) for d in self.docs]
@@ -101,7 +165,9 @@ class _BM25:
         self.idf = {t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()}
 
     def scores(self, query: str) -> List[float]:
-        q = expand_joins(tokenize(query), vocab=self.idf)
+        toks = tokenize(query)
+        q = [_stem(t) for t in expand_joins(toks)]
+        q.extend(t for t in expand_acronyms(toks, self.idf) if t not in q)
         out = []
         for i, tf in enumerate(self.tf):
             s = 0.0
@@ -290,6 +356,33 @@ class Catalog:
         self._order = list(self._docs)
         texts = [self._docs[q].embed_text() for q in self._order]
         self._bm25 = _BM25(texts)
+        # The name, scored as its own field.
+        #
+        # One flat document per object is what made a catalogued schema worse
+        # at the questions cataloguing is for. Every description repeats the
+        # domain's words, so on a 1,245-object schema "contact" fell to idf
+        # 0.15 -- the word the user typed became the least informative token
+        # in the index -- while the table literally called `contacts` was
+        # pushed down by length normalisation for carrying 55 columns, a
+        # description and a row of alias words. Measured on that schema:
+        # `contacts` ranked 3rd before cataloguing and below 40th after it.
+        #
+        # A field of its own fixes both halves. Its idf is computed over names
+        # alone, where "contact" appears in 17 of 1,245 and is rare again; and
+        # its length is the name's length, which no description can inflate.
+        self._bm25_name = _BM25([_name_text(self._docs[q]) for q in self._order])
+        # And the written text -- description, hint, comments -- in a third.
+        #
+        # Fields do not just protect the name from length; they contain a bad
+        # catalogue. A weak model writes the same generic sentence about every
+        # object ("Stores data about users and their settings"), and in one
+        # flat document that is indistinguishable from signal: the words it
+        # repeats become common everywhere, every object looks a bit like
+        # every question, and retrieval gets worse the more of the schema you
+        # describe. Kept apart, useless prose can only make the prose channel
+        # useless. The name and the columns are untouched, so the floor is
+        # "no better than before cataloguing" instead of "worse".
+        self._bm25_prose = _BM25([_prose_text(self._docs[q]) for q in self._order])
         self._shadows = self._find_shadows()
         vecs = self.embedder.embed(texts)
         self.store.purge(self._ns)
@@ -471,16 +564,32 @@ class Catalog:
             return {q: i for i, (q, _) in enumerate(pairs)}
 
         lex_rank = _rank(self._bm25)
+        name_rank = _rank(self._bm25_name)
+        prose_rank = _rank(self._bm25_prose)
         q_tokens = expand_joins(tokenize(question), vocab=_vocab)
         _q_stems = {_stem(t) for t in q_tokens if len(t) > 2 and t not in _BOOST_STOP}
 
         fused: Dict[str, float] = {}
+        # Which objects the question actually names, keeping only the longest
+        # match where one name is a token-prefix of another.
+        _named = {q: tokenize(self._docs[q].name)
+                  for q in allowed if _named_in(q_tokens, self._docs[q])}
+        _named_best = {
+            q for q, toks in _named.items()
+            if not any(other is not toks and len(other) > len(toks)
+                       and other[:len(toks)] == toks
+                       for other in _named.values())}
+
         for q in allowed:
             s = 0.0
             if q in vec_rank:
                 s += vector_weight / (_RRF_K + vec_rank[q] + 1)
             if q in lex_rank:
                 s += lexical_weight / (_RRF_K + lex_rank[q] + 1)
+            if q in name_rank:
+                s += NAME_WEIGHT / (_RRF_K + name_rank[q] + 1)
+            if q in prose_rank:
+                s += PROSE_WEIGHT / (_RRF_K + prose_rank[q] + 1)
             # A backup or staging copy carries the same name words in a
             # shorter document, and cosine similarity rewards exactly that.
             # Demote it -- only while the object it shadows is visible to
@@ -499,18 +608,18 @@ class Catalog:
             # earns nothing, capped so it reorders the neighbourhood rather
             # than the page, and a little more when the whole name is the
             # word -- "users" should find `users` before `ai_reporter_users`.
-            if s and self._bm25 is not None and _max_idf > 0:
-                # Stemmed lightly so "positions" meets `position`, and never
-                # on filler: "of" is in two names out of forty, which made it
-                # the rarest word in "end of day positions" and handed the
-                # boost to `ref_chart_of_accounts`.
-                name_toks = {_stem(t) for t in tokenize(self._docs[q].name or "")
-                             if len(t) > 2 and t not in _BOOST_STOP}
-                hit = sum(self._bm25.idf.get(t, 0.0) for t in _q_stems & name_toks)
-                if hit:
-                    s *= 1.0 + 0.5 * min(1.0, hit / _max_idf)
-                    if _stem((self._docs[q].name or "").lower()) in _q_stems:
-                        s *= 1.2
+            # (An IDF boost for question words appearing in a name used to sit
+            # here. It was patching this same dilution from the outside, and
+            # it looked up the idf of the *stem* -- so "contacts" was scored
+            # as the flooded "contact" and the boost collapsed to nothing.
+            # The name field does the job properly.)
+            # The user typed this object's name. Nothing else in the query is
+            # as reliable -- but only the most specific match counts. Asking
+            # for `fact_claim_line_v2` also spells out `fact_claim_line`, and
+            # boosting both handed it to the shorter one, which is the table
+            # the question went out of its way not to ask for.
+            if s and q in _named_best:
+                s *= NAMED_BOOST
             if s:
                 fused[q] = s
 
@@ -543,6 +652,52 @@ class Catalog:
                     "vector" if q in vec_rank else "lexical")
                 chosen.append(Scored(self._docs[q], s, reason))
                 taken.add(q)
+
+        # Cover every thing the question named, not just the best-scoring ones.
+        #
+        # A question that needs a join names two things -- "campaigns … and
+        # the tenant name" -- and ranking answers only the first. Every slot
+        # went to a campaign table, `tenants` was absent at top_k=30, and the
+        # model correctly reported that the tables it was shown could not
+        # answer the question. More top_k does not help: it deepens the
+        # concept that was already winning.
+        #
+        # So after ranking, each informative word the question used that no
+        # chosen object carries in its name gets the best object that does.
+        # Bounded, and only ever additive -- it cannot displace a ranked pick.
+        uncovered = []
+        if self._bm25_name is not None and self._bm25_name.idf:
+            covered = set()
+            for sc in chosen:
+                covered.update(tokenize(_name_text(sc.doc)))
+            wanted = {t for t in q_tokens
+                      if len(t) > 2 and t not in _BOOST_STOP
+                      and self._bm25_name.idf.get(t, 0.0) >= _COVERAGE_MIN_IDF}
+            uncovered = [t for t in wanted
+                         if t not in covered and _stem(t) not in {_stem(c) for c in covered}]
+        for token in uncovered[:_COVERAGE_MAX]:
+            best = None
+            for q, sc_val in ranked:
+                if q in taken:
+                    continue
+                if token in tokenize(_name_text(self._docs[q])):
+                    best = (q, sc_val)
+                    break                      # `ranked` is already sorted
+            if best is None:
+                continue
+            # Inside the budget, not beyond it: drop the weakest ranked pick
+            # rather than grow the answer. A caller that asked for six objects
+            # gets six, and the prompt it was sizing stays the size it sized.
+            if len(chosen) >= top_k:
+                for i in range(len(chosen) - 1, -1, -1):
+                    if chosen[i].reason not in ("pinned", "covers"):
+                        taken.discard(chosen[i].doc.qname)
+                        del chosen[i]
+                        break
+                else:
+                    break                      # nothing droppable; leave it be
+            chosen.append(Scored(self._docs[best[0]], best[1], "covers"))
+            taken.add(best[0])
 
         if expand_fks:
             for sc in list(chosen):

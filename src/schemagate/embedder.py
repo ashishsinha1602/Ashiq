@@ -101,6 +101,31 @@ def expand_joins(tokens: List[str], vocab=None, max_len: int = 14) -> List[str]:
     return out
 
 
+def expand_acronyms(tokens: List[str], vocab=None, max_run: int = 5) -> List[str]:
+    """Add the initials of each short run of words, if the schema uses them.
+
+    Schemas abbreviate what the business spells out. A view is called
+    `v_pmpm` and the question is "per member per month cost"; the same gap
+    turns up as `ytd` for "year to date", `dob` for "date of birth", `cogs`
+    for "cost of goods sold". No description bridges it, because the
+    abbreviation is the only place the short form exists.
+
+    Only initials the index actually contains are kept, so this adds the one
+    real identifier and not the dozen nonsense strings around it.
+    """
+    out: List[str] = []
+    words = [t for t in tokens if t.isalpha()]
+    for n in range(2, max_run + 1):
+        for i in range(len(words) - n + 1):
+            run = words[i:i + n]
+            acro = "".join(w[0] for w in run)
+            if len(acro) < 2:
+                continue
+            if (vocab is None or acro in vocab) and acro not in out:
+                out.append(acro)
+    return out
+
+
 def tokenize(text: str) -> List[str]:
     """Split identifiers into comparable tokens.
 
