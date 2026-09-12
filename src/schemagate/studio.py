@@ -45,6 +45,33 @@ _CONNECT_SAMPLE_BUDGET = 10.0
 
 
 
+def _label_url(spec):
+    """A URL to name a saved spec by, resolved the same way connect() does."""
+    try:
+        from .connect import resolve
+        url, _ = resolve(spec if spec.get("kind") else str(spec.get("url") or ""))
+        return url
+    except Exception:                                    # noqa: BLE001
+        return str(spec.get("url") or "")
+
+
+def _label_dialect(spec):
+    kind = str(spec.get("kind") or "url").lower()
+    if kind in ("wallet", "oracle-wallet", "ords"):
+        return "oracle"
+    if kind in ("url", "jdbc"):
+        head = _label_url(spec).partition("://")[0].partition("+")[0]
+        return head or "database"
+    return kind
+
+
+def _same_target(a, b):
+    """Same database, ignoring the fields that are not about *where*."""
+    keys = ("kind", "url", "jdbc", "wallet", "alias", "host", "port",
+            "database", "service_name", "user", "schema")
+    return all(str(a.get(k) or "") == str(b.get(k) or "") for k in keys)
+
+
 def _describe_connection(url: str, body: Dict[str, Any], dialect: str) -> str:
     """`appdevdb on devrdsproxy.proxy-... as devadmin` -- never the password."""
     try:
@@ -355,6 +382,61 @@ class StudioState:
                     "studio": "# connect from the page: Database -> Oracle over HTTPS (ORDS)",
                 }}
 
+    def connections(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Saved connections: list, connect to one by name, or forget one."""
+        from . import remember
+        action = str(body.get("action") or "list")
+        name = str(body.get("name") or "")
+        if action == "connect":
+            spec = remember.get_connection(name)
+            if not spec:
+                return {"error": "no saved connection named %r" % name}
+            out = self.connect(dict(spec, name=name))
+            if out.get("error"):
+                return out
+        elif action == "forget":
+            remember.forget_connection(name)
+        elif action == "save" and self.last_connect:
+            remember.save_connection(name or self.connection_label, self.last_connect)
+        rows = []
+        for c in remember.list_connections():
+            spec = c.get("spec") or {}
+            rows.append({"name": c.get("name"),
+                         "kind": spec.get("kind") or "url",
+                         "label": _describe_connection(
+                             _label_url(spec), spec, _label_dialect(spec)),
+                         "current": bool(self.last_connect)
+                                    and _same_target(spec, self.last_connect)})
+        return {"connections": rows,
+                "current": self.connection_label if self.connected else ""}
+
+    def models(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Saved models: list, use one by name, save the current one, forget one."""
+        from . import remember
+        action = str(body.get("action") or "list")
+        name = str(body.get("name") or "")
+        if action == "use":
+            cfg = remember.get_model(name)
+            if not cfg:
+                return {"error": "no saved model named %r" % name}
+            self.settings.update(cfg)
+        elif action == "save":
+            cfg = {k: body.get(k, self.settings.get(k))
+                   for k in ("provider", "model", "api_key", "rerank", "answer")}
+            auto = "%s:%s" % (cfg.get("provider"), cfg.get("model"))
+            if not remember.save_model(name or auto, cfg):
+                return {"error": "a model needs a provider and a model id"}
+            self.settings.update({k: v for k, v in cfg.items() if v not in (None, "")})
+        elif action == "forget":
+            remember.forget_model(name)
+        cur = (self.settings.get("provider"), self.settings.get("model"))
+        rows = [{"name": m.get("name"), "provider": m.get("provider"),
+                 "model": m.get("model"), "has_key": bool(m.get("api_key")),
+                 "answer": bool(m.get("answer")), "rerank": bool(m.get("rerank")),
+                 "current": (m.get("provider"), m.get("model")) == cur}
+                for m in remember.list_models()]
+        return {"models": rows, "settings": self.describe_settings()}
+
     def resync(self) -> Dict[str, Any]:
         """Re-reflect the same database, keeping the descriptions.
 
@@ -543,9 +625,9 @@ class StudioState:
         self.last_connect = dict(body)
         self.connection_label = _describe_connection(url, body, engine.dialect.name)
         from . import remember
-        self.remembered = remember.save(
-            body, allow=self.remember_connection or bool(body.get("remember"))
-        ) is not None
+        want = self.remember_connection or bool(body.get("remember"))
+        self.remembered = bool(want and remember.save_connection(
+            str(body.get("name") or self.connection_label), body))
         self.title = "Your database"
         # Say what is actually true. Oracle and PostgreSQL both carry table
         # comments, so a fresh reflection often arrives already part-described
@@ -700,7 +782,8 @@ def _handler(state: StudioState):
         def do_POST(self):
             if self.path not in ("/api/select", "/api/answer", "/api/settings",
                                  "/api/describe", "/api/apply-descriptions",
-                                 "/api/connect", "/api/resync"):
+                                 "/api/connect", "/api/resync",
+                                 "/api/connections", "/api/models"):
                 return self._json(404, {"error": "not found"})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -717,6 +800,10 @@ def _handler(state: StudioState):
                     return self._json(200, state.apply_descriptions(payload))
                 if self.path == "/api/resync":
                     return self._json(200, state.resync())
+                if self.path == "/api/connections":
+                    return self._json(200, state.connections(payload))
+                if self.path == "/api/models":
+                    return self._json(200, state.models(payload))
                 if self.path == "/api/connect":
                     return self._json(200, state.connect(payload))
                 return self._json(200, state.select(payload))
@@ -848,7 +935,11 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
     saved = None
     if not url and not demo and state.allow_connect:
         from . import remember
-        saved = remember.load()
+        saved = remember.default_connection()
+        # And the model: a key saved once should not be typed again either.
+        model = remember.default_model()
+        if model:
+            state.settings.update(model)
 
     server = serve(state, host, port, open_browser)
 
