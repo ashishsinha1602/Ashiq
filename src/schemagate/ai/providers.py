@@ -73,6 +73,23 @@ class CallableProvider:
 # Anthropic
 # --------------------------------------------------------------------------
 
+#: Every call this library makes wants the same answer twice. Writing SQL for
+#: a question is not a creative task -- the same question over the same tables
+#: has one right query -- and a description that changes between runs
+#: invalidates the content-addressed cache and re-bills the whole schema.
+#:
+#: Only the OCI provider set this. The rest ran at their API default, and on
+#: a 1,245-object schema the same question refused 35% of the time and
+#: produced three different queries across five runs.
+#:
+#: Sending it is not always allowed: claude-sonnet-5 answers
+#: `400 ... temperature is deprecated for this model`, and a provider that
+#: cannot be built is a provider that answers nothing -- setting this blindly
+#: took the refusal rate from 35% to 100%. So it is sent, and dropped for the
+#: life of the process the first time a model says it will not take it.
+_TEMPERATURE = 0.0
+
+
 class AnthropicProvider:
     """Anthropic models via the official ``anthropic`` SDK.
 
@@ -87,6 +104,7 @@ class AnthropicProvider:
             raise ValueError("model is required, e.g. model='claude-sonnet-4-5'")
         self.model = model
         self.name = f"anthropic:{model}"
+        self._send_temperature = True
         if client is not None:
             self._client = client
             return
@@ -101,12 +119,18 @@ class AnthropicProvider:
         self._client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=max_retries)
 
     def complete(self, system: str, prompt: str, max_tokens: int = 1024) -> str:
+        kwargs = dict(model=self.model, max_tokens=max_tokens, system=system,
+                      messages=[{"role": "user", "content": prompt}])
+        if self._send_temperature:
+            kwargs["temperature"] = _TEMPERATURE
         try:
-            msg = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens, system=system,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            msg = self._client.messages.create(**kwargs)
         except Exception as e:
+            if self._send_temperature and "temperature" in str(e):
+                # This model does not take it. Remember, and answer anyway --
+                # a deprecated parameter must not cost the user their answer.
+                self._send_temperature = False
+                return self.complete(system, prompt, max_tokens)
             raise ProviderError(f"{self.name}: {e}") from e
         return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
 
@@ -151,6 +175,7 @@ class OpenAIProvider:
         try:
             resp = self._client.chat.completions.create(
                 model=self.model, max_tokens=max_tokens,
+                temperature=_TEMPERATURE,
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": prompt}],
             )
@@ -210,7 +235,8 @@ class GeminiProvider:
     def complete(self, system: str, prompt: str, max_tokens: int = 1024) -> str:
         try:
             resp = self._client.models.generate_content(
-                model=self.model, contents=f"{system}\n\n{prompt}")
+                model=self.model, contents=f"{system}\n\n{prompt}",
+                config={"temperature": _TEMPERATURE})
         except Exception as e:
             raise ProviderError(f"{self.name}: {e}") from e
         return resp.text or ""
@@ -412,7 +438,8 @@ class LocalProvider:
                     {"role": "user", "content": prompt}]
         try:
             out = self._pipe(messages, max_new_tokens=min(max_tokens, self.max_new_tokens),
-                             do_sample=False, return_full_text=False)
+                             do_sample=False, temperature=None, top_p=None,
+                             top_k=None, return_full_text=False)
         except Exception as e:
             raise ProviderError(f"{self.name}: {e}") from e
         gen = out[0]["generated_text"] if out else ""

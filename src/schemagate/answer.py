@@ -94,21 +94,42 @@ def sql_prompt(question: str, fragment: str, dialect: str = "") -> str:
     )
 
 
+#: How many times to ask before believing "these tables cannot answer this".
+#:
+#: The model is not deterministic and cannot be made so -- claude-sonnet-5
+#: rejects a `temperature` parameter outright -- so the same prompt over the
+#: same tables answers once and declines the next time. Measured against a
+#: 1,245-object schema: twenty runs of four questions that all have answers,
+#: 35% refused, and one of them produced three different queries in five runs.
+#:
+#: A refusal is evidence, not a verdict. Asking twice more costs a second on
+#: the rare path and turns "it does not work" into "it works", which is the
+#: difference between a tool someone keeps and one they close.
+_ASK_ATTEMPTS = 3
+
+
 def generate_sql(provider, question: str, fragment: str,
-                 dialect: str = "", max_tokens: int = 500) -> str:
-    """Ask a provider for one SELECT. Raises ``UnsafeSQL`` if it is not one."""
+                 dialect: str = "", max_tokens: int = 500,
+                 attempts: int = _ASK_ATTEMPTS) -> str:
+    """Ask a provider for one SELECT. Raises ``UnsafeSQL`` if it is not one.
+
+    A model that answers INSUFFICIENT is asked again, up to `attempts` times.
+    Nothing else is retried: a reply that is not a SELECT, or that contains a
+    write, is raised at once. Those are not flakiness, and re-rolling them
+    would be asking a model repeatedly until it gets past a safety check.
+    """
     flavour = f" Target dialect: {dialect}." if dialect else ""
-    reply = provider.complete(
-        SYSTEM + flavour,
-        f"Tables you may use:\n\n{fragment}\nQuestion: {question}\n",
-        max_tokens=max_tokens,
+    prompt = "Tables you may use:\n\n%s\nQuestion: %s\n" % (fragment, question)
+    tries = max(1, attempts)
+    for _ in range(tries):
+        reply = provider.complete(SYSTEM + flavour, prompt, max_tokens=max_tokens)
+        if _strip_fences(reply).upper() != "INSUFFICIENT":
+            return check_read_only(reply)
+    raise UnsafeSQL(
+        "the model said the selected tables cannot answer this, %d times. "
+        "That is usually selection, not the model: try --top-k higher, or a "
+        "hint." % tries
     )
-    if _strip_fences(reply).upper() == "INSUFFICIENT":
-        raise UnsafeSQL(
-            "the model said the selected tables cannot answer this. That is "
-            "usually selection, not the model: try --top-k higher, or a hint."
-        )
-    return check_read_only(reply)
 
 
 def run_sql(engine, sql: str, limit: int = 50
