@@ -670,11 +670,18 @@ class Catalog:
             covered = set()
             for sc in chosen:
                 covered.update(tokenize(_name_text(sc.doc)))
-            wanted = {t for t in q_tokens
-                      if len(t) > 2 and t not in _BOOST_STOP
-                      and self._bm25_name.idf.get(t, 0.0) >= _COVERAGE_MIN_IDF}
-            uncovered = [t for t in wanted
-                         if t not in covered and _stem(t) not in {_stem(c) for c in covered}]
+            # In question order, and de-duplicated by hand. Building this
+            # from a set made the order arbitrary, so which token got the
+            # last coverage slot could change between runs -- and did differ
+            # from the JS twin on one case in 1,789.
+            covered_stems = {_stem(c) for c in covered}
+            uncovered = []
+            for t in q_tokens:
+                if (len(t) > 2 and t not in _BOOST_STOP
+                        and self._bm25_name.idf.get(t, 0.0) >= _COVERAGE_MIN_IDF
+                        and t not in covered and _stem(t) not in covered_stems
+                        and t not in uncovered):
+                    uncovered.append(t)
         for token in uncovered[:_COVERAGE_MAX]:
             best = None
             for q, sc_val in ranked:
