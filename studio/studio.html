@@ -372,7 +372,10 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
             <b>Not now</b><span>Selection works on names, types and keys. You can add this later.</span>
           </button>
           <button class="choice primary" id="mcLocal">
-            <b>Local model &mdash; free</b><span>Runs on this machine, no key, no data sent anywhere.</span>
+            <b>Local model &mdash; free</b><span>Nothing leaves this machine, but it
+              downloads about 3&nbsp;GB the first time, runs on your CPU, and a 1.5B
+              model writes noticeably weaker descriptions than a hosted one. Worth a
+              look when a key is not an option; not the way to see this at its best.</span>
           </button>
           <button class="choice" id="mcKey">
             <b>Use an API key</b><span>Anthropic, OpenAI, Gemini or OCI. Best quality.</span>
@@ -1607,7 +1610,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       const note = $("modelHint");
       if (note) {
         note.textContent =
-          v === "local" ? "Runs on this machine. No key. First use downloads the model once -- pip install 'schemagate[huggingface]'."
+          v === "local" ? "Runs on this machine, nothing leaves it, no key. Needs pip install 'schemagate[huggingface]' (about 2 GB), and the first use downloads the model itself -- about 3 GB, once. Expect a minute or so of loading before the first description, and about 40 seconds per object after that on a CPU."
         : v === "none" ? ""
         : "The key stays in this process and is never written to disk.";
       }

@@ -1787,7 +1787,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       const note = $("modelHint");
       if (note) {
         note.textContent =
-          v === "local" ? "Runs on this machine. No key. First use downloads the model once -- pip install 'schemagate[huggingface]'."
+          v === "local" ? "Runs on this machine, nothing leaves it, no key. Needs pip install 'schemagate[huggingface]' (about 2 GB), and the first use downloads the model itself -- about 3 GB, once. Expect a minute or so of loading before the first description, and about 40 seconds per object after that on a CPU."
         : v === "none" ? ""
         : "The key stays in this process and is never written to disk.";
       }
