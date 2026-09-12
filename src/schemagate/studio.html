@@ -145,6 +145,22 @@ input,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px 
 .ask button.go{background:var(--accent);border-color:var(--accent);color:#fff;padding:0 18px;font-weight:500}
 .examples{display:flex;flex-wrap:wrap;gap:6px}
 .catops{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+/* The schema browser. One row per object, capped and scrolling inside, so
+   the answer below it is never pushed off the first screen. */
+#browser{max-height:38vh}
+#browser header{gap:12px}
+#browser header .tools{display:flex;gap:8px;align-items:center;margin-left:auto;min-width:0}
+#browser header input{width:min(34vw,360px);font-size:13px;padding:6px 10px}
+#browser header .chip{cursor:pointer}
+#objList{overflow:auto;scrollbar-width:thin;flex:1;min-height:0}
+.obj{display:grid;grid-template-columns:64px minmax(180px,1fr) 56px minmax(0,2fr);gap:12px;align-items:baseline;padding:6px 14px;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer}
+.obj:hover{background:var(--panel-2)}
+.obj .k{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase}
+.obj code{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.obj .n{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.obj .d{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.obj .d:empty::before{content:"\2014";opacity:.5}
+@media (max-width:700px){.obj{grid-template-columns:52px 1fr 44px;} .obj .d{display:none}}
 /* The answer table is unbounded -- 50 rows made the pane 1436px on a 1000px
    viewport, so the page grew a second screen of scrolling for one result.
    It scrolls inside itself instead; #answerRows is already overflow:auto and
@@ -537,6 +553,16 @@ table.shadows td.arrow{color:var(--muted);width:30px;text-align:center;font-fami
       <span class="delta" id="aidelta"></span>
     </div>
 
+    <div class="pane" id="browser" hidden>
+      <header><h3>Schema <span class="meta" id="objCount"></span></h3>
+        <div class="tools">
+          <span class="chip on" data-kind="">all</span>
+          <span class="chip" data-kind="table">tables</span>
+          <span class="chip" data-kind="view">views</span>
+          <input id="objFilter" placeholder="filter objects\u2026" aria-label="filter objects" autocomplete="off">
+        </div></header>
+      <div id="objList"></div>
+    </div>
     <div class="pane" id="answerPane" hidden style="padding:12px 14px;gap:8px">
       <header style="padding:0"><h3 style="margin:0;font-size:13px;font-weight:600">Answer</h3>
         <span class="meta" id="answerMeta"></span></header>
@@ -1909,6 +1935,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       if (mt2) mt2.textContent = "connected to your database";
       state.hasCatalog = true;
       if (window.__loadConnections) window.__loadConnections();
+      if (window.__loadObjects) window.__loadObjects();
       toast("Connected \u2014 " + out.objects + " objects from " + out.dialect);
       if ($("intro")) $("intro").hidden = true;
       // Ask the question once, here, where it has an answer: the catalog now
@@ -2050,6 +2077,7 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
         const el = $(id); if (el) el.hidden = true;
       }
       const skipped = out.objects - out.written;
+      if (window.__loadObjects) window.__loadObjects();
       note("catNote", "Wrote " + out.written + " description(s) of " + out.objects +
                       (skipped > 0 ? " \u2014 " + skipped + " already had a database comment." : ".") +
                       " Now ask a question above.");
@@ -2230,6 +2258,45 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       list.appendChild(d);
     }
   }
+  // ---- schema browser -----------------------------------------------------
+  const objState = {rows: [], kind: "", q: ""};
+  function paintObjects(){
+    const list = $("objList"); if (!list) return;
+    const q = objState.q.toLowerCase();
+    const rows = objState.rows.filter(o =>
+      (!objState.kind || o.kind.includes(objState.kind)) &&
+      (!q || o.name.toLowerCase().includes(q) || (o.description||"").toLowerCase().includes(q)));
+    $("objCount").textContent = rows.length === objState.rows.length
+      ? objState.rows.length.toLocaleString() + " objects"
+      : rows.length.toLocaleString() + " of " + objState.rows.length.toLocaleString();
+    list.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    for (const o of rows.slice(0, 400)) {
+      const d = document.createElement("div"); d.className = "obj"; d.title = "show " + o.name;
+      d.innerHTML = `<span class="k">${esc2(o.kind)}</span><code>${esc2(o.name)}</code>` +
+        `<span class="n">${o.columns} col${o.columns===1?"":"s"}</span><span class="d">${esc2(o.description)}</span>`;
+      d.onclick = () => { $("q").value = o.name; run(); };
+      frag.appendChild(d);
+    }
+    if (rows.length > 400) { const m = document.createElement("div"); m.className = "obj"; m.style.cursor = "default";
+      m.innerHTML = `<span></span><span class="d">${rows.length - 400} more \u2014 narrow the filter</span>`; frag.appendChild(m); }
+    list.appendChild(frag);
+  }
+  async function loadObjects(){
+    if (!API) return;
+    let out; try { out = await (await fetch(API + "/objects")).json(); } catch(e){ return; }
+    objState.rows = out.objects || [];
+    const b = $("browser"); if (b) b.hidden = !objState.rows.length;
+    paintObjects();
+  }
+  $("objFilter")?.addEventListener("input", e => { objState.q = e.target.value.trim(); paintObjects(); });
+  for (const c of document.querySelectorAll("#browser .chip")) c.onclick = () => {
+    for (const x of document.querySelectorAll("#browser .chip")) x.classList.toggle("on", x === c);
+    objState.kind = c.dataset.kind; paintObjects();
+  };
+  window.__loadObjects = loadObjects;
+  loadObjects();
+
   window.__loadConnections = loadConnections; window.__loadModels = loadModels;
   loadConnections(); loadModels();
 

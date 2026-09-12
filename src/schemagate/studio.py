@@ -754,6 +754,16 @@ def _handler(state: StudioState):
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+            elif self.path == "/api/objects":
+                # The whole catalog, for the browser. Metadata only -- the
+                # same promise select() makes -- and no DDL, which is what
+                # keeps 1,245 objects to a couple of hundred kilobytes.
+                docs = state.catalog._docs.values()
+                self._json(200, {"total": len(state.catalog._docs), "objects": [
+                    {"name": d.qname, "kind": str(d.kind or "").lower(),
+                     "schema": d.schema or "", "columns": len(d.columns),
+                     "description": (d.hint or d.description or "").split(" | ")[0]}
+                    for d in sorted(docs, key=lambda d: (str(d.schema or ""), d.name))]})
             elif self.path == "/api/health":
                 self._json(200, {"status": "ok", "objects": len(state.catalog._docs)})
             elif self.path == "/api/settings":
