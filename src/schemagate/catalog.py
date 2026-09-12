@@ -16,7 +16,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 from .embedder import (Embedder, HashingEmbedder, tokenize, expand_joins,
                        expand_acronyms)
 from .identity import Principal
-from .models import ObjectDoc, Scored, Selection, allowed
+from .models import ObjectDoc, Scored, Selection, allowed, ForeignKey
 from .stores.memory import MemoryStore
 
 _RRF_K = 60
@@ -342,8 +342,117 @@ class Catalog:
                                  schemas=schemas, include_views=include_views,
                                  sample_values=sample_values,
                                  sample_budget=sample_budget))
+        # Read the joins the schema implies but never declared, before the
+        # index is built -- they are part of what an object *is*.
+        self.infer_foreign_keys()
         self.index()
         return self
+
+    def infer_foreign_keys(self) -> int:
+        """Add the joins the schema implies but never declared.
+
+        Application schemas carry their relationships in column names and
+        leave the constraints off -- migrations are faster without them, and
+        ORMs do the joining. On a real 1,245-object schema: `contacts`
+        declares `company_id -> companies` and `user_id -> users` but not
+        `tenant_id`, though `tenants` is right there; across the schema 2,291
+        columns name a table that exists and are not declared as keys.
+
+        That matters because a question like "the contacts of xmagnet" needs
+        `tenants` to resolve the name, and nothing put it in front of the
+        model: FK expansion only follows declared edges, so the model was
+        shown `contacts` alone and correctly said it could not answer.
+
+        Conservative on purpose. An edge is added only when the column ends
+        in `_id`, its stem names an object in the same schema (singular or
+        plural), that object has a single-column primary key, and no declared
+        constraint already covers the column. Everything added is marked
+        `inferred` so `render_ddl` can label it.
+        """
+        # Every way a table might be named for the same thing. Conventions
+        # are not universal and one schema often holds several: `tenants`,
+        # `CRM_CUSTOMER`, `dim_member`, `tbl_order` all name the object a key
+        # column points at. So index each object under its name, its name
+        # without a leading domain or layer word, and the singular/plural of
+        # both -- then a stem is looked up rather than guessed at.
+        def variants(word: str):
+            out = {word}
+            if word.endswith("ies") and len(word) > 4:
+                out.add(word[:-3] + "y")
+            if word.endswith("es") and len(word) > 3:
+                out.add(word[:-2])
+            if word.endswith("s") and len(word) > 2:
+                out.add(word[:-1])
+            else:
+                out.add(word + "s")
+                if word.endswith("y") and len(word) > 2:
+                    out.add(word[:-1] + "ies")
+                else:
+                    out.add(word + "es")
+            return out
+
+        by_key: Dict[tuple, set] = {}
+        for d in self._docs.values():
+            name = (d.name or "").lower()
+            if not name:
+                continue
+            keys = set(variants(name))
+            # `crm_customer` answers to `customer`, and so does `dim_customer`
+            # -- which is exactly why an ambiguous stem is left alone below.
+            if "_" in name:
+                keys |= variants(name.rsplit("_", 1)[-1])
+            for k in keys:
+                by_key.setdefault((d.schema, k), set()).add(d.qname)
+
+        def target(stem: str, schema) -> Optional[ObjectDoc]:
+            hits = set()
+            for v in variants(stem):
+                hits |= by_key.get((schema, v), set())
+            if len(hits) != 1:
+                # Nothing, or more than one plausible table. A wrong join is
+                # worse than a missing one: the model writes it confidently
+                # and the rows come back quietly incorrect.
+                return None
+            doc = self._docs[next(iter(hits))]
+            return doc if len([c for c in doc.columns if c.pk]) == 1 else None
+
+        def stem_of(name: str):
+            """The object a key column points at, however the shop spells it.
+
+            Conventions are per-database, per-team, and often mixed inside
+            one schema: PostgreSQL and MySQL write `customer_id`, Oracle
+            commonly writes `ID_CUSTOMER`, warehouses write `member_key`.
+            Reading one spelling infers nothing at all on half the databases
+            this runs against.
+            """
+            for suffix in ("_id", "_key", "_fk"):
+                if name.endswith(suffix) and len(name) > len(suffix):
+                    return name[:-len(suffix)]
+            for prefix in ("id_", "fk_"):
+                if name.startswith(prefix) and len(name) > len(prefix):
+                    return name[len(prefix):]
+            return None
+
+        added = 0
+        for doc in self._docs.values():
+            declared = {c.lower() for fk in doc.foreign_keys for c in fk.columns}
+            for col in doc.columns:
+                name = (col.name or "").lower()
+                stem = stem_of(name)
+                if stem is None or name in declared:
+                    continue
+                ref = target(stem, doc.schema)
+                if ref is None or ref is doc:
+                    continue
+                pk = [c.name for c in ref.columns if c.pk]
+                doc.foreign_keys.append(ForeignKey(
+                    columns=[col.name], ref_table=ref.name,
+                    ref_columns=pk, inferred=True))
+                declared.add(name)
+                added += 1
+        if added:
+            self._stale = True
+        return added
 
     def index(self) -> "Catalog":
         store_dim = getattr(self.store, "dim", None)

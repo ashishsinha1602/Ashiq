@@ -129,6 +129,11 @@ class ForeignKey:
     columns: List[str]
     ref_table: str
     ref_columns: List[str] = field(default_factory=list)
+    #: False when the database declared this constraint, True when it was read
+    #: out of the naming convention instead. Kept apart so the DDL can say so:
+    #: a model told `tenant_id -> tenants` as fact would write a join the
+    #: database will not enforce, and sometimes that join is wrong.
+    inferred: bool = False
 
 
 @dataclass
@@ -205,7 +210,9 @@ class ObjectDoc:
         shown = {c.name for c in visible}
         for fk in self.foreign_keys:
             if all(c in shown for c in fk.columns):
-                lines.append(f"-- FK {self.name}({','.join(fk.columns)}) -> {fk.ref_table}")
+                note = "  (inferred from the column name, not declared)" if fk.inferred else ""
+                lines.append(
+                    f"-- FK {self.name}({','.join(fk.columns)}) -> {fk.ref_table}{note}")
         return "\n".join(l for l in lines if l)
 
 

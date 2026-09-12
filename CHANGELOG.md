@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.1.41
+
+- **Added: the joins a schema implies but never declared.** Application
+  schemas carry their relationships in column names and leave the constraints
+  off -- migrations are faster without them and the ORM does the joining. On a
+  real 1,245-object schema `contacts` declares `company_id -> companies` and
+  `user_id -> users` but not `tenant_id`, though `tenants` is right there;
+  across that schema 2,291 columns name an object that exists and are not
+  declared as keys. Foreign-key expansion could only follow what was declared,
+  so a question like "the contacts of xmagnet" was shown `contacts` alone and
+  the model correctly answered that it could not resolve the name.
+
+  Those edges are now read out of the data dictionary at reflection time,
+  whatever the shop calls things: `customer_id`, `ID_CUSTOMER`, `member_key`,
+  `fk_member`, against tables named `customers`, `CRM_CUSTOMER` or
+  `dim_member`. An inferred edge is labelled as inferred in the DDL, because a
+  model told a guess as fact writes a join the database does not enforce. A
+  stem matching more than one table is left alone: a wrong join returns
+  quietly incorrect rows, a missing one returns none.
+
+  Measured on that schema: refusals across twenty runs fell from 35% to 25%,
+  and "show the contacts of xmagnet" went from refusing five times out of five
+  to answering five times out of five, with the same SQL each time.
+
+- **Changed: a model that says INSUFFICIENT is asked again** (three times
+  total) before that is reported. Nothing else is retried -- a reply that is
+  not a SELECT, or contains a write, is raised at once, because re-rolling
+  those would be asking a model repeatedly to get past a safety check.
+
+- **Fixed: `temperature` is sent where it is accepted and dropped where it is
+  not.** claude-sonnet-5 answers `400 ... temperature is deprecated for this
+  model`; setting it blindly took the refusal rate from 35% to 100%.
+
 ## 0.1.40
 
 - **Fixed: the OCI stack would not start.** `terraform init` failed on the
