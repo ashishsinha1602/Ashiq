@@ -1637,10 +1637,13 @@ if (typeof module === "object" && module.exports) module.exports = blakejs;
       // over the user's own tables.
       if (isLive) $("aiswitch").hidden = true;
       if ($("recipePanel") && !live) $("recipePanel").hidden = true;
-      $("connState").textContent = isLive ? "connected"
+      // Name the database, not just the state. "connected" tells you nothing
+      // when you have two Studios open; "appdevdb on devrdsproxy as devadmin"
+      // does.
+      $("connState").textContent = isLive ? (st.connection || "connected")
                                 : (st.demo ? "demo" : "not connected");
       const mt = $("modeText");
-      if (mt) mt.textContent = isLive ? "connected to your database"
+      if (mt) mt.textContent = isLive ? (st.connection || "connected to your database")
                              : (st.demo ? "demo schema \u2014 not your data"
                                         : "no database connected");
       // The intro box is written for the browser demo -- it says this page is

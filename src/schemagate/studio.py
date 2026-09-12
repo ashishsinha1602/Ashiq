@@ -44,6 +44,26 @@ def _estimate_tokens(text: str) -> int:
 _CONNECT_SAMPLE_BUDGET = 10.0
 
 
+
+def _describe_connection(url: str, body: Dict[str, Any], dialect: str) -> str:
+    """`appdevdb on devrdsproxy.proxy-... as devadmin` -- never the password."""
+    try:
+        from sqlalchemy.engine import make_url
+        u = make_url(url)
+        host, db, user = u.host, u.database, u.username
+    except Exception:                                    # noqa: BLE001
+        host = db = user = None
+    if not host and body.get("alias"):                   # Autonomous DB wallet
+        host, db = body.get("alias"), None
+    parts = [db or ""]
+    if host:
+        parts.append(f"on {host}")
+    if user or body.get("user"):
+        parts.append(f"as {user or body.get('user')}")
+    label = " ".join(x for x in parts if x).strip()
+    return f"{dialect} · {label}" if label else dialect
+
+
 class StudioState:
     """One catalog, one optional described twin, served by the handlers."""
 
@@ -90,6 +110,11 @@ class StudioState:
         #: The request that produced the current catalog, so "Resync" can
         #: replay it without asking for the wallet and passwords again.
         self.last_connect: Optional[Dict[str, Any]] = None
+        #: What the catalog is *of*: `appdevdb on devrdsproxy... as devadmin`.
+        #: The form blanks its fields after connecting, so without this the
+        #: page never names the database it is showing -- and a person with
+        #: two Studios open cannot tell them apart.
+        self.connection_label: str = ""
         #: Saving a connection means putting a database password on disk, in a
         #: tool that otherwise stores nothing. That is the user's call, not a
         #: default -- set by --remember, or per-connection by the page's
@@ -200,6 +225,25 @@ class StudioState:
         picked["rows"] = [[None if v is None else str(v) for v in r] for r in rows]
         return picked
 
+    def _description_cache(self) -> Optional[str]:
+        """Where generated descriptions are kept between runs.
+
+        Without this every description lived in the process and died with it:
+        restart the Studio and a catalogue that cost real money against a
+        1,200-object schema was gone, and the next click paid for it again.
+        The describer already caches by content fingerprint -- an object is
+        only re-described when its structure or the model changes -- so a
+        file per database makes a second run free. Keyed on the connection
+        label, which names host, database and user but never the password.
+        """
+        if not self.connection_label:
+            return None
+        import hashlib
+        from . import remember
+        key = hashlib.sha256(self.connection_label.encode("utf-8")).hexdigest()[:16]
+        d = remember.path().parent / "descriptions"
+        return str(d / f"{key}.json")
+
     def describe(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """Catalogue the live database with the configured model.
 
@@ -229,8 +273,9 @@ class StudioState:
 
         from .ai import SchemaDescriber
         try:
-            written = cat.describe(SchemaDescriber(provider),
-                                   only_missing=only_missing)
+            written = cat.describe(
+                SchemaDescriber(provider, cache_path=self._description_cache()),
+                only_missing=only_missing)
         except Exception as e:                            # noqa: BLE001
             return {"error": f"{type(e).__name__}: {e}"}
         cat.index()
@@ -496,6 +541,7 @@ class StudioState:
         # that actually reflected something is worth replaying on restart, so
         # this sits after the bootstrap rather than beside the form handler.
         self.last_connect = dict(body)
+        self.connection_label = _describe_connection(url, body, engine.dialect.name)
         from . import remember
         self.remembered = remember.save(
             body, allow=self.remember_connection or bool(body.get("remember"))
@@ -506,8 +552,8 @@ class StudioState:
         # -- announcing "nothing is catalogued yet" over seven descriptions
         # reads as a product that has not noticed its own state.
         _described = sum(1 for d in cat._docs.values() if d.description)
-        self.blurb = (f"{len(cat._docs)} objects reflected from "
-                      f"{engine.dialect.name}. " +
+        self.blurb = (f"{len(cat._docs)} objects from "
+                      f"{self.connection_label or engine.dialect.name}. " +
                       (f"{_described} already carry a description."
                        if _described else "Nothing is catalogued yet."))
         # The page was built around the bundled demo, whose hints, restricted
@@ -640,6 +686,7 @@ def _handler(state: StudioState):
                 # "connected" from a catalog it can see, rather than trusting a
                 # boolean it may have read before the connection existed.
                 out["objects"] = len(state.catalog._docs)
+                out["connection"] = state.connection_label
                 out["connecting"] = state.connecting
                 out["connect_error"] = state.connect_error
                 # Whether "Resync" and "Re-catalogue" have anything to act on.
