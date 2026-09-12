@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.40
+
+- **Fixed: the OCI stack would not start.** `terraform init` failed on the
+  Studio output added in 0.1.37 -- an output's `description` cannot
+  interpolate a variable, and Terraform rejects it before reading anything
+  else, so the whole downloaded stack refused to initialise. Verified now by
+  running `terraform init` and `fmt -check` against the zip the release
+  actually publishes, which is how this was caught.
+
 ## 0.1.39
 
 - **Fixed: cataloguing made retrieval worse on a large schema.** Every
