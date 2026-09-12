@@ -1,12 +1,40 @@
 # Changelog
 
-## 0.1.38
+## 0.1.39
 
-- **Fixed: `schemagate.__version__` was four releases stale.** It was a
-  hand-written constant and nothing checked it, so `pip show` said 0.1.37
-  while the attribute said 0.1.33 -- and a bug report quoting the attribute
-  sends you reading the wrong code. It is read from the installed
-  distribution now.
+- **Fixed: cataloguing made retrieval worse on a large schema.** Every
+  description repeats the domain's words, so on 1,245 objects "contact" fell
+  to idf 0.15 -- the word the user typed became the least informative token in
+  the index -- while the table literally called `contacts` was pushed down by
+  length normalisation for carrying 55 columns and a description. Measured:
+  `contacts` ranked 3rd before cataloguing and below 40th after it. Scoring is
+  now fielded -- name, body and written prose each with their own idf and
+  length -- so a description cannot drown a name, and a weak catalogue can
+  only ever make the prose channel useless instead of poisoning the rest.
+
+- **Fixed: nothing was stemmed.** "how many claims" never matched "one row per
+  claim". Every plural anyone types missed every singular a schema uses. The
+  lexical layer stems both sides now; `tokenize` is untouched, because the
+  embedder's vectors are a pinned guarantee.
+
+- **Added: acronyms and compound words.** `v_pmpm` <- "per member per month",
+  `myconvo` <- "my convo". Both filtered against the index vocabulary, so only
+  forms the schema actually uses are added.
+
+- **Added: coverage selection.** A question that needs a join names two things
+  -- "campaigns ... and the tenant name" -- and ranking answered only the
+  first; `tenants` was absent even at top_k=30. Each informative word the
+  question used that no chosen object carries in its name now gets the best
+  object that does, inside the same top_k budget.
+
+- **Fixed: the object the user named outranks the ones that merely share a
+  word with it**, and only the most specific match counts -- asking for
+  `fact_claim_line_v2` also spells out `fact_claim_line`.
+
+- **Fixed: backups and partitions outranked the tables they copy.**
+
+Verified end to end on Oracle (a 4-join query over 30.8M rows), PostgreSQL
+(1,245 objects), MySQL and SQLite.
 
 ## 0.1.37
 

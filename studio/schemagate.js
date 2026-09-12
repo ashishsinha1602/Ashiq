@@ -55,6 +55,15 @@
     if (t.length > 3 && t.endsWith("s") && !t.endsWith("ss")) return t.slice(0, -1);
     return t;
   }
+  function expandAcronyms(tokens, vocab, maxRun = 5) {
+    const out = [], words = tokens.filter((t) => /^[a-z]+$/.test(t));
+    for (let n = 2; n <= maxRun; n++)
+      for (let i = 0; i + n <= words.length; i++) {
+        const acro = words.slice(i, i + n).map((w) => w[0]).join("");
+        if (acro.length >= 2 && (!vocab || vocab.has(acro)) && !out.includes(acro)) out.push(acro);
+      }
+    return out;
+  }
   function expandJoins(tokens, vocab, maxLen = 14) {
     const out = tokens.slice();
     for (let i = 0; i + 1 < tokens.length; i++) {
@@ -152,6 +161,16 @@
     return out.join(" ").slice(0, limit);
   }
   function qname(d) { return d.schema ? `${d.schema}.${d.name}` : d.name; }
+  const NAME_WEIGHT = 1.0, PROSE_WEIGHT = 1.0, NAMED_BOOST = 4.0;
+  const COVERAGE_MIN_IDF = 2.0, COVERAGE_MAX = 3;
+  function nameText(d) {
+    return [d.schema || "", d.name || "", (d.name || "").replace(/_/g, " ")].filter(Boolean).join(" ");
+  }
+  function proseText(d) {
+    const parts = [d.hint || "", d.description || ""];
+    for (const c of d.columns || []) if (c.comment) parts.push(c.comment);
+    return parts.filter(Boolean).join(" ");
+  }
   function embedText(d) {
     const parts = [d.name.split("_").join(" "), d.name];
     if (d.hint) parts.push(d.hint);
@@ -186,7 +205,7 @@
   class BM25 {
     constructor(docs, k1 = 1.4, b = 0.72) {
       this.k1 = k1; this.b = b;
-      this.docs = docs.map(tokenize);
+      this.docs = docs.map((d) => tokenize(d).map(stemToken));
       this.len = this.docs.map((d) => d.length);
       this.avg = this.len.length ? this.len.reduce((a, x) => a + x, 0) / this.len.length : 0.0;
       this.tf = this.docs.map((d) => { const m = new Map(); for (const t of d) m.set(t, (m.get(t) || 0) + 1); return m; });
@@ -196,7 +215,9 @@
       this.idf = new Map(); for (const [t, c] of df) this.idf.set(t, Math.log(1 + (n - c + 0.5) / (c + 0.5)));
     }
     scores(query) {
-      const q = expandJoins(tokenize(query), this.idf);
+      const toks = tokenize(query);
+      const q = expandJoins(toks).map(stemToken);
+      for (const a of expandAcronyms(toks, this.idf)) if (!q.includes(a)) q.push(a);
       return this.tf.map((tf, i) => {
         let s = 0.0;
         for (const t of q) {
@@ -233,6 +254,11 @@
       this.order = [...this.docs.keys()];
       const texts = this.order.map((q) => embedText(this.docs.get(q)));
       this.bm25 = new BM25(texts);
+      // Fields, as in catalog.py: the name and the written prose each get
+      // their own idf and their own length, so a long description cannot
+      // drown the name and a weak catalogue cannot poison either.
+      this.bm25Name = new BM25(this.order.map((q) => nameText(this.docs.get(q))));
+      this.bm25Prose = new BM25(this.order.map((q) => proseText(this.docs.get(q))));
       this.shadows = this._findShadows();
       this.vecs = new Map(); const vs = this.embedder.embed(texts);
       this.order.forEach((q, i) => this.vecs.set(q, vs[i]));
@@ -297,35 +323,73 @@
       const lexPairs = this.order.map((q, i) => [q, bm[i]]).filter(([q, s]) => allowedSet.has(q) && s > 0);
       lexPairs.sort((a, b) => b[1] - a[1]);
       const lexRank = new Map(); lexPairs.forEach(([q], i) => lexRank.set(q, i));
+      const rankOf = (bm) => {
+        const sc = bm.scores(question);
+        const pairs = this.order.map((q, i) => [q, sc[i]]).filter(([q, v]) => allowedSet.has(q) && v > 0);
+        pairs.sort((a, b) => b[1] - a[1]);
+        const m = new Map(); pairs.forEach(([q], i) => m.set(q, i)); return m;
+      };
+      const nameRank = rankOf(this.bm25Name), proseRank = rankOf(this.bm25Prose);
       const qTokens = expandJoins(tokenize(question), vocab);
-      const qStems = new Set(qTokens.filter((t) => t.length > 2 && !BOOST_STOP.has(t)).map(stemToken));
-      let maxIdf = 0.0;
-      if (this.bm25) for (const v of this.bm25.idf.values()) if (v > maxIdf) maxIdf = v;
       const namedIn = (d) => { const nm = tokenize(d.name); if (!nm.length || nm.length > qTokens.length) return false; for (let i = 0; i + nm.length <= qTokens.length; i++) { let ok = true; for (let j = 0; j < nm.length; j++) if (qTokens[i + j] !== nm[j]) { ok = false; break; } if (ok) return true; } return false; };
+      const namedToks = new Map();
+      for (const q of allowed) if (namedIn(this.docs.get(q))) namedToks.set(q, tokenize(this.docs.get(q).name));
+      const namedBest = new Set();
+      for (const [q, toks] of namedToks) {
+        let covered = false;
+        for (const [q2, other] of namedToks)
+          if (q2 !== q && other.length > toks.length && other.slice(0, toks.length).join(" ") === toks.join(" ")) covered = true;
+        if (!covered) namedBest.add(q);
+      }
       const fused = [];
       for (const q of allowed) {
         let s = 0.0;
         if (vecRank.has(q)) s += vw / (RRF_K + vecRank.get(q) + 1);
         if (lexRank.has(q)) s += lw / (RRF_K + lexRank.get(q) + 1);
+        if (nameRank.has(q)) s += NAME_WEIGHT / (RRF_K + nameRank.get(q) + 1);
+        if (proseRank.has(q)) s += PROSE_WEIGHT / (RRF_K + proseRank.get(q) + 1);
         if (s && this.shadows.has(q)
             && (allowedSet.has(this.shadows.get(q)) || !this.docs.has(this.shadows.get(q)))
             && !namedIn(this.docs.get(q))) s *= SHADOW_PENALTY;
-        if (s && this.bm25 && maxIdf > 0) {
-          const nameToks = new Set(tokenize(this.docs.get(q).name || "")
-            .filter((t) => t.length > 2 && !BOOST_STOP.has(t)).map(stemToken));
-          let hit = 0.0;
-          for (const t of qStems) if (nameToks.has(t)) hit += this.bm25.idf.get(t) || 0.0;
-          if (hit) {
-            s *= 1.0 + 0.5 * Math.min(1.0, hit / maxIdf);
-            if (qStems.has(stemToken((this.docs.get(q).name || "").toLowerCase()))) s *= 1.2;
-          }
-        }
+
+        if (s && namedBest.has(q)) s *= NAMED_BOOST;
         if (s) fused.push([q, s]);
       }
       fused.sort((a, b) => b[1] - a[1]);
       const chosen = [], taken = new Set();
       for (const name of pin) for (const [q, d] of this.docs) if ((q === name || d.name === name) && allowedSet.has(q) && !taken.has(q)) { chosen.push({ doc: d, score: 1.0, reason: "pinned" }); taken.add(q); }
       for (const [q, s] of fused) { if (chosen.length >= topK) break; if (!taken.has(q)) { const reason = vecRank.has(q) && lexRank.has(q) ? "hybrid" : vecRank.has(q) ? "vector" : "lexical"; chosen.push({ doc: this.docs.get(q), score: s, reason }); taken.add(q); } }
+      // Cover every thing the question named -- same rule as catalog.py, and
+      // inside topK, never beyond it.
+      if (this.bm25Name && this.bm25Name.idf.size) {
+        const covered = new Set();
+        for (const sc of chosen) for (const t of tokenize(nameText(sc.doc))) covered.add(t);
+        const coveredStems = new Set([...covered].map(stemToken));
+        const uncovered = [];
+        for (const t of qTokens)
+          if (t.length > 2 && !BOOST_STOP.has(t)
+              && (this.bm25Name.idf.get(t) || 0) >= COVERAGE_MIN_IDF
+              && !covered.has(t) && !coveredStems.has(stemToken(t))
+              && !uncovered.includes(t)) uncovered.push(t);
+        for (const token of uncovered.slice(0, COVERAGE_MAX)) {
+          let best = null;
+          for (const [q, sv] of fused) {
+            if (taken.has(q)) continue;
+            if (tokenize(nameText(this.docs.get(q))).includes(token)) { best = [q, sv]; break; }
+          }
+          if (!best) continue;
+          if (chosen.length >= topK) {
+            let dropped = false;
+            for (let i2 = chosen.length - 1; i2 >= 0; i2--)
+              if (chosen[i2].reason !== "pinned" && chosen[i2].reason !== "covers") {
+                taken.delete(chosen[i2].doc.qname); chosen.splice(i2, 1); dropped = true; break;
+              }
+            if (!dropped) break;
+          }
+          chosen.push({ doc: this.docs.get(best[0]), score: best[1], reason: "covers" });
+          taken.add(best[0]);
+        }
+      }
       if (expandFks) for (const sc of [...chosen]) for (const fk of (sc.doc.foreign_keys || [])) for (const q of allowed) { const d = this.docs.get(q); if (d.name.toLowerCase() === fk.ref_table.toLowerCase() && !taken.has(q)) { chosen.push({ doc: d, score: 0.0, reason: "fk" }); taken.add(q); } }
       return {
         question, hits: chosen, totalObjects: this.order.length,
