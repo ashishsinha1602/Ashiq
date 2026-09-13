@@ -1,5 +1,6 @@
 """The local Studio server, driven over real HTTP."""
 import json
+import pathlib
 import urllib.request
 
 import pytest
@@ -89,3 +90,50 @@ def test_cli_wires_studio():
     from schemagate.cli import build_parser
     args = build_parser().parse_args(["studio", "--no-browser", "--port", "0"])
     assert args.func.__name__ == "cmd_studio"
+
+
+# --- `schemagate studio --url` and the wallet -----------------------------
+#
+# This was broken in every release up to 0.1.44 and nothing caught it, because
+# every Oracle test in this repo built its engine with a custom `creator=` and
+# called the library directly. Nobody does that. The documented way to open
+# the Studio on an Autonomous Database is the flag, and the flag could not
+# work: the URL branch called create_engine() and dropped the one variable a
+# wallet travels in.
+
+def test_studio_url_path_merges_connect_args_from_the_environment():
+    """`--url` must go through engine_from_url, not create_engine.
+
+    SCHEMAGATE_CONNECT_ARGS is the only route for a connection a URL cannot
+    express -- an Autonomous Database wallet is the documented case -- and
+    only engine_from_url merges it. Asserted against the source of the branch
+    because the alternative is a live Oracle in CI.
+    """
+    import re
+
+    src = pathlib.Path(st.__file__).read_text("utf-8")
+    i = src.index("def main(")
+    branch = src[i:i + 4000]
+    j = branch.index("if url:")
+    # far enough past `if url:` to clear the comment and reach the call
+    window = branch[j:j + 1600]
+
+    assert "engine_from_url(" in window, (
+        "the --url branch must use engine_from_url so a wallet passed in "
+        "SCHEMAGATE_CONNECT_ARGS reaches the driver")
+    assert not re.search(r"\bcreate_engine\(\s*url\b", window), (
+        "create_engine(url, ...) here silently drops SCHEMAGATE_CONNECT_ARGS; "
+        "DPY-4027 'no configuration directory specified' is what the user sees")
+
+
+def test_engine_from_url_actually_merges_the_environment(monkeypatch, tmp_path):
+    """And the merge itself works, on a database the suite can really open."""
+    from schemagate.introspect import connect_args_from_env, engine_from_url
+
+    monkeypatch.setenv("SCHEMAGATE_CONNECT_ARGS", '{"timeout": 17}')
+    assert connect_args_from_env() == {"timeout": 17}
+
+    # sqlite3.connect takes `timeout`, so a wrong value would raise here.
+    eng = engine_from_url("sqlite:///" + str(tmp_path / "t.db"))
+    with eng.connect() as c:
+        assert c.exec_driver_sql("select 1").scalar() == 1
