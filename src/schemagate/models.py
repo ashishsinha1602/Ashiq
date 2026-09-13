@@ -23,6 +23,19 @@ def allowed(roles: Optional[List[str]], principal: Any) -> bool:
     return principal.has_any_role(frozenset(roles))
 
 
+def _as_text(value: Any) -> Optional[str]:
+    """Anything a schema source might hand us, as one line of text or None."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        joined = " ".join(t for t in (_as_text(v) for v in value) if t)
+        return joined or None
+    if isinstance(value, dict):
+        joined = " ".join(t for t in (_as_text(v) for v in value.values()) if t)
+        return joined or None
+    return str(value)
+
+
 def _identifiers(sql: str, limit: int = 1200) -> str:
     """Distinct identifiers from view SQL, keywords stripped."""
     import re
@@ -154,6 +167,27 @@ class ObjectDoc:
     @property
     def qname(self) -> str:
         return f"{self.schema}.{self.name}" if self.schema else self.name
+
+    def __post_init__(self) -> None:
+        """Free text arrives from outside; make sure it is text.
+
+        `description`, `hint` and a column's `comment` are filled from a data
+        dictionary, a JSON catalog, or someone's own dict, and one of those
+        will eventually hand over something that is not a string. Spider 2.0
+        carries `description` as a list of lines for some tables, and that
+        surfaced as
+
+            TypeError: sequence item 2: expected str instance, list found
+
+        raised from inside `index()`, naming neither the object nor the field.
+        A catalog of 800 tables should not be unindexable because one of them
+        described itself in a list, so it is coerced here -- once, at the
+        boundary -- rather than guarded in every reader downstream.
+        """
+        self.description = _as_text(self.description)
+        self.hint = _as_text(self.hint)
+        for c in self.columns:
+            c.comment = _as_text(c.comment)
 
     def embed_text(self) -> str:
         """The text that gets vectorised. Hint first: it carries the most signal."""
