@@ -91,6 +91,14 @@ def _describe_connection(url: str, body: Dict[str, Any], dialect: str) -> str:
     return f"{dialect} · {label}" if label else dialect
 
 
+#: Objects shown to the model when the caller does not say.
+_DEFAULT_TOP_K = 6
+
+#: Only a selection this small gets a second, wider attempt after a refusal.
+#: Above it, "cannot answer" is taken at its word.
+_WIDEN_BELOW = 10
+
+
 class StudioState:
     """One catalog, one optional described twin, served by the handlers."""
 
@@ -242,13 +250,33 @@ class StudioState:
             # Any first refusal -- "cannot answer", "returned nothing" -- gets
             # one wider go. Both mean the same thing here: the table it
             # needed was not in the six it was shown.
-            k = int(body.get("top_k") or 6)
-            if k < 15:
+            # Widen only from the default. A caller who typed a top_k meant
+            # it, and overriding that turns "these ten tables cannot answer
+            # this" into an answer drawn from twenty -- which is how a
+            # question the schema genuinely cannot answer comes back with
+            # rows. Measured: asked to rank suppliers by the stock they
+            # supply, against a schema where nothing links a supplier to a
+            # product, the library declined three times out of three and the
+            # page answered, because it had quietly widened to twenty and the
+            # model found a path across tables that do not join.
+            k = int(body.get("top_k") or 0) or _DEFAULT_TOP_K
+            asked_explicitly = bool(body.get("top_k"))
+            if k < _WIDEN_BELOW and not asked_explicitly:
                 wider = self.select(dict(body, top_k=max(15, 2 * k)))
                 if "error" not in wider:
                     try:
                         wider["sql"] = generate_sql(provider, question, wider["ddl"], dialect)
                         wider["widened_to"] = max(15, 2 * k)
+                        # Say so. An answer that only appeared once the model
+                        # was shown three times as many tables is not the same
+                        # claim as one it made from six, and returning them
+                        # identically is what makes a wrong answer look sure
+                        # of itself.
+                        wider["caveat"] = (
+                            "No answer from the first %d tables; this used %d. "
+                            "Check the joins -- a question the schema cannot "
+                            "actually answer can produce a query here."
+                            % (k, max(15, 2 * k)))
                         picked = wider
                     except UnsafeSQL as e2:
                         picked["answer_error"] = f"refused the generated SQL: {e2}"
