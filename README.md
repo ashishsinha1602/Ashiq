@@ -351,6 +351,26 @@ run before trusting a new database or driver.
 
 ## Numbers
 
+**On public benchmarks, so you can check them without trusting me:**
+[BENCHMARKS.md](BENCHMARKS.md) has schemagate on Spider and BIRD, with the
+scripts in [`benchmarks/`](benchmarks/) and the data downloaded from the
+original sources. The headline is the pooled setting — every Spider database
+merged into one 876-table catalog, no hint about which one to look in:
+
+| Spider dev, 876 tables pooled | all gold tables present |
+|---|---|
+| top_k=5 | 71.4% |
+| top_k=10 | 82.6% |
+| top_k=20 | 92.9% |
+
+BIRD dev, 1,534 questions: 96.5% per-database at top_k=5, 91.1% pooled at
+top_k=10. Neither is a leaderboard placing — both boards score generated SQL
+and schemagate writes none.
+
+Everything below is measured on schemas I invented, which is worth less and
+is why the public numbers come first.
+
+
 Six test schemas ship with the library. Run `python tests/bench.py` and you
 get all of this printed back. `TESTING.md` is the full record of what was
 tested, what broke, and what was found to be the database rather than schemagate.
