@@ -505,9 +505,30 @@ describer.preview(doc)           # the exact text that would be sent
 it raise. A `hint()` you wrote by hand always beats a generated description, so
 fixing a bad one costs nothing.
 
-You can swap the embedder for a hosted one too, but benchmark it first. On
-identifier-heavy schema text the offline embedder is often just as good and it
-doesn't cost anything per query.
+### The embedder picks itself
+
+`pip install schemagate` uses the hashed n-gram vectoriser: offline, instant,
+byte-identical on every machine. Install `schemagate[huggingface]` and a
+sentence model is used automatically instead -- no flag, no benchmark, no
+decision for you. Measured across the six bundled schemas, 98 questions, no
+descriptions:
+
+| | recall@6 |
+|---|---|
+| hashed n-gram (base install) | 90/98 |
+| all-MiniLM-L6-v2 (`[huggingface]`) | 93/98 |
+
+The gain is concentrated exactly where the hashed embedder is documented to be
+weak -- questions phrased the way people speak. On the commerce schema, which
+carries that set, it goes 15/18 to 18/18.
+
+It is not the base default because that would trade one dependency for torch,
+and the guarantee that the same text gives the same vector everywhere.
+`SCHEMAGATE_AUTO_EMBEDDER=0` keeps the hashed one if you need to reproduce an
+older index.
+
+You can swap in a hosted embedder too, though on identifier-heavy schema text
+the offline ones are often just as good and cost nothing per query.
 
 ```python
 from schemagate.ai import APIEmbedder, OpenAIProvider
