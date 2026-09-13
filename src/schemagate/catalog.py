@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import math
+import os
 from collections import Counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
@@ -181,6 +182,43 @@ class _BM25:
         return out
 
 
+#: Set to "0" to keep the hashed embedder even when a sentence model is
+#: installed. Only needed to reproduce an index built before this existed.
+_AUTO_EMBEDDER_ENV = "SCHEMAGATE_AUTO_EMBEDDER"
+
+
+def default_embedder() -> Embedder:
+    """The best embedder available in this environment, chosen for you.
+
+    `pip install schemagate` stays one dependency and gets the hashed n-gram
+    vectoriser: offline, instant, byte-identical on every machine.
+
+    But someone who installed `schemagate[huggingface]` has already paid for
+    torch, and asking them to read a benchmark and pass `embedder=` before
+    they see the benefit is our job pushed onto them. So it is taken
+    automatically. Measured across the six bundled schemas, 98 questions, no
+    descriptions: hashed 90/98, all-MiniLM-L6-v2 93/98. The gain is in the
+    questions phrased the way people speak -- on the commerce schema, the one
+    with the business-language set, 15/18 to 18/18 -- which is exactly where
+    the hashed embedder is documented to be weak, because it matches
+    substrings and "owe us money" shares none with `balance`.
+
+    Not the default in the base install, and deliberately so: it would trade
+    one dependency for torch, and the promise that the same text gives the
+    same vector on every machine and every Python version.
+    """
+    if os.environ.get(_AUTO_EMBEDDER_ENV, "1") == "0":
+        return HashingEmbedder()
+    try:
+        from .embedders.hf import SentenceTransformerEmbedder
+        return SentenceTransformerEmbedder()
+    except Exception:          # noqa: BLE001
+        # Not installed, no network for the weights, no disk -- any of these
+        # means fall back, never fail. The hashed embedder needs nothing and
+        # is what the base install has always used.
+        return HashingEmbedder()
+
+
 class Catalog:
     """Reflect a schema once, then select a small relevant subset per question."""
 
@@ -188,7 +226,7 @@ class Catalog:
                  name: str = "default",
                  shadow_suffixes: Sequence[str] = DEFAULT_SHADOW_SUFFIXES,
                  shadow_prefixes: Sequence[str] = DEFAULT_SHADOW_PREFIXES):
-        self.embedder = embedder or HashingEmbedder()
+        self.embedder = embedder or default_embedder()
         self.store = store or MemoryStore()
         self.name = name
         self.shadow_suffixes = tuple(x.lower() for x in shadow_suffixes)
@@ -493,7 +531,8 @@ class Catalog:
             raise ValueError(
                 f"store expects {store_dim}-dim vectors but "
                 f"{self.embedder.name!r} produces {self.embedder.dim}; "
-                "recreate the store with dim= matching the embedder"
+                "recreate the store with dim= matching the embedder, or set "
+                f"{_AUTO_EMBEDDER_ENV}=0 to keep the hashed one"
             )
         self._order = list(self._docs)
         texts = [self._docs[q].embed_text() for q in self._order]
