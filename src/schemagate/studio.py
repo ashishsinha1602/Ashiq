@@ -1013,11 +1013,23 @@ def main(url: Optional[str] = None, host: str = "127.0.0.1", port: int = 8770,
         return 0
     engine = None
     if url:
-        from sqlalchemy import create_engine
+        # engine_from_url, not create_engine: it merges SCHEMAGATE_CONNECT_ARGS.
+        # That variable exists for exactly the connection a URL cannot express,
+        # and the README names an Autonomous Database wallet as the case. This
+        # path called create_engine directly and dropped it, so
+        #
+        #     SCHEMAGATE_CONNECT_ARGS='{"config_dir": "./wallet", ...}' \
+        #     schemagate studio --url oracle+oracledb://admin:pw@alias_high
+        #
+        # failed with DPY-4027 "no configuration directory specified" -- the
+        # documented way to open the Studio on an ADB could not work at all.
+        # The Connect panel was fine; only the flag was broken, which is why
+        # nothing caught it.
+        from .introspect import engine_from_url
         # Same reasoning as the Connect path: an idle pooled connection is not
         # a live one, and without pre_ping the first question after a quiet
         # spell fails against a database that never went away.
-        engine = create_engine(url, pool_pre_ping=True, pool_recycle=1800)
+        engine = engine_from_url(url, pool_pre_ping=True, pool_recycle=1800)
         cat = Catalog(name="studio").bootstrap(engine, include=include,
                                                exclude=exclude,
                                                sample_values=sample_values)

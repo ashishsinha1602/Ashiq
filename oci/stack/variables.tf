@@ -136,11 +136,11 @@ variable "adb_allowed_cidrs" {
 
 variable "schemagate_version" {
   type        = string
-  default     = "0.1.17"
+  default     = "0.1.45"
   description = "schemagate version the instance installs. Pinned so a stack that worked when you downloaded it still works later: the zip and the PyPI release are cut together, so this is the version this stack was actually tested against. Set it to \"\" to take whatever is newest on PyPI instead."
 
   validation {
     condition     = var.schemagate_version == "" || can(regex("^[0-9]+\\.[0-9]+(\\.[0-9]+)?([a-z0-9.]*)$", var.schemagate_version))
-    error_message = "Give a version like 0.1.17, or \"\" for the newest on PyPI."
+    error_message = "Give a version like 0.1.45, or \"\" for the newest on PyPI."
   }
 }
