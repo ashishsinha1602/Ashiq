@@ -364,8 +364,14 @@ merged into one 876-table catalog, no hint about which one to look in:
 | top_k=20 | 92.9% |
 
 BIRD dev, 1,534 questions: 96.5% per-database at top_k=5, 91.1% pooled at
-top_k=10. Neither is a leaderboard placing — both boards score generated SQL
-and schemagate writes none.
+top_k=10.
+
+And **Spider 2.0-lite**, the benchmark built for real warehouses — 162
+databases, 7,892 tables, a median of 15 per database and a maximum of 785:
+82.9% at top_k=10, no pooling needed because the databases are already big.
+
+None of these is a leaderboard placing — both boards score generated SQL and
+schemagate writes none.
 
 Everything below is measured on schemas I invented, which is worth less and
 is why the public numbers come first.
